@@ -1,0 +1,3 @@
+-- AlterTable
+ALTER TABLE "Image" ALTER COLUMN "name" DROP DEFAULT,
+ALTER COLUMN "updatedAt" DROP DEFAULT;
