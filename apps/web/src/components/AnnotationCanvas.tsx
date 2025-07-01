@@ -1,7 +1,8 @@
 "use client"
 
 import React, { useRef, useEffect, useState, useCallback } from "react"
-import { AnnotationTool } from "@/app/projects/[projectId]/page"
+import { AnnotationTool } from "@/app/project/[projectId]/image/[imageId]/page"
+import { Loader2 } from "lucide-react"
 
 interface Point {
 	x: number
@@ -39,6 +40,9 @@ export function AnnotationCanvas({
 
 	const [isDrawing, setIsDrawing] = useState(false)
 	const [image, setImage] = useState<HTMLImageElement | null>(null)
+	const [isLoading, setIsLoading] = useState(true)
+	const [error, setError] = useState<string | null>(null)
+
 	const startPosRef = useRef<Point | null>(null)
 	const currentPathRef = useRef<Point[]>([])
 
@@ -116,17 +120,33 @@ export function AnnotationCanvas({
 	}, [image, drawExistingAnnotations])
 
 	useEffect(() => {
+		if (!imageUrl) return
+
+		setIsLoading(true)
+		setError(null)
+
 		const img = new Image()
 		img.crossOrigin = "anonymous"
 		img.src = imageUrl
-		img.onload = () => setImage(img)
+
+		img.onload = () => {
+			setImage(img)
+			setIsLoading(false)
+		}
+
+		img.onerror = () => {
+			setIsLoading(false)
+			setError("Failed to load image")
+		}
 	}, [imageUrl])
 
 	useEffect(() => {
-		redrawAll()
-		window.addEventListener("resize", redrawAll)
-		return () => window.removeEventListener("resize", redrawAll)
-	}, [redrawAll])
+		if (image) {
+			redrawAll()
+			window.addEventListener("resize", redrawAll)
+			return () => window.removeEventListener("resize", redrawAll)
+		}
+	}, [redrawAll, image])
 
 	const getRelativePos = (e: React.MouseEvent): Point | null => {
 		const canvas = previewCanvasRef.current
@@ -221,12 +241,31 @@ export function AnnotationCanvas({
 		currentPathRef.current = []
 	}
 
+	if (isLoading) {
+		return (
+			<div className="flex h-full w-full items-center justify-center bg-muted/10">
+				<Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+			</div>
+		)
+	}
+
+	if (error) {
+		return (
+			<div className="flex h-full w-full items-center justify-center bg-muted/10">
+				<div className="text-center text-muted-foreground">
+					<p className="mb-2 text-sm">{error}</p>
+					<p className="text-xs">Please try again later</p>
+				</div>
+			</div>
+		)
+	}
+
 	return (
 		<div
 			ref={containerRef}
-			className="relative flex h-full w-full items-center justify-center"
+			className="relative flex h-full w-full items-center justify-center bg-muted/10 rounded-md shadow-sm"
 		>
-			<canvas ref={imageCanvasRef} className="absolute" />
+			<canvas ref={imageCanvasRef} className="absolute shadow-md" />
 			<canvas ref={drawingCanvasRef} className="absolute" />
 			<canvas
 				ref={previewCanvasRef}

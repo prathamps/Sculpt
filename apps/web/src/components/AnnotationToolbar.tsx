@@ -1,20 +1,20 @@
 "use client"
 
-import {
-	Pencil,
-	Minus,
-	RectangleHorizontal,
-	Trash2,
-	Palette,
-} from "lucide-react"
-import { Button } from "@/components/ui/button"
+import { Pencil, Minus, Square } from "lucide-react"
 import { cn } from "@/lib/utils"
 import {
 	DropdownMenu,
 	DropdownMenuContent,
 	DropdownMenuTrigger,
+	DropdownMenuLabel,
 } from "@/components/ui/dropdown-menu"
-import { AnnotationTool } from "@/app/projects/[projectId]/page"
+import { AnnotationTool } from "@/app/project/[projectId]/image/[imageId]/page"
+import {
+	Tooltip,
+	TooltipContent,
+	TooltipProvider,
+	TooltipTrigger,
+} from "@/components/ui/tooltip"
 
 interface AnnotationToolbarProps {
 	tool: AnnotationTool
@@ -29,72 +29,93 @@ export function AnnotationToolbar({
 	color,
 	setColor,
 }: AnnotationToolbarProps) {
-	const tools: { name: AnnotationTool; icon: React.ElementType }[] = [
-		{ name: "pencil", icon: Pencil },
-		{ name: "rect", icon: RectangleHorizontal },
-		{ name: "line", icon: Minus },
+	const tools: {
+		name: AnnotationTool
+		icon: React.ElementType
+		label: string
+	}[] = [
+		{ name: "pencil", icon: Pencil, label: "Pencil Tool" },
+		{ name: "rect", icon: Square, label: "Rectangle Tool" },
+		{ name: "line", icon: Minus, label: "Line Tool" },
 	]
 
 	const colors = [
-		"#E8EBF1",
-		"#A4B7D8",
-		"#F3A9A3",
-		"#4783E8",
-		"#20A3A8",
-		"#A990E4",
-		"#E84747",
-		"#F3A3CB",
-		"#F3D9A3",
-		"#90E4A9",
-		"#90E4C3",
-		"#E88147",
-		"#E8B047",
-		"#E4C390",
-		"#D8A4A4",
-		"#47E881",
-		"#47E8B0",
-		"#0E9347",
-		"#0E6239",
+		{ value: "#E8EBF1", label: "Light Gray" },
+		{ value: "#4783E8", label: "Blue" },
+		{ value: "#E84747", label: "Red" },
+		{ value: "#47E881", label: "Green" },
+		{ value: "#E88147", label: "Orange" },
+		{ value: "#A990E4", label: "Purple" },
+		{ value: "#F3D9A3", label: "Yellow" },
+		{ value: "#F3A3CB", label: "Pink" },
+		{ value: "#20A3A8", label: "Teal" },
 	]
 
 	return (
-		<div className="flex items-center gap-2 rounded-md bg-gray-900/50 p-1">
-			{tools.map(({ name, icon: Icon }) => (
-				<button
-					key={name}
-					onClick={() => setTool(name)}
-					className={cn(
-						"flex h-8 w-8 items-center justify-center rounded-md",
-						tool === name
-							? "bg-blue-500 text-white"
-							: "text-gray-300 hover:bg-gray-700"
-					)}
-				>
-					<Icon className="h-5 w-5" />
-				</button>
-			))}
+		<div className="flex items-center gap-1 rounded-md border border-border/50 bg-background/60 p-0.5">
+			<TooltipProvider>
+				{tools.map(({ name, icon: Icon, label }) => (
+					<Tooltip key={name}>
+						<TooltipTrigger asChild>
+							<button
+								onClick={() => setTool(name)}
+								className={cn(
+									"flex h-7 w-7 items-center justify-center rounded-sm transition-colors",
+									tool === name
+										? "bg-primary text-primary-foreground"
+										: "text-muted-foreground hover:bg-muted hover:text-foreground"
+								)}
+							>
+								<Icon className="h-4 w-4" />
+							</button>
+						</TooltipTrigger>
+						<TooltipContent side="bottom" className="text-xs">
+							{label}
+						</TooltipContent>
+					</Tooltip>
+				))}
 
-			<DropdownMenu>
-				<DropdownMenuTrigger asChild>
-					<button
-						className="h-8 w-8 cursor-pointer rounded-md border-2 border-gray-700"
-						style={{ backgroundColor: color }}
-					/>
-				</DropdownMenuTrigger>
-				<DropdownMenuContent className="grid grid-cols-5 gap-2 p-2">
-					{colors.map((c, index) => (
-						<button
-							key={`${c}-${index}`}
-							onClick={() => setColor(c)}
-							className={cn(
-								"h-8 w-8 rounded-md",
-								color.toUpperCase() === c.toUpperCase() && "ring-2 ring-white"
-							)}
-							style={{ backgroundColor: c }}
-						/>
-					))}
-				</DropdownMenuContent>
-			</DropdownMenu>
+				<DropdownMenu>
+					<Tooltip>
+						<TooltipTrigger asChild>
+							<DropdownMenuTrigger asChild>
+								<button
+									className="h-7 w-7 cursor-pointer rounded-sm outline-none ring-offset-background focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+									style={{ backgroundColor: color }}
+								/>
+							</DropdownMenuTrigger>
+						</TooltipTrigger>
+						<TooltipContent side="bottom" className="text-xs">
+							Choose Color
+						</TooltipContent>
+					</Tooltip>
+					<DropdownMenuContent className="w-48 p-2" align="center">
+						<DropdownMenuLabel className="text-xs font-medium">
+							Select Color
+						</DropdownMenuLabel>
+						<div className="mt-2 grid grid-cols-3 gap-1">
+							{colors.map(({ value, label }) => (
+								<Tooltip key={value}>
+									<TooltipTrigger asChild>
+										<button
+											onClick={() => setColor(value)}
+											className={cn(
+												"h-8 w-full rounded transition-all",
+												color.toUpperCase() === value.toUpperCase() &&
+													"ring-2 ring-ring ring-offset-2 ring-offset-card"
+											)}
+											style={{ backgroundColor: value }}
+										/>
+									</TooltipTrigger>
+									<TooltipContent side="bottom" className="text-xs">
+										{label}
+									</TooltipContent>
+								</Tooltip>
+							))}
+						</div>
+					</DropdownMenuContent>
+				</DropdownMenu>
+			</TooltipProvider>
 		</div>
 	)
 }

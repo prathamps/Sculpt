@@ -3,13 +3,11 @@
 import { useEffect, useState, useCallback } from "react"
 import { useAuth } from "@/context/AuthContext"
 import { useRouter, useParams } from "next/navigation"
-import Image from "next/image"
-import Link from "next/link"
 import { AnnotationCanvas } from "@/components/AnnotationCanvas"
 import { AnnotationFooter } from "@/components/AnnotationFooter"
 import { CommentSidebar } from "@/components/CommentSidebar"
 import { TopHeader } from "@/components/TopHeader"
-import { Send, ChevronLeft } from "lucide-react"
+import { Loader2 } from "lucide-react"
 
 interface Image {
 	id: string
@@ -32,14 +30,17 @@ export default function ProjectFileViewPage() {
 	const router = useRouter()
 	const [image, setImage] = useState<Image | null>(null)
 	const [tool, setTool] = useState<AnnotationTool>("pencil")
-	const [color, setColor] = useState("#ff0000")
+	const [color, setColor] = useState("#4783E8")
 	const [clearCounter, setClearCounter] = useState(0)
+	const [isImageLoading, setIsImageLoading] = useState(true)
 
 	const [annotations, setAnnotations] = useState<Annotation[]>([])
 	const [history, setHistory] = useState<Annotation[][]>([[]])
 	const [historyIndex, setHistoryIndex] = useState(0)
+	const [isSidebarOpen, setIsSidebarOpen] = useState(true)
 
 	const imageId = params.imageId as string
+	const projectId = params.projectId as string
 
 	const handleAddAnnotation = (newAnnotation: Omit<Annotation, "id">) => {
 		setAnnotations((prev) => {
@@ -70,12 +71,19 @@ export default function ProjectFileViewPage() {
 
 	const fetchImage = useCallback(async () => {
 		if (isAuthenticated) {
-			const res = await fetch(`http://localhost:3001/api/images/${imageId}`, {
-				credentials: "include",
-			})
-			if (res.ok) {
-				const data = await res.json()
-				setImage(data)
+			setIsImageLoading(true)
+			try {
+				const res = await fetch(`http://localhost:3001/api/images/${imageId}`, {
+					credentials: "include",
+				})
+				if (res.ok) {
+					const data = await res.json()
+					setImage(data)
+				}
+			} catch (error) {
+				console.error("Failed to fetch image:", error)
+			} finally {
+				setIsImageLoading(false)
 			}
 		}
 	}, [isAuthenticated, imageId])
@@ -92,33 +100,51 @@ export default function ProjectFileViewPage() {
 
 	const handleClear = () => {
 		setClearCounter((c) => c + 1)
+		setAnnotations([])
+		setHistory([[]])
+		setHistoryIndex(0)
 	}
 
-	if (loading || !image) {
+	const toggleSidebar = () => {
+		setIsSidebarOpen(!isSidebarOpen)
+	}
+
+	if (loading) {
 		return (
-			<div className="flex h-screen w-full items-center justify-center bg-[#121212] text-white">
-				<p>Loading...</p>
+			<div className="flex h-screen w-full items-center justify-center bg-background">
+				<Loader2 className="h-8 w-8 animate-spin text-primary/70" />
 			</div>
 		)
 	}
 
 	return (
-		<div className="flex h-screen w-full flex-col bg-[#121212] text-white">
-			<TopHeader imageName={image.name || "Image"} />
-			<div className="flex flex-1 flex-col overflow-hidden md:flex-row">
-				<main className="flex-1 flex flex-col">
+		<div className="flex h-screen w-full flex-col bg-background text-foreground">
+			<TopHeader
+				imageName={image?.name || "Image"}
+				projectId={projectId}
+				onToggleSidebar={toggleSidebar}
+				isSidebarOpen={isSidebarOpen}
+			/>
+			<div className="flex flex-1 overflow-hidden">
+				<main className="relative flex flex-1 flex-col">
 					{/* Canvas Section */}
-					<div className="flex-1 relative flex items-center justify-center bg-[#2b2d31]">
-						<AnnotationCanvas
-							imageUrl={`http://localhost:3001/${image.url}`}
-							tool={tool}
-							color={color}
-							onAddAnnotation={handleAddAnnotation}
-							annotations={annotations}
-						/>
+					<div className="flex-1 flex items-center justify-center bg-muted/20">
+						{isImageLoading ? (
+							<div className="flex h-full w-full items-center justify-center">
+								<Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+							</div>
+						) : (
+							<AnnotationCanvas
+								imageUrl={image ? `http://localhost:3001/${image.url}` : ""}
+								tool={tool}
+								color={color}
+								onAddAnnotation={handleAddAnnotation}
+								annotations={annotations}
+							/>
+						)}
 					</div>
 					{/* Footer/Toolbar Section */}
-					<div className="border-t border-gray-700 p-4">
+					<div className="border-t border-border">
 						<AnnotationFooter
 							tool={tool}
 							setTool={setTool}
@@ -126,10 +152,13 @@ export default function ProjectFileViewPage() {
 							setColor={setColor}
 							onUndo={handleUndo}
 							onRedo={handleRedo}
+							onClear={handleClear}
+							canUndo={historyIndex > 0}
+							canRedo={historyIndex < history.length - 1}
 						/>
 					</div>
 				</main>
-				<CommentSidebar />
+				{isSidebarOpen && <CommentSidebar />}
 			</div>
 		</div>
 	)
