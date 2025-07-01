@@ -14,6 +14,7 @@ interface Annotation {
 	type: AnnotationTool
 	color: string
 	points: Point[]
+	isHighlighted?: boolean
 }
 
 interface AnnotationCanvasProps {
@@ -42,6 +43,10 @@ export function AnnotationCanvas({
 	const [image, setImage] = useState<HTMLImageElement | null>(null)
 	const [isLoading, setIsLoading] = useState(true)
 	const [error, setError] = useState<string | null>(null)
+	const [canvasDimensions, setCanvasDimensions] = useState({
+		width: 0,
+		height: 0,
+	})
 
 	const startPosRef = useRef<Point | null>(null)
 	const currentPathRef = useRef<Point[]>([])
@@ -50,13 +55,15 @@ export function AnnotationCanvas({
 		(ctx: CanvasRenderingContext2D) => {
 			annotations.forEach((annotation) => {
 				ctx.strokeStyle = annotation.color
-				ctx.lineWidth = 2
+				ctx.lineWidth = annotation.isHighlighted ? 4 : 2
 				ctx.lineCap = "round"
 				ctx.lineJoin = "round"
+
 				ctx.beginPath()
 
 				if (annotation.points.length === 0) return
 
+				// Convert normalized coordinates (0-1) to actual canvas pixels
 				const startX = annotation.points[0].x * ctx.canvas.width
 				const startY = annotation.points[0].y * ctx.canvas.height
 				ctx.moveTo(startX, startY)
@@ -87,37 +94,110 @@ export function AnnotationCanvas({
 	)
 
 	const redrawAll = useCallback(() => {
-		if (!image || !containerRef.current) return
-		const container = containerRef.current
-		const imageCtx = imageCanvasRef.current?.getContext("2d")
-		const drawingCtx = drawingCanvasRef.current?.getContext("2d")
-
-		if (!imageCtx || !drawingCtx) return
-
-		const { clientWidth: cW, clientHeight: cH } = container
-		const iAR = image.width / image.height
-		const cAR = cW / cH
-
-		let canvasWidth, canvasHeight
-		if (iAR > cAR) {
-			canvasWidth = cW
-			canvasHeight = cW / iAR
-		} else {
-			canvasHeight = cH
-			canvasWidth = cH * iAR
+		if (
+			!image ||
+			!imageCanvasRef.current ||
+			!drawingCanvasRef.current ||
+			!containerRef.current
+		) {
+			return
 		}
 
-		;[imageCanvasRef, drawingCanvasRef, previewCanvasRef].forEach((ref) => {
-			if (ref.current) {
-				ref.current.width = canvasWidth
-				ref.current.height = canvasHeight
-			}
+		const imgCanvas = imageCanvasRef.current
+		const drawCanvas = drawingCanvasRef.current
+		const previewCanvas = previewCanvasRef.current
+
+		// Set canvas dimensions to match the image aspect ratio
+		const containerWidth = containerRef.current.clientWidth || 800
+		const containerHeight = containerRef.current.clientHeight || 600
+		const imgAspectRatio = image.width / image.height
+		const containerAspectRatio = containerWidth / containerHeight
+
+		let canvasWidth: number
+		let canvasHeight: number
+
+		if (imgAspectRatio > containerAspectRatio) {
+			// Image is wider than container
+			canvasWidth = containerWidth * 0.95
+			canvasHeight = canvasWidth / imgAspectRatio
+		} else {
+			// Image is taller than container
+			canvasHeight = containerHeight * 0.95
+			canvasWidth = canvasHeight * imgAspectRatio
+		}
+
+		// Set all canvases to the same dimensions
+		const canvases = [imgCanvas, drawCanvas]
+		if (previewCanvas) canvases.push(previewCanvas)
+
+		canvases.forEach((canvas) => {
+			canvas.width = canvasWidth
+			canvas.height = canvasHeight
+			canvas.style.width = `${canvasWidth}px`
+			canvas.style.height = `${canvasHeight}px`
 		})
 
-		imageCtx.drawImage(image, 0, 0, canvasWidth, canvasHeight)
-		drawingCtx.clearRect(0, 0, canvasWidth, canvasHeight)
-		drawExistingAnnotations(drawingCtx)
-	}, [image, drawExistingAnnotations])
+		// Draw image on the image canvas
+		const imgCtx = imgCanvas.getContext("2d")
+		if (imgCtx) {
+			imgCtx.clearRect(0, 0, canvasWidth, canvasHeight)
+			imgCtx.drawImage(image, 0, 0, canvasWidth, canvasHeight)
+		}
+
+		// Draw all annotations on the drawing canvas
+		const drawCtx = drawCanvas.getContext("2d")
+		if (!drawCtx) return
+
+		drawCtx.clearRect(0, 0, canvasWidth, canvasHeight)
+		annotations.forEach((annotation) => {
+			const { type, color, points, isHighlighted } = annotation
+
+			// Set styles for drawing
+			drawCtx.strokeStyle = color
+			drawCtx.lineWidth = isHighlighted ? 4 : 2 // Make highlighted annotations thicker
+			drawCtx.lineCap = "round"
+			drawCtx.lineJoin = "round"
+
+			// Remove the glow effect but keep the thicker line width
+			drawCtx.shadowBlur = 0
+			drawCtx.shadowOffsetX = 0
+			drawCtx.shadowOffsetY = 0
+
+			drawCtx.beginPath()
+
+			if (type === "pencil") {
+				if (points.length > 0) {
+					// Convert normalized coordinates (0-1) to canvas coordinates
+					drawCtx.moveTo(points[0].x * canvasWidth, points[0].y * canvasHeight)
+					points.forEach((p) => {
+						drawCtx.lineTo(p.x * canvasWidth, p.y * canvasHeight)
+					})
+				}
+			} else if (type === "rect" && points.length >= 2) {
+				const startPoint = points[0]
+				const endPoint = points[1]
+				if (startPoint && endPoint) {
+					drawCtx.rect(
+						startPoint.x * canvasWidth,
+						startPoint.y * canvasHeight,
+						(endPoint.x - startPoint.x) * canvasWidth,
+						(endPoint.y - startPoint.y) * canvasHeight
+					)
+				}
+			} else if (type === "line" && points.length >= 2) {
+				const startPoint = points[0]
+				const endPoint = points[1]
+				if (startPoint && endPoint) {
+					drawCtx.moveTo(
+						startPoint.x * canvasWidth,
+						startPoint.y * canvasHeight
+					)
+					drawCtx.lineTo(endPoint.x * canvasWidth, endPoint.y * canvasHeight)
+				}
+			}
+			drawCtx.stroke()
+		})
+	}, [image, annotations])
 
 	useEffect(() => {
 		if (!imageUrl) return
@@ -148,13 +228,27 @@ export function AnnotationCanvas({
 		}
 	}, [redrawAll, image])
 
+	useEffect(() => {
+		if (image) {
+			redrawAll()
+		}
+	}, [annotations, redrawAll, image])
+
+	// Get position as a percentage of the canvas size (0-1)
+	// This ensures coordinates remain consistent when canvas is resized
 	const getRelativePos = (e: React.MouseEvent): Point | null => {
 		const canvas = previewCanvasRef.current
 		if (!canvas) return null
 		const rect = canvas.getBoundingClientRect()
+
+		// Calculate position relative to the canvas element, not the viewport
+		const x = (e.clientX - rect.left) / rect.width
+		const y = (e.clientY - rect.top) / rect.height
+
+		// Ensure coordinates are within bounds (0-1)
 		return {
-			x: (e.clientX - rect.left) / canvas.width,
-			y: (e.clientY - rect.top) / canvas.height,
+			x: Math.max(0, Math.min(1, x)),
+			y: Math.max(0, Math.min(1, y)),
 		}
 	}
 
@@ -172,8 +266,8 @@ export function AnnotationCanvas({
 		if (!pos) return
 
 		const previewCtx = previewCanvasRef.current?.getContext("2d")
-		if (!previewCtx) return
-		const { width, height } = previewCtx.canvas
+		if (!previewCtx || !previewCanvasRef.current) return
+		const { width, height } = previewCanvasRef.current
 		previewCtx.clearRect(0, 0, width, height)
 
 		previewCtx.strokeStyle = color
@@ -231,14 +325,46 @@ export function AnnotationCanvas({
 		}
 
 		const previewCtx = previewCanvasRef.current?.getContext("2d")
-		previewCtx?.clearRect(
-			0,
-			0,
-			previewCtx.canvas.width,
-			previewCtx.canvas.height
-		)
+		if (previewCtx && previewCanvasRef.current) {
+			previewCtx.clearRect(
+				0,
+				0,
+				previewCanvasRef.current.width,
+				previewCanvasRef.current.height
+			)
+		}
 		startPosRef.current = null
 		currentPathRef.current = []
+	}
+
+	// Add touch support for mobile devices
+	const handleTouchStart = (e: React.TouchEvent) => {
+		e.preventDefault() // Prevent scrolling while drawing
+		if (e.touches.length > 0) {
+			const touch = e.touches[0]
+			const mouseEvent = new MouseEvent("mousedown", {
+				clientX: touch.clientX,
+				clientY: touch.clientY,
+			})
+			handleMouseDown(mouseEvent as any)
+		}
+	}
+
+	const handleTouchMove = (e: React.TouchEvent) => {
+		e.preventDefault()
+		if (!isDrawing || e.touches.length === 0) return
+		const touch = e.touches[0]
+		const mouseEvent = new MouseEvent("mousemove", {
+			clientX: touch.clientX,
+			clientY: touch.clientY,
+		})
+		handleMouseMove(mouseEvent as any)
+	}
+
+	const handleTouchEnd = (e: React.TouchEvent) => {
+		e.preventDefault()
+		const mouseEvent = new MouseEvent("mouseup")
+		handleMouseUp(mouseEvent as any)
 	}
 
 	if (isLoading) {
@@ -273,6 +399,9 @@ export function AnnotationCanvas({
 				onMouseMove={handleMouseMove}
 				onMouseUp={handleMouseUp}
 				onMouseLeave={handleMouseUp}
+				onTouchStart={handleTouchStart}
+				onTouchMove={handleTouchMove}
+				onTouchEnd={handleTouchEnd}
 				className="absolute cursor-crosshair"
 			/>
 		</div>

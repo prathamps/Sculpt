@@ -9,6 +9,7 @@ import { AnnotationToolbar } from "./AnnotationToolbar"
 import { AnnotationTool } from "@/app/project/[projectId]/image/[imageId]/page"
 import { cn } from "@/lib/utils"
 import { useAuth } from "@/context/AuthContext"
+import { Annotation } from "@/types"
 
 interface AnnotationFooterProps {
 	tool: AnnotationTool
@@ -20,6 +21,10 @@ interface AnnotationFooterProps {
 	onClear: () => void
 	canUndo: boolean
 	canRedo: boolean
+	currentAnnotation?: Annotation | null
+	annotations: Annotation[]
+	imageVersionId: string
+	onCommentAdded: () => void
 }
 
 export function AnnotationFooter({
@@ -32,14 +37,55 @@ export function AnnotationFooter({
 	onClear,
 	canUndo,
 	canRedo,
+	currentAnnotation,
+	annotations,
+	imageVersionId,
+	onCommentAdded,
 }: AnnotationFooterProps) {
 	const [comment, setComment] = useState("")
+	const [isSending, setIsSending] = useState(false)
 	const { user } = useAuth()
 
-	const handleSendComment = () => {
+	const handleSendComment = async () => {
 		if (!comment.trim()) return
-		// TODO: Implement sending comments to the server
-		setComment("")
+
+		setIsSending(true)
+		try {
+			// Send all annotations with the comment, not just the current one
+			const annotationsToSend =
+				annotations.length > 0
+					? annotations
+					: currentAnnotation
+					? [currentAnnotation]
+					: undefined
+
+			const res = await fetch(
+				`http://localhost:3001/api/images/versions/${imageVersionId}/comments`,
+				{
+					method: "POST",
+					headers: {
+						"Content-Type": "application/json",
+					},
+					credentials: "include",
+					body: JSON.stringify({
+						content: comment,
+						annotation: annotationsToSend,
+					}),
+				}
+			)
+
+			if (res.ok) {
+				setComment("")
+				// Clear the current annotation after submitting
+				onClear()
+				// Notify parent that comment was added to refresh comments
+				onCommentAdded()
+			}
+		} catch (error) {
+			console.error("Failed to send comment:", error)
+		} finally {
+			setIsSending(false)
+		}
 	}
 
 	return (
@@ -68,9 +114,13 @@ export function AnnotationFooter({
 						size="icon"
 						className="absolute bottom-1 right-1 h-7 w-7 text-muted-foreground hover:text-foreground"
 						onClick={handleSendComment}
-						disabled={!comment.trim()}
+						disabled={!comment.trim() || isSending}
 					>
-						<Send className="h-4 w-4" />
+						{isSending ? (
+							<span className="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent" />
+						) : (
+							<Send className="h-4 w-4" />
+						)}
 					</Button>
 				</div>
 			</div>
@@ -78,20 +128,11 @@ export function AnnotationFooter({
 			{/* Bottom row with tools */}
 			<div className="flex items-center justify-between">
 				<div className="flex items-center gap-1">
-					<Button
-						size="icon"
-						variant="ghost"
-						className="h-8 w-8 text-muted-foreground hover:text-foreground"
-					>
-						<Paperclip className="h-4 w-4" />
-					</Button>
-					<Button
-						size="icon"
-						variant="ghost"
-						className="h-8 w-8 text-muted-foreground hover:text-foreground"
-					>
-						<Mic className="h-4 w-4" />
-					</Button>
+					{annotations.length > 0 && (
+						<div className="text-xs text-muted-foreground">
+							{annotations.length} drawing{annotations.length > 1 ? "s" : ""}
+						</div>
+					)}
 				</div>
 				<div className="flex items-center gap-2">
 					<AnnotationToolbar

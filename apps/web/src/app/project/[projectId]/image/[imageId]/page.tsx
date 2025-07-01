@@ -82,6 +82,12 @@ export default function ProjectFileViewPage() {
 	const [isUploading, setIsUploading] = useState(false)
 
 	const [annotations, setAnnotations] = useState<Annotation[]>([])
+	const [currentAnnotation, setCurrentAnnotation] = useState<Annotation | null>(
+		null
+	)
+	const [highlightedAnnotation, setHighlightedAnnotation] = useState<
+		Annotation[] | null
+	>(null)
 	const [history, setHistory] = useState<Annotation[][]>([[]])
 	const [historyIndex, setHistoryIndex] = useState(0)
 	const [isSidebarOpen, setIsSidebarOpen] = useState(true)
@@ -100,8 +106,11 @@ export default function ProjectFileViewPage() {
 	const projectId = params.projectId as string
 
 	const handleAddAnnotation = (newAnnotation: Omit<Annotation, "id">) => {
+		const annotationWithId = { ...newAnnotation, id: annotations.length }
+		setCurrentAnnotation(annotationWithId)
+
 		setAnnotations((prev) => {
-			const nextAnnotations = [...prev, { ...newAnnotation, id: prev.length }]
+			const nextAnnotations = [...prev, annotationWithId]
 			const newHistory = history.slice(0, historyIndex + 1)
 			newHistory.push(nextAnnotations)
 			setHistory(newHistory)
@@ -168,6 +177,8 @@ export default function ProjectFileViewPage() {
 	const handleClear = () => {
 		setClearCounter((c) => c + 1)
 		setAnnotations([])
+		setCurrentAnnotation(null)
+		setHighlightedAnnotation(null)
 		setHistory([[]])
 		setHistoryIndex(0)
 	}
@@ -276,6 +287,41 @@ export default function ProjectFileViewPage() {
 		}
 	}
 
+	const handleHighlightAnnotation = (annotation: any) => {
+		if (!annotation) return
+
+		// Convert the stored JSON annotation to the format our component expects
+		// If it's an array of annotations, process each one
+		const annotations = Array.isArray(annotation) ? annotation : [annotation]
+
+		// Map each annotation to add the highlighted flag
+		const highlightedAnnotations = annotations.map((ann) => ({
+			id: ann.id || 0,
+			type: ann.type || "pencil",
+			color: ann.color || "#4783E8",
+			points: ann.points || [],
+			isHighlighted: true,
+		}))
+
+		// Set the highlighted annotation(s)
+		setHighlightedAnnotation(highlightedAnnotations)
+
+		// Clear the highlight after 2 seconds
+		setTimeout(() => {
+			setHighlightedAnnotation(null)
+		}, 2000)
+	}
+
+	// Handle comment added
+	const handleCommentAdded = () => {
+		setCurrentAnnotation(null)
+
+		// Refresh comments by triggering a re-fetch
+		if (selectedVersion) {
+			// Comments will be refreshed through the CommentSidebar component
+		}
+	}
+
 	if (loading) {
 		return (
 			<div className="flex h-screen w-full items-center justify-center bg-background">
@@ -372,7 +418,19 @@ export default function ProjectFileViewPage() {
 								tool={tool}
 								color={color}
 								onAddAnnotation={handleAddAnnotation}
-								annotations={annotations}
+								annotations={
+									highlightedAnnotation
+										? [
+												...annotations.map((a) => ({
+													...a,
+													isHighlighted: false,
+												})),
+												...(Array.isArray(highlightedAnnotation)
+													? highlightedAnnotation
+													: [highlightedAnnotation]),
+										  ]
+										: annotations
+								}
 							/>
 						) : (
 							<div className="flex h-full w-full items-center justify-center">
@@ -392,6 +450,10 @@ export default function ProjectFileViewPage() {
 							onClear={handleClear}
 							canUndo={historyIndex > 0}
 							canRedo={historyIndex < history.length - 1}
+							currentAnnotation={currentAnnotation}
+							annotations={annotations}
+							imageVersionId={selectedVersion?.id || ""}
+							onCommentAdded={handleCommentAdded}
 						/>
 					</div>
 				</main>
@@ -403,6 +465,7 @@ export default function ProjectFileViewPage() {
 								? "h-[40%] w-full border-t border-l-0"
 								: "h-full w-80 border-l"
 						}
+						onHighlightAnnotation={handleHighlightAnnotation}
 					/>
 				)}
 			</div>

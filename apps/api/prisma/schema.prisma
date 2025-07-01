@@ -36,6 +36,7 @@ model User {
   notifications Notification[]
   messages      Message[]
   comments      Comment[]
+  commentLikes  CommentLike[]
   createdAt     DateTime        @default(now())
   updatedAt     DateTime        @updatedAt
   subscription  Subscription?
@@ -89,18 +90,31 @@ model ImageVersion {
 }
 
 model Comment {
-  id             String       @id @default(cuid())
+  id             String        @id @default(cuid())
   content        String
   imageVersionId String
-  imageVersion   ImageVersion @relation(fields: [imageVersionId], references: [id], onDelete: Cascade)
+  imageVersion   ImageVersion  @relation(fields: [imageVersionId], references: [id], onDelete: Cascade)
   userId         String
-  user           User         @relation(fields: [userId], references: [id])
-  parentId       String?      @map("parent_id")
-  parent         Comment?     @relation("CommentToComment", fields: [parentId], references: [id], onDelete: Cascade)
-  replies        Comment[]    @relation("CommentToComment")
-  resolved       Boolean      @default(false)
-  createdAt      DateTime     @default(now())
-  updatedAt      DateTime     @updatedAt
+  user           User          @relation(fields: [userId], references: [id])
+  parentId       String?       @map("parent_id")
+  parent         Comment?      @relation("CommentToComment", fields: [parentId], references: [id], onDelete: Cascade)
+  replies        Comment[]     @relation("CommentToComment")
+  likes          CommentLike[]
+  annotation     Json?         // Store annotation data as JSON
+  resolved       Boolean       @default(false)
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+}
+
+model CommentLike {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  commentId String
+  comment   Comment  @relation(fields: [commentId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@unique([userId, commentId])
 }
 
 model Message {

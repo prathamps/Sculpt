@@ -212,7 +212,8 @@ export const addComment = async (
 	content: string,
 	imageVersionId: string,
 	userId: string,
-	parentId?: string
+	parentId?: string,
+	annotation?: any
 ): Promise<any> => {
 	return prisma.comment.create({
 		data: {
@@ -220,12 +221,23 @@ export const addComment = async (
 			imageVersionId,
 			userId,
 			parentId,
+			annotation: annotation ? annotation : undefined,
 		},
 		include: {
 			user: true,
+			likes: {
+				include: {
+					user: true,
+				},
+			},
 			replies: {
 				include: {
 					user: true,
+					likes: {
+						include: {
+							user: true,
+						},
+					},
 				},
 			},
 		},
@@ -242,9 +254,19 @@ export const getCommentsForImageVersion = async (
 		},
 		include: {
 			user: true,
+			likes: {
+				include: {
+					user: true,
+				},
+			},
 			replies: {
 				include: {
 					user: true,
+					likes: {
+						include: {
+							user: true,
+						},
+					},
 				},
 			},
 		},
@@ -252,4 +274,77 @@ export const getCommentsForImageVersion = async (
 			createdAt: "desc",
 		},
 	})
+}
+
+export const getCommentById = async (commentId: string): Promise<any> => {
+	return prisma.comment.findUnique({
+		where: {
+			id: commentId,
+		},
+		include: {
+			user: true,
+			likes: true,
+		},
+	})
+}
+
+export const deleteComment = async (commentId: string): Promise<void> => {
+	await prisma.comment.delete({
+		where: {
+			id: commentId,
+		},
+	})
+}
+
+export const toggleLikeComment = async (
+	commentId: string,
+	userId: string
+): Promise<{ liked: boolean; count: number }> => {
+	// Check if the user already liked this comment
+	const existingLike = await prisma.commentLike.findUnique({
+		where: {
+			userId_commentId: {
+				userId,
+				commentId,
+			},
+		},
+	})
+
+	if (existingLike) {
+		// Unlike the comment
+		await prisma.commentLike.delete({
+			where: {
+				userId_commentId: {
+					userId,
+					commentId,
+				},
+			},
+		})
+
+		// Get updated like count
+		const count = await prisma.commentLike.count({
+			where: {
+				commentId,
+			},
+		})
+
+		return { liked: false, count }
+	} else {
+		// Like the comment
+		await prisma.commentLike.create({
+			data: {
+				userId,
+				commentId,
+			},
+		})
+
+		// Get updated like count
+		const count = await prisma.commentLike.count({
+			where: {
+				commentId,
+			},
+		})
+
+		return { liked: true, count }
+	}
 }

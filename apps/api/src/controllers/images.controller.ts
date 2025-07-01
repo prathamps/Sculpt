@@ -211,7 +211,7 @@ export const addComment = async (
 ): Promise<void> => {
 	try {
 		const { imageVersionId } = req.params
-		const { content, parentId } = req.body
+		const { content, parentId, annotation } = req.body
 		const userId = (req.user as any)?.id
 
 		if (!userId) {
@@ -223,7 +223,8 @@ export const addComment = async (
 			content,
 			imageVersionId,
 			userId,
-			parentId
+			parentId,
+			annotation
 		)
 		res.status(201).json(comment)
 	} catch (error) {
@@ -243,5 +244,58 @@ export const getComments = async (
 		res.status(200).json(comments)
 	} catch (error) {
 		res.status(500).json({ message: "Error fetching comments", error })
+	}
+}
+
+export const deleteComment = async (
+	req: Request,
+	res: Response
+): Promise<void> => {
+	try {
+		const { commentId } = req.params
+		const userId = (req.user as any)?.id
+
+		if (!userId) {
+			res.status(401).json({ message: "Unauthorized" })
+			return
+		}
+
+		// Check if the user owns the comment
+		const comment = await imageService.getCommentById(commentId)
+
+		if (!comment) {
+			res.status(404).json({ message: "Comment not found" })
+			return
+		}
+
+		if (comment.userId !== userId) {
+			res.status(403).json({ message: "Unauthorized to delete this comment" })
+			return
+		}
+
+		await imageService.deleteComment(commentId)
+		res.status(204).send()
+	} catch (error) {
+		res.status(500).json({ message: "Error deleting comment", error })
+	}
+}
+
+export const toggleLikeComment = async (
+	req: Request,
+	res: Response
+): Promise<void> => {
+	try {
+		const { commentId } = req.params
+		const userId = (req.user as any)?.id
+
+		if (!userId) {
+			res.status(401).json({ message: "Unauthorized" })
+			return
+		}
+
+		const result = await imageService.toggleLikeComment(commentId, userId)
+		res.status(200).json(result)
+	} catch (error) {
+		res.status(500).json({ message: "Error toggling comment like", error })
 	}
 }

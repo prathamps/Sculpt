@@ -1,16 +1,7 @@
 "use client"
 
 import Link from "next/link"
-import {
-	ChevronLeft,
-	ChevronDown,
-	Circle,
-	MoreHorizontal,
-	Plus,
-	Share2,
-	MessageSquare,
-	X,
-} from "lucide-react"
+import { ChevronLeft, MoreHorizontal, MessageSquare, X } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import {
 	DropdownMenu,
@@ -19,7 +10,6 @@ import {
 	DropdownMenuTrigger,
 	DropdownMenuSeparator,
 } from "@/components/ui/dropdown-menu"
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { cn } from "@/lib/utils"
 import { useMediaQuery } from "@/hooks/useMediaQuery"
 import { ReactNode } from "react"
@@ -60,21 +50,6 @@ export function TopHeader({
 				{children}
 			</div>
 			<div className="flex items-center gap-2">
-				<div className="hidden sm:flex -space-x-2 overflow-hidden">
-					<Avatar className="h-7 w-7 border-2 border-background">
-						<AvatarImage src="https://randomuser.me/api/portraits/women/4.jpg" />
-						<AvatarFallback>A</AvatarFallback>
-					</Avatar>
-					<Avatar className="h-7 w-7 border-2 border-background">
-						<AvatarImage src="https://randomuser.me/api/portraits/men/2.jpg" />
-						<AvatarFallback>B</AvatarFallback>
-					</Avatar>
-					<Avatar className="h-7 w-7 border-2 border-background bg-muted">
-						<AvatarFallback className="text-xs">
-							<Plus className="h-3.5 w-3.5" />
-						</AvatarFallback>
-					</Avatar>
-				</div>
 				<Button
 					size={isSmallScreen ? "icon" : "sm"}
 					variant="outline"
@@ -104,19 +79,6 @@ export function TopHeader({
 									Comments
 								</>
 							)}
-						</>
-					)}
-				</Button>
-				<Button
-					size={isSmallScreen ? "icon" : "sm"}
-					className={isSmallScreen ? "h-8 w-8" : "h-8 gap-1.5 text-xs"}
-				>
-					{isSmallScreen ? (
-						<Share2 className="h-3.5 w-3.5" />
-					) : (
-						<>
-							<Share2 className="h-3.5 w-3.5" />
-							Share
 						</>
 					)}
 				</Button>
