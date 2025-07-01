@@ -1,0 +1,22 @@
+{
+	"compilerOptions": {
+		"target": "ES2018",
+		"lib": ["DOM", "DOM.Iterable", "ESNext"],
+		"module": "ESNext",
+		"skipLibCheck": true,
+		"esModuleInterop": true,
+
+		/* Bundler mode */
+		"moduleResolution": "bundler",
+		"resolveJsonModule": true,
+		"isolatedModules": true,
+
+		/* Linting */
+		"strict": true,
+		"noUnusedLocals": false,
+		"noUnusedParameters": false,
+		"noFallthroughCasesInSwitch": true,
+		"noUncheckedIndexedAccess": true
+	},
+	"exclude": ["node_modules"]
+}

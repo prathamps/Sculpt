@@ -11,9 +11,27 @@ import {
 	Grid2X2,
 	ListIcon,
 	SlidersHorizontal,
+	Check,
+	FileImageIcon,
+	VideoIcon,
+	ClockIcon,
+	CalendarIcon,
+	X,
+	Search,
 } from "lucide-react"
-import { useState } from "react"
+import { useState, useMemo } from "react"
 import { cn } from "@/lib/utils"
+import {
+	DropdownMenu,
+	DropdownMenuContent,
+	DropdownMenuGroup,
+	DropdownMenuCheckboxItem,
+	DropdownMenuItem,
+	DropdownMenuLabel,
+	DropdownMenuSeparator,
+	DropdownMenuTrigger,
+} from "./ui/dropdown-menu"
+import { Input } from "./ui/input"
 
 interface ProjectContentViewProps {
 	project: Project | null
@@ -21,12 +39,107 @@ interface ProjectContentViewProps {
 	onProjectChanged: () => void
 }
 
+type FileType = "image" | "video" | "all"
+type SortOption = "newest" | "oldest" | "a-z" | "z-a"
+
 export function ProjectContentView({
 	project,
 	onUploadClick,
 	onProjectChanged,
 }: ProjectContentViewProps) {
 	const [viewMode, setViewMode] = useState<"grid" | "list">("grid")
+	const [fileType, setFileType] = useState<FileType>("all")
+	const [sortBy, setSortBy] = useState<SortOption>("newest")
+	const [searchQuery, setSearchQuery] = useState("")
+	const [showFilterBar, setShowFilterBar] = useState(false)
+
+	// Filter and sort files
+	const filteredAndSortedFiles = useMemo(() => {
+		if (!project) return []
+
+		// First filter by type
+		let filtered = project.images.filter((file) => {
+			// Filter by search query
+			if (
+				searchQuery &&
+				!file.name.toLowerCase().includes(searchQuery.toLowerCase())
+			) {
+				return false
+			}
+
+			// Filter by file type
+			if (fileType === "all") return true
+
+			// Get the file extension from the name or latestVersion
+			const fileUrl =
+				file.latestVersion?.url ||
+				(file.versions && file.versions.length > 0 && file.versions[0]?.url
+					? file.versions[0].url
+					: "")
+			const isVideoFile =
+				fileUrl.toLowerCase().endsWith(".mp4") ||
+				file.name.toLowerCase().endsWith(".mp4")
+
+			if (fileType === "image") return !isVideoFile
+			if (fileType === "video") return isVideoFile
+
+			return true
+		})
+
+		// Then sort
+		return filtered.sort((a, b) => {
+			switch (sortBy) {
+				case "newest":
+					return (
+						new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+					)
+				case "oldest":
+					return (
+						new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
+					)
+				case "a-z":
+					return a.name.localeCompare(b.name)
+				case "z-a":
+					return b.name.localeCompare(a.name)
+				default:
+					return 0
+			}
+		})
+	}, [project, fileType, sortBy, searchQuery])
+
+	const fileTypeCount = useMemo(() => {
+		if (!project) return { total: 0, images: 0, videos: 0 }
+
+		const images = project.images.filter((file) => {
+			const fileUrl =
+				file.latestVersion?.url ||
+				(file.versions && file.versions.length > 0 && file.versions[0]?.url
+					? file.versions[0].url
+					: "")
+			return (
+				!fileUrl.toLowerCase().endsWith(".mp4") &&
+				!file.name.toLowerCase().endsWith(".mp4")
+			)
+		}).length
+
+		const videos = project.images.filter((file) => {
+			const fileUrl =
+				file.latestVersion?.url ||
+				(file.versions && file.versions.length > 0 && file.versions[0]?.url
+					? file.versions[0].url
+					: "")
+			return (
+				fileUrl.toLowerCase().endsWith(".mp4") ||
+				file.name.toLowerCase().endsWith(".mp4")
+			)
+		}).length
+
+		return {
+			total: project.images.length,
+			images,
+			videos,
+		}
+	}, [project])
 
 	if (!project) {
 		return (
@@ -106,42 +219,231 @@ export function ProjectContentView({
 							<ListIcon className="h-4 w-4" />
 						</button>
 					</div>
-					<Button variant="outline" size="sm" className="h-7 gap-1">
+					<Button
+						variant={showFilterBar ? "default" : "outline"}
+						size="sm"
+						className={cn(
+							"h-7 gap-1",
+							showFilterBar &&
+								"bg-primary text-primary-foreground hover:bg-primary/90"
+						)}
+						onClick={() => setShowFilterBar(!showFilterBar)}
+					>
 						<SlidersHorizontal className="h-3.5 w-3.5" />
 						<span className="text-xs">Filter</span>
 					</Button>
-					<Button size="sm" className="h-7 gap-1" onClick={onUploadClick}>
+					<Button
+						size="sm"
+						className="h-7 gap-1 bg-primary hover:bg-primary/90 text-primary-foreground"
+						onClick={onUploadClick}
+					>
 						<PlusIcon className="h-3.5 w-3.5" />
 						<span className="text-xs">Upload</span>
 					</Button>
 				</div>
 			</div>
 
+			{/* Filter Bar */}
+			{showFilterBar && (
+				<div className="mb-4 rounded-md border border-border/50 bg-card/50 p-3">
+					<div className="flex flex-wrap items-center gap-3">
+						<div className="relative flex-1 min-w-[200px]">
+							<Search className="absolute left-2 top-2 h-4 w-4 text-muted-foreground" />
+							<Input
+								placeholder="Search files..."
+								value={searchQuery}
+								onChange={(e) => setSearchQuery(e.target.value)}
+								className="pl-8 h-8 bg-background/70"
+							/>
+							{searchQuery && (
+								<Button
+									variant="ghost"
+									size="icon"
+									className="absolute right-1 top-1 h-6 w-6 text-muted-foreground hover:text-primary"
+									onClick={() => setSearchQuery("")}
+								>
+									<X className="h-3.5 w-3.5" />
+								</Button>
+							)}
+						</div>
+
+						<DropdownMenu>
+							<DropdownMenuTrigger asChild>
+								<Button
+									variant="outline"
+									size="sm"
+									className="h-8 gap-1.5 px-3 hover:text-primary"
+								>
+									<FileImageIcon className="h-3.5 w-3.5" />
+									<span className="text-xs">
+										{fileType === "all"
+											? "All files"
+											: fileType === "image"
+											? "Images only"
+											: "Videos only"}
+									</span>
+								</Button>
+							</DropdownMenuTrigger>
+							<DropdownMenuContent align="end" className="w-40">
+								<DropdownMenuLabel className="text-xs font-normal text-muted-foreground">
+									File Type
+								</DropdownMenuLabel>
+								<DropdownMenuSeparator />
+								<DropdownMenuCheckboxItem
+									checked={fileType === "all"}
+									onCheckedChange={() => setFileType("all")}
+									className="text-xs"
+								>
+									All files ({fileTypeCount.total})
+								</DropdownMenuCheckboxItem>
+								<DropdownMenuCheckboxItem
+									checked={fileType === "image"}
+									onCheckedChange={() => setFileType("image")}
+									className="text-xs"
+								>
+									Images only ({fileTypeCount.images})
+								</DropdownMenuCheckboxItem>
+								<DropdownMenuCheckboxItem
+									checked={fileType === "video"}
+									onCheckedChange={() => setFileType("video")}
+									className="text-xs"
+								>
+									Videos only ({fileTypeCount.videos})
+								</DropdownMenuCheckboxItem>
+							</DropdownMenuContent>
+						</DropdownMenu>
+
+						<DropdownMenu>
+							<DropdownMenuTrigger asChild>
+								<Button
+									variant="outline"
+									size="sm"
+									className="h-8 gap-1.5 px-3 hover:text-primary"
+								>
+									<ClockIcon className="h-3.5 w-3.5" />
+									<span className="text-xs">
+										{sortBy === "newest"
+											? "Newest first"
+											: sortBy === "oldest"
+											? "Oldest first"
+											: sortBy === "a-z"
+											? "A to Z"
+											: "Z to A"}
+									</span>
+								</Button>
+							</DropdownMenuTrigger>
+							<DropdownMenuContent align="end" className="w-40">
+								<DropdownMenuLabel className="text-xs font-normal text-muted-foreground">
+									Sort By
+								</DropdownMenuLabel>
+								<DropdownMenuSeparator />
+								<DropdownMenuCheckboxItem
+									checked={sortBy === "newest"}
+									onCheckedChange={() => setSortBy("newest")}
+									className="text-xs"
+								>
+									Newest first
+								</DropdownMenuCheckboxItem>
+								<DropdownMenuCheckboxItem
+									checked={sortBy === "oldest"}
+									onCheckedChange={() => setSortBy("oldest")}
+									className="text-xs"
+								>
+									Oldest first
+								</DropdownMenuCheckboxItem>
+								<DropdownMenuSeparator />
+								<DropdownMenuCheckboxItem
+									checked={sortBy === "a-z"}
+									onCheckedChange={() => setSortBy("a-z")}
+									className="text-xs"
+								>
+									Name (A to Z)
+								</DropdownMenuCheckboxItem>
+								<DropdownMenuCheckboxItem
+									checked={sortBy === "z-a"}
+									onCheckedChange={() => setSortBy("z-a")}
+									className="text-xs"
+								>
+									Name (Z to A)
+								</DropdownMenuCheckboxItem>
+							</DropdownMenuContent>
+						</DropdownMenu>
+
+						{(searchQuery || fileType !== "all" || sortBy !== "newest") && (
+							<Button
+								variant="ghost"
+								size="sm"
+								className="h-8 text-xs text-muted-foreground hover:text-primary"
+								onClick={() => {
+									setSearchQuery("")
+									setFileType("all")
+									setSortBy("newest")
+								}}
+							>
+								Reset filters
+							</Button>
+						)}
+					</div>
+				</div>
+			)}
+
 			{/* Files Section */}
 			<div className="flex items-center justify-between pb-4">
 				<h3 className="text-sm font-medium">
-					{project.images.length} file{project.images.length !== 1 && "s"}
+					{filteredAndSortedFiles.length} file
+					{filteredAndSortedFiles.length !== 1 && "s"}
+					{project.images.length !== filteredAndSortedFiles.length &&
+						` (filtered from ${project.images.length})`}
 				</h3>
 			</div>
 
 			{project.images.length > 0 ? (
-				<div
-					className={cn(
-						"grid gap-4",
-						viewMode === "grid"
-							? "grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5"
-							: "grid-cols-1"
+				<>
+					{filteredAndSortedFiles.length > 0 ? (
+						<div
+							className={cn(
+								"grid gap-4",
+								viewMode === "grid"
+									? "grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5"
+									: "grid-cols-1"
+							)}
+						>
+							{filteredAndSortedFiles.map((image) => (
+								<FileCard
+									key={image.id}
+									file={image}
+									projectId={project.id}
+									onProjectChanged={onProjectChanged}
+									viewMode={viewMode}
+								/>
+							))}
+						</div>
+					) : (
+						<div className="flex flex-col items-center justify-center rounded-lg border border-dashed border-border bg-card/50 p-12 text-center">
+							<div className="flex h-12 w-12 items-center justify-center rounded-full bg-muted/60">
+								<Search className="h-6 w-6 text-muted-foreground" />
+							</div>
+							<h2 className="mt-4 text-lg font-medium">
+								No files match your filters
+							</h2>
+							<p className="mt-2 max-w-md text-sm text-muted-foreground">
+								Try adjusting your search or filter criteria to find what you're
+								looking for.
+							</p>
+							<Button
+								variant="outline"
+								onClick={() => {
+									setSearchQuery("")
+									setFileType("all")
+									setSortBy("newest")
+								}}
+								className="mt-6 hover:text-primary hover:border-primary"
+							>
+								Clear all filters
+							</Button>
+						</div>
 					)}
-				>
-					{project.images.map((image) => (
-						<FileCard
-							key={image.id}
-							file={image}
-							projectId={project.id}
-							onProjectChanged={onProjectChanged}
-						/>
-					))}
-				</div>
+				</>
 			) : (
 				<div className="flex flex-col items-center justify-center rounded-lg border border-dashed border-border bg-card/50 p-12 text-center">
 					<div className="flex h-12 w-12 items-center justify-center rounded-full bg-primary/10 text-primary">
@@ -151,7 +453,10 @@ export function ProjectContentView({
 					<p className="mt-2 max-w-md text-sm text-muted-foreground">
 						Upload your first file to start working on this project.
 					</p>
-					<Button onClick={onUploadClick} className="mt-6">
+					<Button
+						onClick={onUploadClick}
+						className="mt-6 bg-primary hover:bg-primary/90 text-primary-foreground"
+					>
 						<PlusIcon className="mr-2 h-4 w-4" />
 						Upload File
 					</Button>

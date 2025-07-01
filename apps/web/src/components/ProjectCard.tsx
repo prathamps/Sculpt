@@ -1,6 +1,5 @@
 "use client"
 
-import Image from "next/image"
 import Link from "next/link"
 import {
 	Pencil,
@@ -20,6 +19,7 @@ import {
 } from "./ui/dropdown-menu"
 import { Avatar, AvatarFallback, AvatarImage } from "./ui/avatar"
 import { cn } from "@/lib/utils"
+import { useState } from "react"
 
 interface ProjectCardProps {
 	project: Project
@@ -34,20 +34,64 @@ export function ProjectCard({ project, onEdit, onDelete }: ProjectCardProps) {
 		day: "numeric",
 	})
 
+	// Get the image URL considering versions
+	const getImageUrl = () => {
+		if (!firstImage) return null
+
+		console.log("First image data:", firstImage)
+
+		// Try to get the URL from latestVersion
+		if (firstImage.latestVersion?.url) {
+			const url = `http://localhost:3001/${firstImage.latestVersion.url}`
+			console.log("Using latestVersion URL:", url)
+			return url
+		}
+
+		// Try to get the URL from the first version in the versions array
+		if (
+			firstImage.versions &&
+			firstImage.versions.length > 0 &&
+			firstImage.versions[0]?.url
+		) {
+			const url = `http://localhost:3001/${firstImage.versions[0].url}`
+			console.log("Using versions[0] URL:", url)
+			return url
+		}
+
+		// Fallback for backward compatibility with legacy images
+		if ("url" in firstImage && firstImage.url) {
+			const url = `http://localhost:3001/${firstImage.url}`
+			console.log("Using legacy URL:", url)
+			return url
+		}
+
+		// No image URL available
+		console.log("No valid image URL found, using placeholder")
+		return "/placeholder-image.svg"
+	}
+
+	const imageUrl = getImageUrl()
+	const [imageError, setImageError] = useState(false)
+	const placeholderUrl = "/placeholder-image.svg"
+
 	return (
 		<div className="group relative overflow-hidden rounded-lg border border-border/50 bg-card transition-all hover:border-border">
 			<Link href={`/project/${project.id}`} className="block">
-				<div className="relative aspect-video w-full overflow-hidden">
-					{firstImage ? (
-						<Image
-							src={`http://localhost:3001/${firstImage.url}`}
+				<div className="relative aspect-video overflow-hidden rounded-t-lg bg-muted/50">
+					{imageUrl ? (
+						<img
+							src={imageError ? placeholderUrl : imageUrl}
 							alt={project.name}
-							fill
-							className="object-cover"
+							className="h-full w-full object-cover transition-transform duration-200 group-hover:scale-105"
+							onError={() => setImageError(true)}
 						/>
 					) : (
-						<div className="flex h-full w-full items-center justify-center bg-secondary/40">
-							<ImageIcon className="h-10 w-10 text-muted-foreground/60" />
+						<div className="flex h-full w-full items-center justify-center">
+							<img
+								src={placeholderUrl}
+								alt="No image available"
+								className="h-full w-full object-cover"
+							/>
 						</div>
 					)}
 				</div>

@@ -14,45 +14,35 @@ import {
 	DropdownMenuSeparator,
 	DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
-
-export interface Comment {
-	id: string
-	author: {
-		name: string
-		avatarUrl: string
-	}
-	timestamp: string
-	text: string
-	replies?: Comment[]
-	reactions?: number
-	resolved?: boolean
-}
+import { Comment as CommentType } from "@/types"
+import { formatDistanceToNow } from "date-fns"
 
 interface CommentCardProps {
-	comment: Comment
+	comment: CommentType
 }
 
 export function CommentCard({ comment }: CommentCardProps) {
-	const isResolved = comment.resolved || false
+	// Format timestamp
+	const timestamp = formatDistanceToNow(new Date(comment.createdAt), {
+		addSuffix: true,
+	})
 
 	return (
 		<div className="flex flex-col gap-3">
 			<div className="flex items-start gap-2.5">
 				<Avatar className="h-7 w-7 flex-shrink-0">
-					<AvatarImage
-						src={comment.author.avatarUrl}
-						alt={comment.author.name}
-					/>
-					<AvatarFallback>{comment.author.name.charAt(0)}</AvatarFallback>
+					<AvatarFallback>
+						{comment.user.name?.charAt(0) || comment.user.email.charAt(0)}
+					</AvatarFallback>
 				</Avatar>
 				<div className="flex-1 space-y-1.5">
 					<div className="flex items-center justify-between">
 						<div className="flex items-center gap-2">
-							<span className="text-sm font-medium">{comment.author.name}</span>
-							<span className="text-xs text-muted-foreground">
-								{comment.timestamp}
+							<span className="text-sm font-medium">
+								{comment.user.name || comment.user.email}
 							</span>
-							{isResolved && (
+							<span className="text-xs text-muted-foreground">{timestamp}</span>
+							{comment.resolved && (
 								<span className="flex items-center gap-1 text-xs text-green-500">
 									<CheckCircle2 className="h-3 w-3" />
 									Resolved
@@ -72,7 +62,7 @@ export function CommentCard({ comment }: CommentCardProps) {
 								</DropdownMenuTrigger>
 								<DropdownMenuContent align="end" className="w-48">
 									<DropdownMenuItem className="text-xs">
-										Mark as {isResolved ? "unresolved" : "resolved"}
+										Mark as {comment.resolved ? "unresolved" : "resolved"}
 									</DropdownMenuItem>
 									<DropdownMenuItem className="text-xs">
 										Copy link to comment
@@ -85,18 +75,15 @@ export function CommentCard({ comment }: CommentCardProps) {
 							</DropdownMenu>
 						</div>
 					</div>
-					<p className="text-sm leading-relaxed">{comment.text}</p>
+					<p className="text-sm leading-relaxed">{comment.content}</p>
 					<div className="flex items-center gap-3">
 						<Button
 							variant="ghost"
 							size="sm"
-							className={cn(
-								"h-7 gap-1.5 px-2 text-xs text-muted-foreground hover:text-foreground",
-								comment.reactions && comment.reactions > 0 && "text-primary"
-							)}
+							className="h-7 gap-1.5 px-2 text-xs text-muted-foreground hover:text-foreground"
 						>
 							<ThumbsUp className="h-3.5 w-3.5" />
-							{comment.reactions ? comment.reactions : "Like"}
+							Like
 						</Button>
 						<Button
 							variant="ghost"

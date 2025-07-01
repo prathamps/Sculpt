@@ -30,10 +30,12 @@ export function RenameFileModal({
 }: RenameFileModalProps) {
 	const [name, setName] = useState("")
 	const [isSaving, setIsSaving] = useState(false)
+	const [error, setError] = useState("")
 
 	useEffect(() => {
 		if (file) {
 			setName(file.name)
+			setError("")
 		}
 	}, [file])
 
@@ -41,7 +43,21 @@ export function RenameFileModal({
 
 	const handleSave = async (e: React.FormEvent) => {
 		e.preventDefault()
+
+		if (!name.trim()) {
+			setError("File name cannot be empty")
+			return
+		}
+
+		// Check if file name has changed
+		if (name === file.name) {
+			onClose()
+			return
+		}
+
 		setIsSaving(true)
+		setError("")
+
 		try {
 			const res = await fetch(`http://localhost:3001/api/images/${file.id}`, {
 				method: "PUT",
@@ -51,21 +67,32 @@ export function RenameFileModal({
 			})
 
 			if (!res.ok) {
-				throw new Error("Failed to rename file.")
+				const errorData = await res.json().catch(() => null)
+				throw new Error(errorData?.message || "Failed to rename file.")
 			}
 
+			// Get updated file data
+			const updatedFile = await res.json()
+
+			// Update the file object in-place rather than refreshing the whole list
+			// This ensures the file stays in the same position in the list
+			file.name = updatedFile.name || name
+
+			// Call the callback for UI updates but with minimal impact
 			onFileRenamed()
 			onClose()
 		} catch (error) {
-			console.error("Failed to save file settings", error)
-			alert("Failed to rename file.")
+			console.error("Failed to rename file", error)
+			setError(
+				error instanceof Error ? error.message : "Failed to rename file."
+			)
 		} finally {
 			setIsSaving(false)
 		}
 	}
 
 	return (
-		<Dialog open={isOpen} onOpenChange={onClose}>
+		<Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
 			<DialogContent className="sm:max-w-md border-border bg-card">
 				<form onSubmit={handleSave}>
 					<DialogHeader>
@@ -83,20 +110,28 @@ export function RenameFileModal({
 							id="name"
 							value={name}
 							onChange={(e) => setName(e.target.value)}
-							className="bg-background/80 border-border/50"
+							className="bg-background/80 border-border/50 focus-visible:ring-primary/30"
 							placeholder="Enter file name"
 							autoFocus
 						/>
+						{error && <p className="text-sm text-destructive mt-1">{error}</p>}
 					</div>
 
 					<DialogFooter className="flex space-x-2 justify-end">
-						<Button onClick={onClose} variant="outline" type="button" size="sm">
+						<Button
+							onClick={onClose}
+							variant="outline"
+							type="button"
+							size="sm"
+							className="hover:text-primary hover:border-primary/50"
+						>
 							Cancel
 						</Button>
 						<Button
 							type="submit"
 							size="sm"
 							disabled={isSaving || !name.trim() || name === file.name}
+							className="bg-primary hover:bg-primary/90 text-primary-foreground"
 						>
 							{isSaving ? (
 								<>

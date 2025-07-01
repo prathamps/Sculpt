@@ -1,9 +1,20 @@
 import { Request, Response } from "express"
 import * as projectService from "../services/projects.service"
-import { User } from "@prisma/client"
+import { User, Project, Image, ImageVersion } from "@prisma/client"
 
 interface AuthenticatedRequest extends Request {
 	user?: User
+}
+
+// Extended types for the transformed data
+interface ExtendedImage extends Image {
+	versions?: ImageVersion[]
+	latestVersion?: ImageVersion | null
+}
+
+interface ExtendedProject extends Project {
+	images: ExtendedImage[]
+	members: any[] // We don't need to be specific about members here
 }
 
 export const createProject = async (
@@ -26,7 +37,29 @@ export const getProjects = async (
 ): Promise<void> => {
 	try {
 		const userId = req.user!.id
-		const projects = await projectService.getProjectsForUser(userId)
+		let projects = (await projectService.getProjectsForUser(
+			userId
+		)) as unknown as ExtendedProject[]
+
+		// Transform the projects to add latestVersion to each image
+		projects = projects.map((project) => {
+			const transformedImages = project.images.map((image: ExtendedImage) => {
+				// Add latestVersion from the first version (already sorted desc)
+				return {
+					...image,
+					latestVersion:
+						image.versions && image.versions.length > 0
+							? image.versions[0]
+							: null,
+				}
+			})
+
+			return {
+				...project,
+				images: transformedImages,
+			}
+		})
+
 		res.status(200).json(projects)
 	} catch (error) {
 		res.status(500).json({ message: "Error fetching projects", error })
@@ -40,11 +73,32 @@ export const getProject = async (
 	try {
 		const { id } = req.params
 		const userId = req.user!.id
-		const project = await projectService.getProjectById(id, userId)
+		let project = (await projectService.getProjectById(
+			id,
+			userId
+		)) as unknown as ExtendedProject
 		if (!project) {
 			res.status(404).json({ message: "Project not found" })
 			return
 		}
+
+		// Transform the images to add latestVersion to each image
+		const transformedImages = project.images.map((image: ExtendedImage) => {
+			// Add latestVersion from the first version (already sorted desc)
+			return {
+				...image,
+				latestVersion:
+					image.versions && image.versions.length > 0
+						? image.versions[0]
+						: null,
+			}
+		})
+
+		project = {
+			...project,
+			images: transformedImages,
+		}
+
 		res.status(200).json(project)
 	} catch (error) {
 		res.status(500).json({ message: "Error fetching project", error })

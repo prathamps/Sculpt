@@ -12,6 +12,20 @@ router.get("/:id", imageController.getImage)
 router.put("/:id", imageController.updateImage)
 router.delete("/:id", imageController.deleteImage)
 
+// Version routes
+router.get("/versions/:versionId", imageController.getImageVersion)
+router.post(
+	"/:imageId/versions",
+	upload.single("image"),
+	imageController.uploadImageVersion
+)
+router.put("/versions/:versionId", imageController.updateImageVersion)
+router.delete("/versions/:versionId", imageController.deleteImageVersion)
+
+// Comment routes
+router.get("/versions/:imageVersionId/comments", imageController.getComments)
+router.post("/versions/:imageVersionId/comments", imageController.addComment)
+
 // The following routes were originally in projects.routes.ts
 // They are now moved here and will be mounted under /api/projects
 const projectImagesRouter = Router({ mergeParams: true })

@@ -31,7 +31,16 @@ export const getProjectsForUser = async (
 			},
 		},
 		include: {
-			images: true, // include images for the dashboard cards
+			images: {
+				include: {
+					versions: {
+						orderBy: {
+							versionNumber: "desc",
+						},
+						take: 1,
+					},
+				},
+			},
 			members: {
 				include: {
 					user: {
@@ -61,7 +70,15 @@ export const getProjectById = async (
 			},
 		},
 		include: {
-			images: true,
+			images: {
+				include: {
+					versions: {
+						orderBy: {
+							versionNumber: "desc",
+						},
+					},
+				},
+			},
 			members: {
 				include: {
 					user: true,

@@ -15,7 +15,20 @@ import { Label } from "@/components/ui/label"
 import { Project, ProjectMember } from "@/types"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { useAuth } from "@/context/AuthContext"
-import { Trash2, Link2, Plus, ClipboardCopy, Check } from "lucide-react"
+import {
+	Trash2,
+	Link2,
+	Plus,
+	ClipboardCopy,
+	Check,
+	UserPlus,
+	ExternalLink,
+	Loader2,
+	Shield,
+	ShieldCheck,
+	ShieldX,
+	BadgeAlert,
+} from "lucide-react"
 import {
 	Select,
 	SelectContent,
@@ -23,6 +36,14 @@ import {
 	SelectTrigger,
 	SelectValue,
 } from "@/components/ui/select"
+import {
+	Tooltip,
+	TooltipContent,
+	TooltipProvider,
+	TooltipTrigger,
+} from "@/components/ui/tooltip"
+import { Separator } from "@/components/ui/separator"
+import { cn } from "@/lib/utils"
 
 interface MembersModalProps {
 	isOpen: boolean
@@ -50,16 +71,25 @@ export function MembersModal({
 	const [shareLinks, setShareLinks] = useState<ShareLink[]>([])
 	const [newLinkRole, setNewLinkRole] = useState<"EDITOR" | "VIEWER">("EDITOR")
 	const [copiedToken, setCopiedToken] = useState<string | null>(null)
+	const [isLoadingLinks, setIsLoadingLinks] = useState(false)
+	const [isCreatingLink, setIsCreatingLink] = useState(false)
 
 	useEffect(() => {
 		if (project && isOpen) {
 			const fetchShareLinks = async () => {
-				const res = await fetch(
-					`http://localhost:3001/api/projects/${project.id}/share-links`,
-					{ credentials: "include" }
-				)
-				if (res.ok) {
-					setShareLinks(await res.json())
+				setIsLoadingLinks(true)
+				try {
+					const res = await fetch(
+						`http://localhost:3001/api/projects/${project.id}/share-links`,
+						{ credentials: "include" }
+					)
+					if (res.ok) {
+						setShareLinks(await res.json())
+					}
+				} catch (error) {
+					console.error("Failed to fetch share links:", error)
+				} finally {
+					setIsLoadingLinks(false)
 				}
 			}
 			fetchShareLinks()
@@ -147,6 +177,7 @@ export function MembersModal({
 	}
 
 	const handleCreateShareLink = async () => {
+		setIsCreatingLink(true)
 		try {
 			const res = await fetch(
 				`http://localhost:3001/api/projects/${project.id}/share-links`,
@@ -165,33 +196,58 @@ export function MembersModal({
 			}
 		} catch (error) {
 			alert("An error occurred while creating the share link.")
+		} finally {
+			setIsCreatingLink(false)
+		}
+	}
+
+	const getRoleIcon = (role: string) => {
+		switch (role) {
+			case "OWNER":
+				return <ShieldCheck className="h-3.5 w-3.5 text-amber-500" />
+			case "EDITOR":
+				return <Shield className="h-3.5 w-3.5 text-blue-500" />
+			case "VIEWER":
+				return <ShieldX className="h-3.5 w-3.5 text-gray-500" />
+			default:
+				return <BadgeAlert className="h-3.5 w-3.5" />
 		}
 	}
 
 	return (
-		<Dialog open={isOpen} onOpenChange={onClose}>
-			<DialogContent className="sm:max-w-[425px] bg-gray-900 text-white border-gray-800">
+		<Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
+			<DialogContent className="sm:max-w-[480px]">
 				<DialogHeader>
-					<DialogTitle>Manage Members</DialogTitle>
+					<DialogTitle className="text-xl font-semibold">
+						Manage Members
+					</DialogTitle>
 					<DialogDescription>
-						View members and invite new ones to collaborate on &quot;
-						{project.name}&quot;.
+						Manage members and create sharing links for &quot;{project.name}
+						&quot;
 					</DialogDescription>
 				</DialogHeader>
 
 				{/* Members List */}
-				<div className="space-y-4 py-4">
-					<h3 className="text-lg font-semibold">Current Members</h3>
-					<div className="space-y-3">
+				<div className="space-y-3 pt-2">
+					<div className="flex items-center justify-between">
+						<h3 className="text-sm font-medium text-muted-foreground">
+							PROJECT MEMBERS
+						</h3>
+						<span className="text-xs text-muted-foreground">
+							{project.members.length} members
+						</span>
+					</div>
+
+					<div className="divide-y divide-border/30 rounded-md border border-border/50 overflow-hidden">
 						{project.members.map((member) => (
 							<div
 								key={member.user.id}
-								className="flex items-center justify-between"
+								className="flex items-center justify-between px-3 py-2.5 bg-card/50"
 							>
-								<div className="flex items-center gap-3">
-									<Avatar>
+								<div className="flex items-center gap-2.5">
+									<Avatar className="h-8 w-8">
 										<AvatarImage
-											src={`https://api.dicebear.com/8.x/lorelei/svg?seed=${member.user.email}`}
+											src={`https://api.dicebear.com/7.x/micah/svg?seed=${member.user.email}`}
 											alt={member.user.name ?? member.user.email}
 										/>
 										<AvatarFallback>
@@ -200,21 +256,37 @@ export function MembersModal({
 										</AvatarFallback>
 									</Avatar>
 									<div>
-										<p className="font-semibold">{member.user.name}</p>
-										<p className="text-sm text-gray-400">{member.user.email}</p>
+										<p className="text-sm font-medium">
+											{member.user.name || "Unnamed user"}
+										</p>
+										<p className="text-xs text-muted-foreground">
+											{member.user.email}
+										</p>
 									</div>
 								</div>
 								<div className="flex items-center gap-2">
-									<span className="text-sm text-gray-500">{member.role}</span>
+									<div className="flex items-center gap-1 rounded-full bg-muted/50 px-2 py-0.5 text-xs">
+										{getRoleIcon(member.role)}
+										<span>{member.role}</span>
+									</div>
 									{amIOwner && member.role !== "OWNER" && (
-										<Button
-											variant="ghost"
-											size="icon"
-											onClick={() => handleRemoveMember(member.user.id)}
-											className="text-gray-500 hover:text-red-500"
-										>
-											<Trash2 className="h-4 w-4" />
-										</Button>
+										<TooltipProvider>
+											<Tooltip>
+												<TooltipTrigger asChild>
+													<Button
+														variant="ghost"
+														size="icon"
+														onClick={() => handleRemoveMember(member.user.id)}
+														className="h-7 w-7 text-muted-foreground hover:text-destructive"
+													>
+														<Trash2 className="h-3.5 w-3.5" />
+													</Button>
+												</TooltipTrigger>
+												<TooltipContent side="left">
+													<p className="text-xs">Remove member</p>
+												</TooltipContent>
+											</Tooltip>
+										</TooltipProvider>
 									)}
 								</div>
 							</div>
@@ -225,93 +297,213 @@ export function MembersModal({
 				{/* Invite Form */}
 				{amIOwner && (
 					<>
-						<form onSubmit={handleInvite} className="mt-6">
-							<div className="space-y-2">
-								<Label htmlFor="email">Invite by email</Label>
+						<div className="space-y-3 pt-2">
+							<div className="flex items-center justify-between">
+								<h3 className="text-sm font-medium text-muted-foreground">
+									INVITE MEMBERS
+								</h3>
+							</div>
+
+							<form onSubmit={handleInvite} className="space-y-2">
 								<div className="flex gap-2">
-									<Input
-										id="email"
-										type="email"
-										placeholder="person@example.com"
-										value={email}
-										onChange={(e) => setEmail(e.target.value)}
-										required
-										className="bg-gray-800 border-gray-700"
-									/>
-									<Button type="submit" disabled={isInviting}>
-										{isInviting ? "Inviting..." : "Invite"}
+									<div className="relative flex-1">
+										<Input
+											id="email"
+											type="email"
+											placeholder="Enter email address"
+											value={email}
+											onChange={(e) => setEmail(e.target.value)}
+											required
+											className="pr-8"
+										/>
+										<UserPlus className="absolute right-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+									</div>
+									<Button
+										type="submit"
+										disabled={isInviting || !email}
+										size="sm"
+										className="h-9"
+									>
+										{isInviting ? (
+											<>
+												<Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />
+												Inviting
+											</>
+										) : (
+											"Invite"
+										)}
 									</Button>
 								</div>
-								{error && <p className="text-sm text-red-500">{error}</p>}
-							</div>
-						</form>
+								{error && <p className="text-xs text-destructive">{error}</p>}
+							</form>
+						</div>
 
-						<div className="mt-6">
-							<h3 className="text-lg font-semibold">Shareable Links</h3>
-							<div className="space-y-3 mt-3">
-								{shareLinks.map((link) => (
-									<div
-										key={link.id}
-										className="flex items-center justify-between p-2 rounded-md bg-gray-800"
-									>
-										<div className="flex flex-col">
-											<span className="text-sm font-medium text-white">
-												Anyone with this link can be a {link.role}
-											</span>
-											<span className="text-xs text-gray-400 truncate">
-												{`${window.location.origin}/join/${link.token}`}
-											</span>
-										</div>
-										<div className="flex items-center gap-1">
-											<Button
-												variant="ghost"
-												size="icon"
-												onClick={() => handleCopy(link.token)}
-											>
-												{copiedToken === link.token ? (
-													<Check className="h-4 w-4 text-green-500" />
-												) : (
-													<ClipboardCopy className="h-4 w-4" />
-												)}
-											</Button>
-											<Button
-												variant="ghost"
-												size="icon"
-												onClick={() => handleRevokeLink(link.id)}
-												className="text-gray-500 hover:text-red-500"
-											>
-												<Trash2 className="h-4 w-4" />
-											</Button>
-										</div>
+						<Separator className="my-1" />
+
+						<div className="space-y-3 pt-2">
+							<div className="flex items-center justify-between">
+								<h3 className="text-sm font-medium text-muted-foreground">
+									SHARE LINKS
+								</h3>
+								<span className="text-xs text-muted-foreground">
+									{shareLinks.length}{" "}
+									{shareLinks.length === 1 ? "link" : "links"}
+								</span>
+							</div>
+
+							{isLoadingLinks ? (
+								<div className="flex items-center justify-center py-6">
+									<Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+								</div>
+							) : (
+								<>
+									<div className="space-y-2">
+										{shareLinks.length > 0 ? (
+											shareLinks.map((link) => (
+												<div
+													key={link.id}
+													className="flex items-center justify-between rounded-md border border-border/50 bg-card/50 p-2.5"
+												>
+													<div className="flex items-center gap-2">
+														<div className="flex h-8 w-8 items-center justify-center rounded-full bg-primary/10">
+															<Link2 className="h-4 w-4 text-primary" />
+														</div>
+														<div className="flex flex-col">
+															<div className="flex items-center gap-1.5">
+																<span className="text-sm font-medium">
+																	{link.role === "EDITOR"
+																		? "Editor access"
+																		: "Viewer access"}
+																</span>
+																{getRoleIcon(link.role)}
+															</div>
+															<div className="flex items-center gap-1 text-xs text-muted-foreground">
+																<ExternalLink className="h-3 w-3" />
+																<span className="truncate max-w-[200px]">
+																	{`${window.location.origin}/join/${link.token}`}
+																</span>
+															</div>
+														</div>
+													</div>
+													<div className="flex items-center gap-1">
+														<TooltipProvider>
+															<Tooltip>
+																<TooltipTrigger asChild>
+																	<Button
+																		variant="ghost"
+																		size="icon"
+																		onClick={() => handleCopy(link.token)}
+																		className={cn(
+																			"h-7 w-7",
+																			copiedToken === link.token
+																				? "text-green-500"
+																				: "text-muted-foreground"
+																		)}
+																	>
+																		{copiedToken === link.token ? (
+																			<Check className="h-3.5 w-3.5" />
+																		) : (
+																			<ClipboardCopy className="h-3.5 w-3.5" />
+																		)}
+																	</Button>
+																</TooltipTrigger>
+																<TooltipContent side="bottom">
+																	<p className="text-xs">
+																		{copiedToken === link.token
+																			? "Copied!"
+																			: "Copy link"}
+																	</p>
+																</TooltipContent>
+															</Tooltip>
+														</TooltipProvider>
+
+														<TooltipProvider>
+															<Tooltip>
+																<TooltipTrigger asChild>
+																	<Button
+																		variant="ghost"
+																		size="icon"
+																		onClick={() => handleRevokeLink(link.id)}
+																		className="h-7 w-7 text-muted-foreground hover:text-destructive"
+																	>
+																		<Trash2 className="h-3.5 w-3.5" />
+																	</Button>
+																</TooltipTrigger>
+																<TooltipContent side="bottom">
+																	<p className="text-xs">Revoke link</p>
+																</TooltipContent>
+															</Tooltip>
+														</TooltipProvider>
+													</div>
+												</div>
+											))
+										) : (
+											<div className="flex flex-col items-center justify-center rounded-md border border-dashed border-border/50 py-6">
+												<Link2 className="mb-2 h-8 w-8 text-muted-foreground" />
+												<p className="text-sm font-medium">
+													No share links created yet
+												</p>
+												<p className="text-xs text-muted-foreground">
+													Create a link to share with others
+												</p>
+											</div>
+										)}
 									</div>
-								))}
-							</div>
-							<div className="flex gap-2 mt-4">
-								<Select
-									value={newLinkRole}
-									onValueChange={(value: "EDITOR" | "VIEWER") =>
-										setNewLinkRole(value)
-									}
-								>
-									<SelectTrigger className="w-[120px] bg-gray-800 border-gray-700">
-										<SelectValue placeholder="Role" />
-									</SelectTrigger>
-									<SelectContent className="bg-gray-800 text-white">
-										<SelectItem value="EDITOR">Editor</SelectItem>
-										<SelectItem value="VIEWER">Viewer</SelectItem>
-									</SelectContent>
-								</Select>
-								<Button onClick={handleCreateShareLink}>
-									<Plus className="h-4 w-4 mr-2" />
-									Create Link
-								</Button>
-							</div>
+
+									<div className="flex gap-2">
+										<Select
+											value={newLinkRole}
+											onValueChange={(value: "EDITOR" | "VIEWER") =>
+												setNewLinkRole(value)
+											}
+										>
+											<SelectTrigger className="h-9 w-[120px]">
+												<SelectValue placeholder="Role" />
+											</SelectTrigger>
+											<SelectContent>
+												<SelectItem
+													value="EDITOR"
+													className="flex items-center gap-1.5"
+												>
+													<Shield className="h-3.5 w-3.5 text-blue-500" />
+													<span>Editor</span>
+												</SelectItem>
+												<SelectItem
+													value="VIEWER"
+													className="flex items-center gap-1.5"
+												>
+													<ShieldX className="h-3.5 w-3.5 text-gray-500" />
+													<span>Viewer</span>
+												</SelectItem>
+											</SelectContent>
+										</Select>
+										<Button
+											onClick={handleCreateShareLink}
+											disabled={isCreatingLink}
+											size="sm"
+											className="h-9"
+										>
+											{isCreatingLink ? (
+												<>
+													<Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />
+													Creating
+												</>
+											) : (
+												<>
+													<Plus className="mr-2 h-3.5 w-3.5" />
+													Create Link
+												</>
+											)}
+										</Button>
+									</div>
+								</>
+							)}
 						</div>
 					</>
 				)}
 
 				<DialogFooter>
-					<Button onClick={onClose} variant="secondary">
+					<Button onClick={onClose} variant="secondary" size="sm">
 						Close
 					</Button>
 				</DialogFooter>
