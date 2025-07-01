@@ -17,6 +17,8 @@ enum UserRole {
 enum ProjectRole {
   OWNER
   MEMBER
+  EDITOR
+  VIEWER
 }
 
 enum Plan {
@@ -25,50 +27,52 @@ enum Plan {
 }
 
 model User {
-  id            String           @id @default(cuid())
-  email         String           @unique
+  id            String          @id @default(cuid())
+  email         String          @unique
   name          String?
   password      String
-  role          UserRole         @default(USER)
+  role          UserRole        @default(USER)
   memberships   ProjectMember[]
   notifications Notification[]
   messages      Message[]
-  createdAt     DateTime         @default(now())
-  updatedAt     DateTime         @updatedAt
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
   subscription  Subscription?
 }
 
 model Project {
-  id        String          @id @default(cuid())
-  name      String
-  members   ProjectMember[]
-  images    Image[]
-  messages  Message[]
-  createdAt DateTime        @default(now())
-  updatedAt DateTime        @updatedAt
+  id         String          @id @default(cuid())
+  name       String
+  members    ProjectMember[]
+  images     Image[]
+  messages   Message[]
+  shareLinks ShareLink[]
+  createdAt  DateTime        @default(now())
+  updatedAt  DateTime        @updatedAt
 }
 
 model ProjectMember {
   id        String      @id @default(cuid())
   projectId String
-  project   Project     @relation(fields: [projectId], references: [id])
+  project   Project     @relation(fields: [projectId], references: [id], onDelete: Cascade)
   userId    String
   user      User        @relation(fields: [userId], references: [id])
   role      ProjectRole
   createdAt DateTime    @default(now())
+  updatedAt DateTime    @updatedAt
 
   @@unique([projectId, userId])
 }
 
 model Image {
-  id        String   @id @default(cuid())
-  url       String
-  name      String
-  projectId String
-  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  id          String   @id @default(cuid())
+  url         String
+  name        String
+  projectId   String
+  project     Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
   annotations Json[]
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 }
 
 model Message {
@@ -96,7 +100,16 @@ model Subscription {
   user             User     @relation(fields: [userId], references: [id])
   plan             Plan     @default(FREE)
   stripeCustomerId String?
-  status           String   // e.g., 'active', 'canceled'
+  status           String // e.g., 'active', 'canceled'
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
+}
+
+model ShareLink {
+  id        String      @id @default(cuid())
+  token     String      @unique
+  projectId String
+  project   Project     @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  role      ProjectRole
+  createdAt DateTime    @default(now())
 }

@@ -3,59 +3,67 @@
 import { useState } from "react"
 import Image from "next/image"
 import Link from "next/link"
+import { Button } from "@/components/ui/button"
+import { ChevronRight, Menu, X, Globe, Users, Zap } from "lucide-react"
 
 const Header = () => {
 	const [menuOpen, setMenuOpen] = useState(false)
 
 	return (
-		<header className="flex justify-between items-center p-5 bg-[#1e1e1e]">
-			<div className="flex items-center space-x-2">
-				<Image src="/logo.png" alt="Sculpt Logo" width={25} height={25} />
-				<span className="text-2xl font-bold">Sculpt</span>
+		<header className="sticky top-0 z-50 flex h-16 items-center justify-between border-b border-border/10 bg-background/80 px-4 backdrop-blur-sm md:px-6">
+			<div className="flex items-center gap-2">
+				<Image src="/logo.png" alt="Sculpt Logo" width={32} height={32} />
+				<span className="text-xl font-semibold">Sculpt</span>
 			</div>
 			<nav>
 				<button
-					className="md:hidden text-2xl"
+					className="flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground hover:bg-secondary md:hidden"
 					onClick={() => setMenuOpen(!menuOpen)}
 					aria-label="Toggle navigation menu"
 				>
-					☰
+					{menuOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
 				</button>
 				<ul
-					className={`absolute md:relative top-16 left-0 md:top-auto md:left-auto w-full md:w-auto bg-[#1e1e1e] md:bg-transparent flex-col md:flex-row md:flex items-center space-y-4 md:space-y-0 md:space-x-4 p-5 md:p-0 ${
+					className={`fixed inset-x-0 top-16 z-50 flex-col border-b border-border/10 bg-background/95 px-4 pb-6 pt-4 backdrop-blur-sm transition-all md:static md:inset-auto md:z-auto md:flex md:flex-row md:items-center md:gap-6 md:border-0 md:bg-transparent md:p-0 md:backdrop-blur-none ${
 						menuOpen ? "flex" : "hidden"
 					}`}
 				>
-					<li>
-						<Link href="#product" className="hover:text-[#a45945]">
+					<li className="py-2 md:py-0">
+						<Link
+							href="#product"
+							className="text-sm text-foreground/80 transition-colors hover:text-primary"
+							onClick={() => setMenuOpen(false)}
+						>
 							Product
 						</Link>
 					</li>
-					<li>
-						<Link href="#features" className="hover:text-[#a45945]">
-							Key Features
+					<li className="py-2 md:py-0">
+						<Link
+							href="#features"
+							className="text-sm text-foreground/80 transition-colors hover:text-primary"
+							onClick={() => setMenuOpen(false)}
+						>
+							Features
 						</Link>
 					</li>
-					<li>
-						<Link href="#resources" className="hover:text-[#a45945]">
+					<li className="py-2 md:py-0">
+						<Link
+							href="#resources"
+							className="text-sm text-foreground/80 transition-colors hover:text-primary"
+							onClick={() => setMenuOpen(false)}
+						>
 							Resources
 						</Link>
 					</li>
-					<li>
-						<Link
-							href="/login"
-							className="px-4 py-2 rounded-md hover:bg-[#a45945]"
-						>
-							Sign In
-						</Link>
-					</li>
-					<li>
-						<Link
-							href="/register"
-							className="px-4 py-2 rounded-md hover:bg-[#a45945]"
-						>
-							Sign Up
-						</Link>
+					<li className="mt-4 md:mt-0">
+						<div className="flex flex-col gap-2 md:flex-row">
+							<Button asChild variant="outline" size="sm">
+								<Link href="/login">Sign In</Link>
+							</Button>
+							<Button asChild size="sm">
+								<Link href="/register">Sign Up</Link>
+							</Button>
+						</div>
 					</li>
 				</ul>
 			</nav>
@@ -66,144 +74,198 @@ const Header = () => {
 const Hero = () => (
 	<section
 		id="product"
-		className="flex flex-col items-center text-center py-32 px-5"
+		className="relative mx-auto max-w-6xl px-4 py-20 md:py-32"
 	>
-		<h1 className="text-5xl font-bold mb-5 bg-gradient-to-r from-[#a45945] to-[#ff9a76] text-transparent bg-clip-text">
-			Collaborate Like Never Before
-		</h1>
-		<p className="text-lg text-gray-400 mb-5">
-			Your go-to platform for seamless media collaboration and real-time
-			feedback.
-		</p>
-		<div className="flex gap-4">
-			<Link
-				href="/register"
-				className="bg-[#a45945] text-white px-6 py-3 rounded-md font-bold hover:bg-[#871f1f] transition-colors"
-			>
-				Start Free Trial
-			</Link>
+		<div className="mx-auto max-w-3xl text-center">
+			<h1 className="mb-6 text-4xl font-bold tracking-tight md:text-5xl lg:text-6xl">
+				Collaborate on images <span className="text-primary">seamlessly</span>
+			</h1>
+			<p className="mb-8 text-lg text-muted-foreground">
+				Your powerful platform for real-time image collaboration and feedback.
+				Streamline your workflow with intuitive tools.
+			</p>
+			<div className="flex flex-col justify-center gap-4 sm:flex-row">
+				<Button asChild size="lg">
+					<Link href="/register">
+						Get Started <ChevronRight className="ml-1 h-4 w-4" />
+					</Link>
+				</Button>
+				<Button asChild variant="outline" size="lg">
+					<Link href="#features">Learn More</Link>
+				</Button>
+			</div>
 		</div>
-		<div className="mt-10">
+		<div className="relative mx-auto mt-12 max-w-5xl overflow-hidden rounded-xl border border-border/40 bg-card/30 shadow-xl">
 			<Image
 				src="/herobanner.jpg"
-				alt="Hero Image"
-				width={800}
-				height={400}
-				className="rounded-lg"
+				alt="Sculpt Platform Preview"
+				width={1200}
+				height={600}
+				className="w-full"
 			/>
+			<div className="absolute inset-0 rounded-xl ring-1 ring-inset ring-white/10" />
 		</div>
 	</section>
 )
 
 const FeatureCard = ({
-	imgSrc,
+	icon: Icon,
 	title,
 	description,
 }: {
-	imgSrc: string
+	icon: React.ElementType
 	title: string
 	description: string
 }) => (
-	<div className="bg-[#1e1e1e] rounded-lg p-5 flex items-center gap-5 w-full max-w-3xl transform hover:scale-105 transition-transform">
-		<Image
-			src={imgSrc}
-			alt={title}
-			width={80}
-			height={80}
-			className="rounded-lg"
-		/>
-		<div>
-			<h3 className="text-xl font-bold mb-1">{title}</h3>
-			<p className="text-gray-400">{description}</p>
+	<div className="flex flex-col rounded-lg border border-border/40 bg-card/30 p-6 transition-all hover:bg-card/50 hover:shadow-md">
+		<div className="mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-primary/10 text-primary">
+			<Icon className="h-6 w-6" />
 		</div>
+		<h3 className="mb-2 text-xl font-medium">{title}</h3>
+		<p className="text-muted-foreground">{description}</p>
 	</div>
 )
 
 const Features = () => (
-	<section id="features" className="flex flex-col items-center py-20 px-5">
-		<h2 className="text-4xl font-bold mb-10 bg-gradient-to-r from-[#a45945] to-[#ff9a76] text-transparent bg-clip-text">
-			Our Key Features
-		</h2>
-		<div className="flex flex-col gap-8">
-			<FeatureCard
-				imgSrc="/remote.jpg"
-				title="Real-time Feedback"
-				description="Receive instant comments and notes to enhance your projects efficiently."
-			/>
-			<FeatureCard
-				imgSrc="/collaboration.jpg"
-				title="Enhanced Collaboration"
-				description="Work with your team from anywhere, sharing files and tracking changes seamlessly."
-			/>
-			<FeatureCard
-				imgSrc="/analytics.jpg"
-				title="Streamlined Workflow"
-				description="Automate repetitive tasks and streamline your team's workflow for maximum productivity."
-			/>
+	<section id="features" className="bg-secondary/20 px-4 py-20">
+		<div className="mx-auto max-w-6xl">
+			<div className="mb-12 text-center">
+				<h2 className="mb-3 text-3xl font-semibold md:text-4xl">
+					Powerful Features
+				</h2>
+				<p className="mx-auto max-w-2xl text-muted-foreground">
+					Everything you need to collaborate effectively on visual projects
+				</p>
+			</div>
+
+			<div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
+				<FeatureCard
+					icon={Globe}
+					title="Real-time Collaboration"
+					description="Work together with your team in real-time, no matter where they are located. See changes instantly."
+				/>
+				<FeatureCard
+					icon={Users}
+					title="Team Management"
+					description="Easily manage project access and permissions. Invite members with just a few clicks."
+				/>
+				<FeatureCard
+					icon={Zap}
+					title="Streamlined Workflow"
+					description="Intuitive tools that reduce friction and help your team focus on what matters most."
+				/>
+			</div>
 		</div>
 	</section>
 )
 
 const Footer = () => (
-	<footer id="resources" className="bg-[#111] text-gray-400 py-10">
-		<div className="max-w-6xl mx-auto px-5">
-			<div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-				<div className="flex items-center">
-					<Image src="/logo.png" alt="Sculpt Logo" width={35} height={35} />
-					<span className="text-xl font-bold ml-2 text-[#a45945]">Sculpt</span>
+	<footer
+		id="resources"
+		className="border-t border-border/20 bg-card/20 px-4 py-12 text-muted-foreground"
+	>
+		<div className="mx-auto max-w-6xl">
+			<div className="grid grid-cols-1 gap-8 md:grid-cols-4">
+				<div className="md:col-span-1">
+					<div className="flex items-center gap-2">
+						<Image src="/logo.png" alt="Sculpt Logo" width={32} height={32} />
+						<span className="text-xl font-semibold text-foreground">
+							Sculpt
+						</span>
+					</div>
+					<p className="mt-2 text-sm">
+						Empowering teams with visual collaboration tools.
+					</p>
 				</div>
-				<div className="grid grid-cols-2 gap-8">
+				<div className="grid grid-cols-2 gap-8 md:col-span-3 md:grid-cols-3">
 					<div>
-						<h4 className="font-bold text-[#a45945] mb-4">Features</h4>
-						<ul>
+						<h4 className="font-medium text-foreground">Product</h4>
+						<ul className="mt-4 space-y-2 text-sm">
 							<li>
-								<Link href="#product" className="hover:text-[#a45945]">
-									Product
+								<Link
+									href="#product"
+									className="transition-colors hover:text-primary"
+								>
+									Overview
 								</Link>
 							</li>
 							<li>
-								<Link href="#features" className="hover:text-[#a45945]">
-									Key Features
+								<Link
+									href="#features"
+									className="transition-colors hover:text-primary"
+								>
+									Features
 								</Link>
 							</li>
 							<li>
-								<Link href="#resources" className="hover:text-[#a45945]">
-									Resources
+								<Link href="#" className="transition-colors hover:text-primary">
+									Pricing
 								</Link>
 							</li>
 						</ul>
 					</div>
 					<div>
-						<h4 className="font-bold text-[#a45945] mb-4">Company</h4>
-						<ul>
+						<h4 className="font-medium text-foreground">Resources</h4>
+						<ul className="mt-4 space-y-2 text-sm">
 							<li>
-								<Link href="/login" className="hover:text-[#a45945]">
-									Start Working
+								<Link href="#" className="transition-colors hover:text-primary">
+									Documentation
 								</Link>
 							</li>
 							<li>
-								<Link href="/register" className="hover:text-[#a45945]">
-									Join Us
+								<Link href="#" className="transition-colors hover:text-primary">
+									Guides
 								</Link>
 							</li>
 							<li>
-								<Link href="#" className="hover:text-[#a45945]">
-									Contact Us
+								<Link href="#" className="transition-colors hover:text-primary">
+									Support
+								</Link>
+							</li>
+						</ul>
+					</div>
+					<div>
+						<h4 className="font-medium text-foreground">Company</h4>
+						<ul className="mt-4 space-y-2 text-sm">
+							<li>
+								<Link href="#" className="transition-colors hover:text-primary">
+									About
+								</Link>
+							</li>
+							<li>
+								<Link
+									href="/login"
+									className="transition-colors hover:text-primary"
+								>
+									Sign In
+								</Link>
+							</li>
+							<li>
+								<Link
+									href="/register"
+									className="transition-colors hover:text-primary"
+								>
+									Sign Up
 								</Link>
 							</li>
 						</ul>
 					</div>
 				</div>
 			</div>
-			<div className="flex justify-between items-center mt-10 border-t border-gray-800 pt-5 text-sm">
-				<p>&copy; 2024 Sculpt. All rights reserved.</p>
-				<div className="flex space-x-4">
-					<Link href="#" className="hover:text-[#a45945]">
-						Terms
-					</Link>
-					<Link href="#" className="hover:text-[#a45945]">
-						Privacy
-					</Link>
+			<div className="mt-12 border-t border-border/20 pt-6 text-sm">
+				<div className="flex flex-col justify-between gap-6 md:flex-row">
+					<p>&copy; {new Date().getFullYear()} Sculpt. All rights reserved.</p>
+					<div className="flex gap-6">
+						<Link href="#" className="transition-colors hover:text-primary">
+							Terms
+						</Link>
+						<Link href="#" className="transition-colors hover:text-primary">
+							Privacy
+						</Link>
+						<Link href="#" className="transition-colors hover:text-primary">
+							Cookies
+						</Link>
+					</div>
 				</div>
 			</div>
 		</div>
@@ -212,7 +274,7 @@ const Footer = () => (
 
 export default function Home() {
 	return (
-		<main className="bg-[#121212] text-white">
+		<main className="min-h-screen bg-background text-foreground">
 			<Header />
 			<Hero />
 			<Features />

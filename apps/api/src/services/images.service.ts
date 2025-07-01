@@ -1,5 +1,7 @@
 import { prisma } from "../lib/prisma"
 import { Image } from "@prisma/client"
+import fs from "fs/promises"
+import path from "path"
 
 interface ImagePayload {
 	url: string
@@ -45,5 +47,28 @@ export const getImageById = async (id: string): Promise<Image | null> => {
 		where: {
 			id,
 		},
+	})
+}
+
+export const deleteImage = async (id: string): Promise<void> => {
+	const image = await prisma.image.findUnique({ where: { id } })
+	if (image) {
+		await prisma.image.delete({ where: { id } })
+		const filePath = path.join(process.cwd(), "..", "..", image.url)
+		try {
+			await fs.unlink(filePath)
+		} catch (error) {
+			console.error(`Failed to delete file: ${filePath}`, error)
+		}
+	}
+}
+
+export const updateImage = async (
+	id: string,
+	data: { name?: string }
+): Promise<Image> => {
+	return prisma.image.update({
+		where: { id },
+		data,
 	})
 }

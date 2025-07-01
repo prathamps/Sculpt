@@ -39,7 +39,7 @@ export default function ProjectFileViewPage() {
 	const [history, setHistory] = useState<Annotation[][]>([[]])
 	const [historyIndex, setHistoryIndex] = useState(0)
 
-	const imageId = params.projectId as string
+	const imageId = params.imageId as string
 
 	const handleAddAnnotation = (newAnnotation: Omit<Annotation, "id">) => {
 		setAnnotations((prev) => {

@@ -6,7 +6,8 @@ import cookieParser from "cookie-parser"
 import authRoutes from "./routes/auth.routes"
 import userRoutes from "./routes/users.routes"
 import projectRoutes from "./routes/projects.routes"
-import imagesRoutes from "./routes/images.routes"
+import { imageRouter } from "./routes/images.routes"
+import shareRoutes from "./routes/share.routes"
 import path from "path"
 
 dotenv.config()
@@ -29,7 +30,8 @@ app.use("/uploads", express.static(path.join(__dirname, "../uploads")))
 app.use("/api/auth", authRoutes)
 app.use("/api/users", userRoutes)
 app.use("/api/projects", projectRoutes)
-app.use("/api/images", imagesRoutes)
+app.use("/api/images", imageRouter)
+app.use("/api/share", shareRoutes)
 
 const port = process.env.PORT || 3001
 

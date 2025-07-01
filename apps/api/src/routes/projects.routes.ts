@@ -1,8 +1,7 @@
 import { Router } from "express"
 import * as projectController from "../controllers/projects.controller"
-import * as imageController from "../controllers/images.controller"
 import { authenticateJWT } from "../middleware/auth.middleware"
-import { upload } from "../middleware/upload.middleware"
+import { projectImagesRouter } from "./images.routes"
 
 const router = Router()
 
@@ -11,13 +10,23 @@ router.use(authenticateJWT)
 router.post("/", projectController.createProject)
 router.get("/", projectController.getProjects)
 router.get("/:id", projectController.getProject)
+router.put("/:id", projectController.updateProject)
+router.delete("/:id", projectController.deleteProject)
 router.post("/:id/invite", projectController.inviteToProject)
-
-router.post(
-	"/:projectId/images",
-	upload.array("images", 10),
-	imageController.uploadImage
+router.delete(
+	"/:projectId/members/:userId",
+	projectController.removeMemberFromProject
 )
-router.get("/:projectId/images", imageController.getProjectImages)
+
+// Share links
+router.post("/:projectId/share-links", projectController.createShareLink)
+router.get("/:projectId/share-links", projectController.getShareLinks)
+router.delete(
+	"/:projectId/share-links/:linkId",
+	projectController.revokeShareLink
+)
+
+// Mount the project-specific image routes
+router.use("/:projectId/images", projectImagesRouter)
 
 export default router

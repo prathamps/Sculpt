@@ -14,9 +14,10 @@ import { Button } from "./ui/button"
 import { Input } from "./ui/input"
 import { Label } from "./ui/label"
 import { Plus } from "lucide-react"
+import { Project } from "@/types"
 
 interface CreateProjectModalProps {
-	onProjectCreated: () => void
+	onProjectCreated: (project: Project) => void
 	isOpen: boolean
 	setIsOpen: (isOpen: boolean) => void
 }
@@ -44,7 +45,8 @@ export function CreateProjectModal({
 		})
 
 		if (res.ok) {
-			onProjectCreated()
+			const newProject = await res.json()
+			onProjectCreated(newProject)
 			setIsOpen(false)
 			setProjectName("")
 		} else {
