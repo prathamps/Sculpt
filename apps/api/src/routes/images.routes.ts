@@ -27,6 +27,10 @@ router.get("/versions/:imageVersionId/comments", imageController.getComments)
 router.post("/versions/:imageVersionId/comments", imageController.addComment)
 router.delete("/comments/:commentId", imageController.deleteComment)
 router.post("/comments/:commentId/like", imageController.toggleLikeComment)
+router.post(
+	"/comments/:commentId/resolve",
+	imageController.toggleResolveComment
+)
 
 // The following routes were originally in projects.routes.ts
 // They are now moved here and will be mounted under /api/projects

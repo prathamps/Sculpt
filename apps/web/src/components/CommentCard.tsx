@@ -8,6 +8,7 @@ import {
 	CheckCircle2,
 	Trash2,
 	Edit3,
+	Send,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import {
@@ -20,6 +21,7 @@ import {
 import { Comment as CommentType } from "@/types"
 import { formatDistanceToNow } from "date-fns"
 import { useAuth } from "@/context/AuthContext"
+import { Textarea } from "@/components/ui/textarea"
 
 interface CommentCardProps {
 	comment: CommentType
@@ -37,6 +39,9 @@ export function CommentCard({
 	const [isLiking, setIsLiking] = useState(false)
 	const [likeCount, setLikeCount] = useState(comment.likeCount || 0)
 	const [isLiked, setIsLiked] = useState(comment.isLikedByCurrentUser || false)
+	const [isReplying, setIsReplying] = useState(false)
+	const [replyContent, setReplyContent] = useState("")
+	const [isSubmittingReply, setIsSubmittingReply] = useState(false)
 
 	// Format timestamp
 	const timestamp = formatDistanceToNow(new Date(comment.createdAt), {
@@ -48,7 +53,27 @@ export function CommentCard({
 
 	// Handle resolve/unresolve
 	const toggleResolved = async () => {
-		// This functionality can be implemented later
+		try {
+			const res = await fetch(
+				`http://localhost:3001/api/images/comments/${comment.id}/resolve`,
+				{
+					method: "POST",
+					credentials: "include",
+					headers: {
+						"Content-Type": "application/json",
+					},
+				}
+			)
+
+			if (res.ok) {
+				// Notify parent component to refresh comments
+				if (onCommentUpdate) {
+					onCommentUpdate()
+				}
+			}
+		} catch (error) {
+			console.error("Error updating resolved status:", error)
+		}
 	}
 
 	// Handle like
@@ -122,6 +147,41 @@ export function CommentCard({
 		? 1
 		: 0
 
+	// Handle reply submission
+	const submitReply = async () => {
+		if (!replyContent.trim() || isSubmittingReply) return
+
+		setIsSubmittingReply(true)
+		try {
+			const response = await fetch(
+				`http://localhost:3001/api/images/versions/${comment.imageVersionId}/comments`,
+				{
+					method: "POST",
+					credentials: "include",
+					headers: {
+						"Content-Type": "application/json",
+					},
+					body: JSON.stringify({
+						content: replyContent,
+						parentId: comment.id,
+					}),
+				}
+			)
+
+			if (response.ok) {
+				setReplyContent("")
+				setIsReplying(false)
+				if (onCommentUpdate) {
+					onCommentUpdate()
+				}
+			}
+		} catch (error) {
+			console.error("Error submitting reply:", error)
+		} finally {
+			setIsSubmittingReply(false)
+		}
+	}
+
 	return (
 		<div
 			className={cn(
@@ -172,7 +232,13 @@ export function CommentCard({
 										</Button>
 									</DropdownMenuTrigger>
 									<DropdownMenuContent align="end" className="w-48">
-										<DropdownMenuItem className="text-xs">
+										<DropdownMenuItem
+											className="text-xs"
+											onClick={(e) => {
+												e.stopPropagation()
+												toggleResolved()
+											}}
+										>
 											Mark as {comment.resolved ? "unresolved" : "resolved"}
 										</DropdownMenuItem>
 										<DropdownMenuSeparator />
@@ -209,21 +275,72 @@ export function CommentCard({
 									? "text-primary"
 									: "text-muted-foreground hover:text-foreground"
 							)}
-							onClick={handleLike}
+							onClick={(e) => {
+								e.stopPropagation()
+								handleLike()
+							}}
 							disabled={isLiking}
 						>
-							<ThumbsUp className="h-3.5 w-3.5" />
+							<ThumbsUp
+								className={cn("h-3.5 w-3.5", isLiked && "fill-primary")}
+							/>
 							{likeCount > 0 && likeCount} Like{likeCount !== 1 && "s"}
 						</Button>
 						<Button
 							variant="ghost"
 							size="sm"
 							className="h-7 gap-1.5 px-2 text-xs text-muted-foreground hover:text-foreground"
+							onClick={(e) => {
+								e.stopPropagation()
+								setIsReplying(!isReplying)
+							}}
 						>
 							<MessageSquareReply className="h-3.5 w-3.5" />
 							Reply
 						</Button>
 					</div>
+
+					{isReplying && (
+						<div
+							className="mt-2 flex flex-col gap-2"
+							onClick={(e) => e.stopPropagation()}
+						>
+							<Textarea
+								placeholder="Write a reply..."
+								className="min-h-[60px] text-xs"
+								value={replyContent}
+								onChange={(e) => setReplyContent(e.target.value)}
+							/>
+							<div className="flex justify-end gap-2">
+								<Button
+									variant="outline"
+									size="sm"
+									className="h-7 text-xs"
+									onClick={() => setIsReplying(false)}
+								>
+									Cancel
+								</Button>
+								<Button
+									size="sm"
+									className="h-7 text-xs"
+									onClick={submitReply}
+									disabled={!replyContent.trim() || isSubmittingReply}
+								>
+									{isSubmittingReply ? (
+										<>
+											<Send className="mr-1 h-3 w-3 animate-pulse" />
+											Sending...
+										</>
+									) : (
+										<>
+											<Send className="mr-1 h-3 w-3" />
+											Reply
+										</>
+									)}
+								</Button>
+							</div>
+						</div>
+					)}
 				</div>
 			</div>
 			{comment.replies && comment.replies.length > 0 && (

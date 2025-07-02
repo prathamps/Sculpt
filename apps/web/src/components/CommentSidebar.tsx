@@ -127,17 +127,59 @@ export function CommentSidebar({
 				<h3 className="text-sm font-medium">Comments</h3>
 				{isLoading && <Loader2 className="h-4 w-4 animate-spin" />}
 			</div>
+			<div className="flex items-center gap-2 border-b border-border/40 p-3">
+				<div className="relative flex-1">
+					<Search className="absolute left-2 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+					<Input
+						className="h-8 pl-8"
+						placeholder="Search comments..."
+						value={searchQuery}
+						onChange={(e) => setSearchQuery(e.target.value)}
+					/>
+				</div>
+				<DropdownMenu>
+					<DropdownMenuTrigger asChild>
+						<Button variant="outline" size="sm" className="h-8 gap-1">
+							<Filter className="h-3.5 w-3.5" />
+							<span className="capitalize">{filter}</span>
+						</Button>
+					</DropdownMenuTrigger>
+					<DropdownMenuContent align="end" className="w-40">
+						<DropdownMenuRadioGroup
+							value={filter}
+							onValueChange={(value) => setFilter(value as CommentFilter)}
+						>
+							<DropdownMenuRadioItem value="all" className="text-xs">
+								All
+							</DropdownMenuRadioItem>
+							<DropdownMenuRadioItem value="unresolved" className="text-xs">
+								Unresolved
+							</DropdownMenuRadioItem>
+							<DropdownMenuRadioItem value="resolved" className="text-xs">
+								Resolved
+							</DropdownMenuRadioItem>
+						</DropdownMenuRadioGroup>
+					</DropdownMenuContent>
+				</DropdownMenu>
+			</div>
 			<div className="flex-1 overflow-y-auto p-3">
 				{comments.length > 0 ? (
 					<div className="space-y-4">
-						{comments.map((comment) => (
-							<CommentCard
-								key={comment.id}
-								comment={comment}
-								onCommentUpdate={handleCommentUpdate}
-								onHighlightAnnotation={handleHighlightAnnotation}
-							/>
-						))}
+						{filteredComments.length > 0 ? (
+							filteredComments.map((comment) => (
+								<CommentCard
+									key={comment.id}
+									comment={comment}
+									onCommentUpdate={handleCommentUpdate}
+									onHighlightAnnotation={handleHighlightAnnotation}
+								/>
+							))
+						) : (
+							<div className="flex flex-col items-center justify-center py-8 text-muted-foreground">
+								<p className="text-sm">No matching comments found</p>
+								<p className="text-xs">Try adjusting your search or filter</p>
+							</div>
+						)}
 					</div>
 				) : (
 					<div className="flex h-full flex-col items-center justify-center text-muted-foreground">

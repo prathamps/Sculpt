@@ -348,3 +348,20 @@ export const toggleLikeComment = async (
 		return { liked: true, count }
 	}
 }
+
+export const toggleCommentResolved = async (
+	commentId: string
+): Promise<{ resolved: boolean }> => {
+	// Get current comment
+	const comment = await prisma.comment.findUnique({
+		where: { id: commentId },
+	})
+
+	// Toggle resolved status
+	const updatedComment = await prisma.comment.update({
+		where: { id: commentId },
+		data: { resolved: !comment?.resolved },
+	})
+
+	return { resolved: updatedComment.resolved }
+}

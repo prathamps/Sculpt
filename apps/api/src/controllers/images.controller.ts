@@ -299,3 +299,40 @@ export const toggleLikeComment = async (
 		res.status(500).json({ message: "Error toggling comment like", error })
 	}
 }
+
+export const toggleResolveComment = async (
+	req: Request,
+	res: Response
+): Promise<void> => {
+	try {
+		const { commentId } = req.params
+		const userId = (req.user as any)?.id
+
+		if (!userId) {
+			res.status(401).json({ message: "Unauthorized" })
+			return
+		}
+
+		// Check if the user has permission to toggle resolved status
+		const comment = await imageService.getCommentById(commentId)
+
+		if (!comment) {
+			res.status(404).json({ message: "Comment not found" })
+			return
+		}
+
+		// For now, only the comment author can toggle resolved status
+		// In a real app, you might want to check project permissions too
+		if (comment.userId !== userId) {
+			res.status(403).json({ message: "Unauthorized to resolve this comment" })
+			return
+		}
+
+		const result = await imageService.toggleCommentResolved(commentId)
+		res.status(200).json(result)
+	} catch (error) {
+		res
+			.status(500)
+			.json({ message: "Error toggling comment resolved status", error })
+	}
+}
