@@ -215,32 +215,18 @@ export const addComment = async (
 	parentId?: string,
 	annotation?: any
 ): Promise<any> => {
-	return prisma.comment.create({
-		data: {
-			content,
-			imageVersionId,
-			userId,
-			parentId,
-			annotation: annotation ? annotation : undefined,
-		},
-		include: {
-			user: true,
-			likes: {
-				include: {
-					user: true,
-				},
-			},
-			replies: {
-				include: {
-					user: true,
-					likes: {
-						include: {
-							user: true,
-						},
-					},
-				},
-			},
-		},
+	// Import CommentsService here to avoid circular dependency
+	const { CommentsService } = require("./comments.service")
+
+	console.log("Image service: Delegating comment creation to CommentsService")
+
+	// Use the CommentsService to create the comment, which will handle socket events
+	return CommentsService.createComment({
+		content,
+		imageVersionId,
+		userId,
+		parentId: parentId || null,
+		annotation: annotation || null,
 	})
 }
 
@@ -289,64 +275,32 @@ export const getCommentById = async (commentId: string): Promise<any> => {
 }
 
 export const deleteComment = async (commentId: string): Promise<void> => {
-	await prisma.comment.delete({
-		where: {
-			id: commentId,
-		},
-	})
+	// Import CommentsService here to avoid circular dependency
+	const { CommentsService } = require("./comments.service")
+
+	console.log("Image service: Delegating comment deletion to CommentsService")
+
+	// Get comment to find the user ID
+	const comment = await getCommentById(commentId)
+	if (!comment) {
+		throw new Error("Comment not found")
+	}
+
+	// Use the CommentsService to delete the comment, which will handle socket events
+	await CommentsService.deleteComment(commentId, comment.userId)
 }
 
 export const toggleLikeComment = async (
 	commentId: string,
 	userId: string
 ): Promise<{ liked: boolean; count: number }> => {
-	// Check if the user already liked this comment
-	const existingLike = await prisma.commentLike.findUnique({
-		where: {
-			userId_commentId: {
-				userId,
-				commentId,
-			},
-		},
-	})
+	// Import CommentsService here to avoid circular dependency
+	const { CommentsService } = require("./comments.service")
 
-	if (existingLike) {
-		// Unlike the comment
-		await prisma.commentLike.delete({
-			where: {
-				userId_commentId: {
-					userId,
-					commentId,
-				},
-			},
-		})
+	console.log("Image service: Delegating comment like to CommentsService")
 
-		// Get updated like count
-		const count = await prisma.commentLike.count({
-			where: {
-				commentId,
-			},
-		})
-
-		return { liked: false, count }
-	} else {
-		// Like the comment
-		await prisma.commentLike.create({
-			data: {
-				userId,
-				commentId,
-			},
-		})
-
-		// Get updated like count
-		const count = await prisma.commentLike.count({
-			where: {
-				commentId,
-			},
-		})
-
-		return { liked: true, count }
-	}
+	// Use the CommentsService to toggle the like, which will handle socket events
+	return CommentsService.toggleLike(commentId, userId)
 }
 
 export const toggleCommentResolved = async (

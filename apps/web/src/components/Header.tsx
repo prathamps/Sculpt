@@ -12,6 +12,7 @@ import {
 } from "@/components/ui/dropdown-menu"
 import { useAuth } from "@/context/AuthContext"
 import { Menu, LogOut, Settings, User } from "lucide-react"
+import { NotificationDropdown } from "./NotificationDropdown"
 
 interface HeaderProps {
 	onMenuClick?: () => void
@@ -37,39 +38,50 @@ export function Header({ onMenuClick }: HeaderProps) {
 					</span>
 				</Link>
 			</div>
-			<DropdownMenu>
-				<DropdownMenuTrigger asChild>
-					<button className="flex items-center gap-2 rounded-full border border-border/50 bg-background px-2 py-1.5 text-sm hover:bg-secondary">
-						<Avatar className="h-6 w-6">
-							<AvatarImage
-								src={`https://api.dicebear.com/7.x/micah/svg?seed=${
-									user?.email || "user"
-								}`}
-								alt={user?.name || "User"}
-							/>
-							<AvatarFallback>{user?.name?.charAt(0) || "U"}</AvatarFallback>
-						</Avatar>
-						<span className="hidden text-sm sm:inline-block">
-							{user?.name || user?.email || "User"}
-						</span>
-					</button>
-				</DropdownMenuTrigger>
-				<DropdownMenuContent align="end" className="w-52">
-					<div className="px-3 py-2 text-xs text-muted-foreground">
-						{user?.email}
-					</div>
-					<DropdownMenuSeparator />
-					<DropdownMenuItem>
-						<User className="mr-2 h-4 w-4" />
-						Account Settings
-					</DropdownMenuItem>
-					<DropdownMenuSeparator />
-					<DropdownMenuItem onClick={logout} className="text-destructive">
-						<LogOut className="mr-2 h-4 w-4" />
-						Logout
-					</DropdownMenuItem>
-				</DropdownMenuContent>
-			</DropdownMenu>
+			<div className="flex items-center gap-2">
+				{user && <NotificationDropdown />}
+				<DropdownMenu>
+					<DropdownMenuTrigger asChild>
+						<button className="flex items-center gap-2 rounded-full border border-border/50 bg-background px-2 py-1.5 text-sm hover:bg-secondary">
+							<Avatar className="h-6 w-6">
+								<AvatarImage
+									src={`https://api.dicebear.com/7.x/micah/svg?seed=${
+										user?.email || "user"
+									}`}
+									alt={user?.name || "User"}
+								/>
+								<AvatarFallback>{user?.name?.charAt(0) || "U"}</AvatarFallback>
+							</Avatar>
+							<span className="hidden text-sm sm:inline-block">
+								{user?.name || user?.email || "User"}
+							</span>
+						</button>
+					</DropdownMenuTrigger>
+					<DropdownMenuContent align="end" className="w-52">
+						<div className="px-3 py-2 text-xs text-muted-foreground">
+							{user?.email}
+						</div>
+						<DropdownMenuSeparator />
+						<DropdownMenuItem asChild>
+							<Link href="/test-socket">
+								<span className="flex items-center">
+									<Settings className="mr-2 h-4 w-4" />
+									Socket Test Page
+								</span>
+							</Link>
+						</DropdownMenuItem>
+						<DropdownMenuItem>
+							<User className="mr-2 h-4 w-4" />
+							Account Settings
+						</DropdownMenuItem>
+						<DropdownMenuSeparator />
+						<DropdownMenuItem onClick={logout} className="text-destructive">
+							<LogOut className="mr-2 h-4 w-4" />
+							Logout
+						</DropdownMenuItem>
+					</DropdownMenuContent>
+				</DropdownMenu>
+			</div>
 		</header>
 	)
 }

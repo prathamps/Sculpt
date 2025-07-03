@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback } from "react"
 import { useAuth } from "@/context/AuthContext"
+import { useSocket } from "@/context/SocketContext"
 import { useRouter, useParams } from "next/navigation"
 import { AnnotationCanvas } from "@/components/AnnotationCanvas"
 import { AnnotationFooter } from "@/components/AnnotationFooter"
@@ -67,6 +68,7 @@ interface Annotation {
 export default function ProjectFileViewPage() {
 	const params = useParams()
 	const { isAuthenticated, loading } = useAuth()
+	const { socket } = useSocket()
 	const router = useRouter()
 	const [image, setImage] = useState<Image | null>(null)
 	const [selectedVersion, setSelectedVersion] = useState<ImageVersion | null>(
@@ -314,6 +316,12 @@ export default function ProjectFileViewPage() {
 
 	// Handle comment added
 	const handleCommentAdded = () => {
+		console.log("[ImagePage] Comment added, current socket status:", {
+			socketConnected: !!socket?.connected,
+			socketId: socket?.id,
+			currentImageVersion: selectedVersion?.id,
+		})
+
 		setCurrentAnnotation(null)
 
 		// Refresh comments by triggering a re-fetch

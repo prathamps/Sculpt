@@ -2,6 +2,7 @@ import type { Metadata } from "next"
 import { Inter, Plus_Jakarta_Sans } from "next/font/google"
 import "./globals.css"
 import { AuthProvider } from "@/context/AuthContext"
+import { SocketProvider } from "@/context/SocketContext"
 import { Toaster } from "sonner"
 
 const inter = Inter({ subsets: ["latin"], variable: "--font-inter" })
@@ -23,7 +24,9 @@ export default function RootLayout({
 	return (
 		<html lang="en" className="dark">
 			<body className={`${inter.variable} ${jakarta.variable} font-jakarta`}>
-				<AuthProvider>{children}</AuthProvider>
+				<AuthProvider>
+					<SocketProvider>{children}</SocketProvider>
+				</AuthProvider>
 				<Toaster position="top-right" closeButton richColors />
 			</body>
 		</html>

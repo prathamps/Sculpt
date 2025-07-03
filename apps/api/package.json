@@ -24,7 +24,9 @@
 		"nodemon": "^3.1.10",
 		"passport": "^0.7.0",
 		"passport-jwt": "^4.0.1",
-		"prisma": "^6.10.0"
+		"prisma": "^6.10.0",
+		"redis": "^5.5.6",
+		"socket.io": "^4.8.1"
 	},
 	"devDependencies": {
 		"@types/bcrypt": "^5.0.2",
@@ -36,6 +38,7 @@
 		"@types/node": "^24.0.3",
 		"@types/passport": "^1.0.17",
 		"@types/passport-jwt": "^4.0.1",
+		"@types/socket.io": "^3.0.1",
 		"ts-node-dev": "^2.0.0",
 		"typescript": "^5.8.3"
 	}

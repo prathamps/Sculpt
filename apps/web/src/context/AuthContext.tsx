@@ -6,6 +6,7 @@ import {
 	useState,
 	useEffect,
 	ReactNode,
+	useMemo,
 } from "react"
 import { useRouter } from "next/navigation"
 
@@ -89,13 +90,18 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 		doLogout()
 	}
 
-	return (
-		<AuthContext.Provider
-			value={{ user, isAuthenticated: !!user, login, logout, loading }}
-		>
-			{children}
-		</AuthContext.Provider>
+	const value = useMemo(
+		() => ({
+			user,
+			isAuthenticated: !!user,
+			login,
+			logout,
+			loading,
+		}),
+		[user, loading]
 	)
+
+	return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>
 }
 
 export const useAuth = () => {

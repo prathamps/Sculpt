@@ -185,19 +185,19 @@ export function CommentCard({
 	return (
 		<div
 			className={cn(
-				"flex flex-col gap-3",
+				"flex flex-col gap-3 w-full",
 				comment.annotation &&
 					"cursor-pointer hover:bg-accent/10 rounded p-2 -m-2"
 			)}
 			onClick={handleCardClick}
 		>
-			<div className="flex items-start gap-2.5">
+			<div className="flex items-start gap-2.5 w-full">
 				<Avatar className="h-7 w-7 flex-shrink-0">
 					<AvatarFallback>
 						{comment.user.name?.charAt(0) || comment.user.email.charAt(0)}
 					</AvatarFallback>
 				</Avatar>
-				<div className="flex-1 space-y-1.5">
+				<div className="flex-1 space-y-1.5 min-w-0">
 					<div className="flex items-center justify-between">
 						<div className="flex items-center gap-2">
 							<span className="text-sm font-medium">
@@ -264,7 +264,12 @@ export function CommentCard({
 							)}
 						</div>
 					</div>
-					<p className="text-sm leading-relaxed">{comment.content}</p>
+					<p
+						className="text-sm leading-relaxed break-words whitespace-pre-wrap max-w-full overflow-hidden"
+						style={{ wordBreak: "break-word", overflowWrap: "break-word" }}
+					>
+						{comment.content}
+					</p>
 					<div className="flex items-center gap-3">
 						<Button
 							variant="ghost"
@@ -345,7 +350,7 @@ export function CommentCard({
 			</div>
 			{comment.replies && comment.replies.length > 0 && (
 				<div
-					className="ml-9 flex flex-col gap-3 border-l-2 border-border/50 pl-3"
+					className="ml-9 flex flex-col gap-3 border-l-2 border-border/50 pl-3 w-full"
 					onClick={(e) => e.stopPropagation()}
 				>
 					{comment.replies.map((reply) => (

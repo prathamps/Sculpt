@@ -1,5 +1,5 @@
 "use client"
-import { useState, useEffect, useCallback } from "react"
+import { useState, useEffect, useCallback, useRef } from "react"
 import { CommentCard } from "./CommentCard"
 import { Button } from "./ui/button"
 import { Input } from "./ui/input"
@@ -13,9 +13,10 @@ import {
 } from "./ui/dropdown-menu"
 import { cn } from "@/lib/utils"
 import { useAuth } from "@/context/AuthContext"
+import { useSocket } from "@/context/SocketContext"
 import { Comment } from "@/types"
 
-// Demo data is now removed, we'll fetch real data
+const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001"
 
 type CommentFilter = "all" | "unresolved" | "resolved"
 
@@ -31,65 +32,169 @@ export function CommentSidebar({
 	onHighlightAnnotation,
 }: CommentSidebarProps) {
 	const { user } = useAuth()
+	const { socket, isConnected, joinImageVersion, leaveImageVersion } =
+		useSocket()
 	const [searchQuery, setSearchQuery] = useState("")
 	const [filter, setFilter] = useState<CommentFilter>("all")
 	const [comments, setComments] = useState<Comment[]>([])
 	const [isLoading, setIsLoading] = useState(false)
+	const currentImageVersionIdRef = useRef<string | null>(null)
 
 	const fetchComments = useCallback(async () => {
+		if (!imageVersionId) return
+
 		setIsLoading(true)
 		try {
 			const res = await fetch(
-				`http://localhost:3001/api/images/versions/${imageVersionId}/comments`,
+				`${API_URL}/api/images/versions/${imageVersionId}/comments`,
 				{
 					credentials: "include",
 				}
 			)
-
 			if (res.ok) {
 				const data = await res.json()
-				// Transform data to include like information
-				const commentsWithLikes = data.map((comment: Comment) => {
-					// Calculate like count
-					const likeCount = comment.likes?.length || 0
-
-					// Check if current user has liked this comment
-					const isLikedByCurrentUser =
-						comment.likes?.some((like) => like.userId === user?.id) || false
-
-					return {
-						...comment,
-						likeCount,
-						isLikedByCurrentUser,
-						// Process replies with likes as well
-						replies: comment.replies?.map((reply) => {
-							const replyLikeCount = reply.likes?.length || 0
-							const replyIsLikedByCurrentUser =
-								reply.likes?.some((like) => like.userId === user?.id) || false
-
-							return {
-								...reply,
-								likeCount: replyLikeCount,
-								isLikedByCurrentUser: replyIsLikedByCurrentUser,
-							}
-						}),
-					}
-				})
-
-				setComments(commentsWithLikes)
+				setComments(data)
 			}
 		} catch (error) {
 			console.error("Failed to fetch comments:", error)
 		} finally {
 			setIsLoading(false)
 		}
-	}, [imageVersionId, user])
+	}, [imageVersionId])
 
 	useEffect(() => {
-		if (imageVersionId) {
-			fetchComments()
+		fetchComments()
+	}, [fetchComments])
+
+	// Join image version room when component mounts or imageVersionId changes
+	useEffect(() => {
+		if (socket && isConnected && imageVersionId) {
+			console.log(
+				`[CommentSidebar] Setting up socket listeners for imageVersionId: ${imageVersionId}`
+			)
+			console.log(
+				`[CommentSidebar] Socket ID: ${socket.id}, Connected: ${isConnected}`
+			)
+
+			// Use the centralized method to join the room
+			joinImageVersion(imageVersionId)
+
+			const handleNewComment = (newComment: Comment) => {
+				console.log(`[CommentSidebar] Received new-comment event:`, newComment)
+				if (newComment.imageVersionId === imageVersionId) {
+					console.log(
+						"[CommentSidebar] Comment is for current image version, updating state"
+					)
+					setComments((prev) => {
+						// Check if comment already exists to prevent duplicates
+						if (prev.some((c) => c.id === newComment.id)) {
+							console.log("[CommentSidebar] Comment already exists, skipping")
+							return prev
+						}
+						console.log("[CommentSidebar] Adding new comment to state")
+						return [newComment, ...prev]
+					})
+				} else {
+					console.log(
+						`[CommentSidebar] Comment is for different image version (${newComment.imageVersionId}), ignoring`
+					)
+				}
+			}
+
+			const handleCommentUpdated = (updatedComment: Comment) => {
+				console.log(
+					`[CommentSidebar] Received comment-updated event:`,
+					updatedComment
+				)
+				if (updatedComment.imageVersionId === imageVersionId) {
+					console.log(
+						"[CommentSidebar] Updated comment is for current image version, updating state"
+					)
+					setComments((prev) =>
+						prev.map((c) => (c.id === updatedComment.id ? updatedComment : c))
+					)
+				}
+			}
+
+			const handleCommentDeleted = ({
+				id,
+				imageVersionId: M_imageVersionId,
+			}: {
+				id: string
+				imageVersionId: string
+			}) => {
+				console.log(`[CommentSidebar] Received comment-deleted event:`, {
+					id,
+					imageVersionId: M_imageVersionId,
+				})
+				if (M_imageVersionId === imageVersionId) {
+					console.log(
+						"[CommentSidebar] Deleted comment is for current image version, updating state"
+					)
+					setComments((prev) => prev.filter((c) => c.id !== id))
+				}
+			}
+
+			const handleLikeUpdate = ({
+				id,
+				count,
+				liked,
+				userId,
+				imageVersionId: M_imageVersionId,
+			}: any) => {
+				console.log(`[CommentSidebar] Received comment-like-updated event:`, {
+					id,
+					count,
+					liked,
+					userId,
+					imageVersionId: M_imageVersionId,
+				})
+				if (M_imageVersionId === imageVersionId) {
+					console.log(
+						"[CommentSidebar] Like update is for current image version, updating state"
+					)
+					setComments((prev) =>
+						prev.map((c) =>
+							c.id === id
+								? {
+										...c,
+										likeCount: count,
+										isLikedByCurrentUser:
+											user?.id === userId ? liked : c.isLikedByCurrentUser,
+								  }
+								: c
+						)
+					)
+				}
+			}
+
+			console.log("[CommentSidebar] Registering socket event handlers")
+			socket.on("new-comment", handleNewComment)
+			socket.on("comment-updated", handleCommentUpdated)
+			socket.on("comment-deleted", handleCommentDeleted)
+			socket.on("comment-like-updated", handleLikeUpdate)
+
+			// Clean up event listeners when component unmounts or imageVersionId changes
+			return () => {
+				console.log(
+					`[CommentSidebar] Cleaning up socket listeners for imageVersionId: ${imageVersionId}`
+				)
+				socket.off("new-comment", handleNewComment)
+				socket.off("comment-updated", handleCommentUpdated)
+				socket.off("comment-deleted", handleCommentDeleted)
+				socket.off("comment-like-updated", handleLikeUpdate)
+			}
 		}
-	}, [imageVersionId, fetchComments])
+	}, [socket, isConnected, imageVersionId, user?.id, joinImageVersion])
+
+	// Leave room when component unmounts
+	useEffect(() => {
+		return () => {
+			if (imageVersionId) {
+				leaveImageVersion(imageVersionId)
+			}
+		}
+	}, [imageVersionId, leaveImageVersion])
 
 	const handleCommentUpdate = useCallback(() => {
 		fetchComments()
@@ -97,31 +202,28 @@ export function CommentSidebar({
 
 	const handleHighlightAnnotation = (annotation: any) => {
 		if (onHighlightAnnotation) {
-			// If annotation is an array, pass it directly to the parent component
-			// If it's a single object, pass it as is
 			onHighlightAnnotation(annotation)
 		}
 	}
 
 	// Apply filters
 	const filteredComments = comments.filter((comment) => {
-		// Apply search filter
 		const matchesSearch = comment.content
 			.toLowerCase()
 			.includes(searchQuery.toLowerCase())
-
-		// Apply resolved/unresolved filter
 		const matchesFilter =
 			filter === "all" ||
 			(filter === "resolved" && comment.resolved) ||
 			(filter === "unresolved" && !comment.resolved)
-
 		return matchesSearch && matchesFilter
 	})
 
 	return (
 		<div
-			className={cn("flex flex-col bg-card text-card-foreground", className)}
+			className={cn(
+				"flex flex-col bg-card text-card-foreground h-full",
+				className
+			)}
 		>
 			<div className="flex items-center justify-between border-b border-border/40 p-3">
 				<h3 className="text-sm font-medium">Comments</h3>
@@ -162,9 +264,15 @@ export function CommentSidebar({
 					</DropdownMenuContent>
 				</DropdownMenu>
 			</div>
-			<div className="flex-1 overflow-y-auto p-3">
+			<div
+				className="flex-1 overflow-y-auto p-3 custom-scrollbar"
+				style={{
+					scrollbarWidth: "thin",
+					scrollbarColor: "rgba(155, 155, 155, 0.5) transparent",
+				}}
+			>
 				{comments.length > 0 ? (
-					<div className="space-y-4">
+					<div className="space-y-4 w-full">
 						{filteredComments.length > 0 ? (
 							filteredComments.map((comment) => (
 								<CommentCard

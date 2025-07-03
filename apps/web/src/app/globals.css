@@ -119,6 +119,22 @@
 	body {
 		@apply bg-background text-foreground;
 	}
+
+	/* Ensure text wrapping by default */
+	p,
+	span,
+	div,
+	h1,
+	h2,
+	h3,
+	h4,
+	h5,
+	h6 {
+		overflow-wrap: break-word;
+		word-wrap: break-word;
+		word-break: break-word;
+		hyphens: auto;
+	}
 }
 
 /* Figma-inspired smooth scrolling and animations */
@@ -135,4 +151,44 @@ html {
 *:focus-visible {
 	outline: 2px solid var(--ring);
 	outline-offset: 2px;
+}
+
+/* Custom Scrollbar Styles */
+/* For webkit browsers like Chrome/Safari/Edge */
+.custom-scrollbar::-webkit-scrollbar,
+*::-webkit-scrollbar {
+	width: 8px;
+	height: 8px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-track,
+*::-webkit-scrollbar-track {
+	background: transparent;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb,
+*::-webkit-scrollbar-thumb {
+	background: rgba(155, 155, 155, 0.5);
+	border-radius: 4px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb:hover,
+*::-webkit-scrollbar-thumb:hover {
+	background: rgba(155, 155, 155, 0.7);
+}
+
+/* For Firefox */
+* {
+	scrollbar-width: thin;
+	scrollbar-color: rgba(155, 155, 155, 0.5) transparent;
+}
+
+.dark .custom-scrollbar::-webkit-scrollbar-thumb,
+.dark *::-webkit-scrollbar-thumb {
+	background: rgba(155, 155, 155, 0.3);
+}
+
+.dark .custom-scrollbar::-webkit-scrollbar-thumb:hover,
+.dark *::-webkit-scrollbar-thumb:hover {
+	background: rgba(155, 155, 155, 0.5);
 }
