@@ -1,5 +1,5 @@
 # Sculpt
-
+(A tech demo project inspired by frame.io)
 Sculpt is a powerful real-time image collaboration platform that streamlines the process of giving and receiving visual feedback. Born from the frustration of exchanging countless screenshots with annotations across different chat apps, Sculpt brings order to the chaos of visual communication.
 
 ## What is Sculpt?

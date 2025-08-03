@@ -10,6 +10,7 @@ import { imageRouter } from "./routes/images.routes"
 import shareRoutes from "./routes/share.routes"
 import notificationRoutes from "./routes/notifications.routes"
 import commentRoutes from "./routes/comments.routes"
+import adminRoutes from "./routes/admin.routes"
 import path from "path"
 import http from "http"
 import { Server } from "socket.io"
@@ -187,6 +188,7 @@ app.use("/api/images", imageRouter)
 app.use("/api/share", shareRoutes)
 app.use("/api/notifications", notificationRoutes)
 app.use("/api/comments", commentRoutes)
+app.use("/api/admin", adminRoutes)
 
 const port = process.env.PORT || 3001
 

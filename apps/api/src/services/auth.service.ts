@@ -1,37 +1,84 @@
-import { prisma } from "../lib/prisma"
+import { User, UserRole } from "@prisma/client"
 import bcrypt from "bcrypt"
-import jwt from "jsonwebtoken"
-import { User } from "@prisma/client"
+import { prisma } from "../lib/prisma"
 
-interface RegisterData {
+interface RegisterUserInput {
 	email: string
 	password: string
 	name?: string
 }
 
-export const registerUser = async (data: RegisterData): Promise<User> => {
-	const { email, password, name } = data
-	const hashedPassword = await bcrypt.hash(password, 10)
+interface LoginUserInput {
+	email: string
+	password: string
+}
+
+export const registerUser = async (data: RegisterUserInput): Promise<User> => {
+	const hashedPassword = await bcrypt.hash(data.password, 10)
+
 	return prisma.user.create({
 		data: {
-			email,
+			email: data.email,
 			password: hashedPassword,
-			name,
+			name: data.name || data.email.split("@")[0],
 		},
 	})
 }
 
-// Return user object on successful login
-export const loginUser = async (
-	data: Pick<User, "email" | "password">
-): Promise<User | null> => {
+export const loginUser = async (data: LoginUserInput): Promise<User | null> => {
 	const user = await prisma.user.findUnique({
-		where: { email: data.email },
+		where: {
+			email: data.email,
+		},
 	})
 
-	if (!user || !(await bcrypt.compare(data.password, user.password))) {
-		return null
-	}
+	if (!user) return null
+
+	const validPassword = await bcrypt.compare(data.password, user.password)
+	if (!validPassword) return null
 
 	return user
+}
+
+export const loginAdmin = async (
+	email: string,
+	password: string
+): Promise<User | null> => {
+	const user = await prisma.user.findUnique({
+		where: {
+			email,
+		},
+	})
+
+	if (!user) return null
+
+	const validPassword = await bcrypt.compare(password, user.password)
+	if (!validPassword) return null
+
+	// Only return the user if they're an admin
+	if (user.role !== UserRole.ADMIN) return null
+
+	return user
+}
+
+export const getUsersByRole = async (role: UserRole) => {
+	return prisma.user.findMany({
+		where: {
+			role,
+		},
+		select: {
+			id: true,
+			email: true,
+			name: true,
+			role: true,
+			createdAt: true,
+			updatedAt: true,
+			subscription: {
+				select: {
+					plan: true,
+					status: true,
+				},
+			},
+		},
+	})
 }

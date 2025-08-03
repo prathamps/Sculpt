@@ -11,7 +11,7 @@ import {
 	DropdownMenuSeparator,
 } from "@/components/ui/dropdown-menu"
 import { useAuth } from "@/context/AuthContext"
-import { Menu, LogOut, Settings, User } from "lucide-react"
+import { Menu, LogOut, Settings, User, ShieldAlert } from "lucide-react"
 import { NotificationDropdown } from "./NotificationDropdown"
 
 interface HeaderProps {
@@ -20,6 +20,8 @@ interface HeaderProps {
 
 export function Header({ onMenuClick }: HeaderProps) {
 	const { user, logout } = useAuth()
+	const isAdmin = user?.role === "ADMIN"
+
 	return (
 		<header className="sticky top-0 z-40 flex h-14 shrink-0 items-center justify-between border-b border-border/40 bg-background/80 px-4 backdrop-blur-sm md:px-6">
 			<div className="flex items-center gap-4">
@@ -62,6 +64,16 @@ export function Header({ onMenuClick }: HeaderProps) {
 							{user?.email}
 						</div>
 						<DropdownMenuSeparator />
+						{isAdmin && (
+							<DropdownMenuItem asChild>
+								<Link href="/admin">
+									<span className="flex items-center">
+										<ShieldAlert className="mr-2 h-4 w-4" />
+										Admin Portal
+									</span>
+								</Link>
+							</DropdownMenuItem>
+						)}
 						<DropdownMenuItem asChild>
 							<Link href="/test-socket">
 								<span className="flex items-center">

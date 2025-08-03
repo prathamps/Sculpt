@@ -1,33 +1,30 @@
-import type { Metadata } from "next"
-import { Inter, Plus_Jakarta_Sans } from "next/font/google"
-import "./globals.css"
+import "@/app/globals.css"
+import { Inter } from "next/font/google"
 import { AuthProvider } from "@/context/AuthContext"
+import { AdminAuthProvider } from "@/context/AdminAuthContext"
 import { SocketProvider } from "@/context/SocketContext"
-import { Toaster } from "sonner"
 
-const inter = Inter({ subsets: ["latin"], variable: "--font-inter" })
-const jakarta = Plus_Jakarta_Sans({
-	subsets: ["latin"],
-	variable: "--font-jakarta",
-})
+const inter = Inter({ subsets: ["latin"] })
 
-export const metadata: Metadata = {
-	title: "Sculpt - Collaborative Image Annotation",
-	description: "Streamlined image annotation and collaboration platform",
+export const metadata = {
+	title: "Sculpt - Visual Collaboration Platform",
+	description:
+		"A powerful real-time image collaboration platform that streamlines the process of giving and receiving visual feedback.",
 }
 
 export default function RootLayout({
 	children,
-}: Readonly<{
+}: {
 	children: React.ReactNode
-}>) {
+}) {
 	return (
-		<html lang="en" className="dark">
-			<body className={`${inter.variable} ${jakarta.variable} font-jakarta`}>
+		<html className="dark" lang="en" suppressHydrationWarning>
+			<body className={inter.className}>
 				<AuthProvider>
-					<SocketProvider>{children}</SocketProvider>
+					<AdminAuthProvider>
+						<SocketProvider>{children}</SocketProvider>
+					</AdminAuthProvider>
 				</AuthProvider>
-				<Toaster position="top-right" closeButton richColors />
 			</body>
 		</html>
 	)
