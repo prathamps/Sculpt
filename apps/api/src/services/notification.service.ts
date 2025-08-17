@@ -181,7 +181,11 @@ export class NotificationService {
 				notificationId
 			)
 			if (existingNotification) {
-				const parsed = JSON.parse(existingNotification)
+				const parsed = JSON.parse(
+					Buffer.isBuffer(existingNotification)
+						? existingNotification.toString()
+						: existingNotification
+				)
 				await safeRedis.hSet(
 					`notifications:${userId}`,
 					notificationId,
@@ -218,7 +222,11 @@ export class NotificationService {
 						key
 					)
 					if (existingNotification) {
-						const parsed = JSON.parse(existingNotification)
+						const parsed = JSON.parse(
+							Buffer.isBuffer(existingNotification)
+								? existingNotification.toString()
+								: existingNotification
+						)
 						await safeRedis.hSet(
 							`notifications:${userId}`,
 							key,

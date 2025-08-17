@@ -12,6 +12,7 @@ import {
 } from "@/components/ui/dropdown-menu"
 import { useAuth } from "@/context/AuthContext"
 import { Menu, LogOut, Settings, User, ShieldAlert } from "lucide-react"
+import { ModeToggle } from "@/components/ui/theme-toggle";
 import { NotificationDropdown } from "./NotificationDropdown"
 
 interface HeaderProps {
@@ -41,6 +42,7 @@ export function Header({ onMenuClick }: HeaderProps) {
 				</Link>
 			</div>
 			<div className="flex items-center gap-2">
+				<ModeToggle />
 				{user && <NotificationDropdown />}
 				<DropdownMenu>
 					<DropdownMenuTrigger asChild>
@@ -60,7 +62,7 @@ export function Header({ onMenuClick }: HeaderProps) {
 						</button>
 					</DropdownMenuTrigger>
 					<DropdownMenuContent align="end" className="w-52">
-						<div className="px-3 py-2 text-xs text-muted-foreground">
+						<div className="px-3 py-2 text-xs text-muted-foreground truncate">
 							{user?.email}
 						</div>
 						<DropdownMenuSeparator />

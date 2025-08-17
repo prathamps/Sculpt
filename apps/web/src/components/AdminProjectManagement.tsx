@@ -141,7 +141,7 @@ export function AdminProjectManagement() {
 
 							return (
 								<tr key={project.id} className="border-t hover:bg-muted/50">
-									<td className="py-3 px-4 font-medium">{project.name}</td>
+									<td className="py-3 px-4 font-medium truncate">{project.name}</td>
 									<td className="py-3 px-4">
 										{owner?.user.name || owner?.user.email || "Unknown"}
 									</td>
@@ -211,7 +211,7 @@ export function AdminProjectManagement() {
 												</th>
 											</tr>
 										</thead>
-										<tbody>
+										<tbody className="overflow-hidden">
 											{selectedProject.members.map((member) => (
 												<tr key={member.id} className="border-t">
 													<td className="py-2 px-4 text-sm">
@@ -257,7 +257,7 @@ export function AdminProjectManagement() {
 												</th>
 											</tr>
 										</thead>
-										<tbody>
+										<tbody className="overflow-hidden">
 											{selectedProject.images.length === 0 ? (
 												<tr>
 													<td
@@ -270,7 +270,7 @@ export function AdminProjectManagement() {
 											) : (
 												selectedProject.images.map((image) => (
 													<tr key={image.id} className="border-t">
-														<td className="py-2 px-4 text-sm">{image.name}</td>
+														<td className="py-2 px-4 text-sm truncate">{image.name}</td>
 														<td className="py-2 px-4 text-sm">
 															{image.versions.length}
 														</td>

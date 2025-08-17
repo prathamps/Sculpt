@@ -82,9 +82,10 @@ export const AdminAuthProvider = ({ children }: { children: ReactNode }) => {
 					}
 				)
 
-				if (profileRes.ok) {
+								if (profileRes.ok) {
 					const data = await profileRes.json()
 					setAdminUser(data)
+					router.push("/admin")
 					return true
 				}
 			}

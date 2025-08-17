@@ -3,6 +3,7 @@ import { Request, Response, NextFunction } from "express"
 import { UserRole } from "@prisma/client"
 import jwt from "jsonwebtoken"
 import { prisma } from "../lib/prisma"
+import { User } from "../types"
 
 export const authenticateJWT = (
 	req: Request,
@@ -62,7 +63,8 @@ export const authenticateAdmin = async (
 }
 
 export const adminOnly = (req: Request, res: Response, next: NextFunction) => {
-	if (!req.user || req.user.role !== UserRole.ADMIN) {
+	const user = req.user as User
+	if (!user || user.role !== UserRole.ADMIN) {
 		return res.status(403).json({ message: "Forbidden: Admin access required" })
 	}
 	next()

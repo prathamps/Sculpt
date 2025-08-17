@@ -196,7 +196,7 @@ export function ImageUploadModal({
 										drag and drop
 									</p>
 									<p className="text-xs text-muted-foreground">
-										Images (JPG, PNG, GIF, SVG) or Videos (MP4)
+										Images (JPG, PNG, SVG)
 									</p>
 									{isVersionUpload && (
 										<p className="text-xs text-muted-foreground mt-1">

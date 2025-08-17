@@ -1,12 +1,13 @@
 import { Request, Response } from "express"
 import { CommentsService } from "../services/comments.service"
+import { User } from "../types"
 
 export class CommentsController {
 	// Get comments for an image version
 	static async getCommentsByImageVersion(req: Request, res: Response) {
 		try {
 			const { imageVersionId } = req.params
-			const userId = req.user?.id
+			const userId = (req.user as User)?.id
 
 			const comments = await CommentsService.getCommentsByImageVersionId(
 				imageVersionId,
@@ -22,7 +23,7 @@ export class CommentsController {
 	// Create a new comment
 	static async createComment(req: Request, res: Response) {
 		try {
-			const userId = req.user?.id
+			const userId = (req.user as User)?.id
 			if (!userId) {
 				return res.status(401).json({ message: "Unauthorized" })
 			}
@@ -52,7 +53,7 @@ export class CommentsController {
 	// Update a comment
 	static async updateComment(req: Request, res: Response) {
 		try {
-			const userId = req.user?.id
+			const userId = (req.user as User)?.id
 			if (!userId) {
 				return res.status(401).json({ message: "Unauthorized" })
 			}
@@ -83,7 +84,7 @@ export class CommentsController {
 	// Delete a comment
 	static async deleteComment(req: Request, res: Response) {
 		try {
-			const userId = req.user?.id
+			const userId = (req.user as User)?.id
 			if (!userId) {
 				return res.status(401).json({ message: "Unauthorized" })
 			}
@@ -105,7 +106,7 @@ export class CommentsController {
 	// Like or unlike a comment
 	static async toggleLike(req: Request, res: Response) {
 		try {
-			const userId = req.user?.id
+			const userId = (req.user as User)?.id
 			if (!userId) {
 				return res.status(401).json({ message: "Unauthorized" })
 			}

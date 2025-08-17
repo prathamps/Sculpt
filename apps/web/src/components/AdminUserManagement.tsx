@@ -114,7 +114,7 @@ export function AdminUserManagement() {
 						{users.map((user) => (
 							<tr key={user.id} className="border-t hover:bg-muted/50">
 								<td className="py-3 px-4">{user.name || "No name"}</td>
-								<td className="py-3 px-4">{user.email}</td>
+								<td className="py-3 px-4 truncate">{user.email}</td>
 								<td className="py-3 px-4">
 									<span
 										className={`inline-block px-2 py-1 rounded-full text-xs ${

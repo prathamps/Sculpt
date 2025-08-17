@@ -15,6 +15,7 @@ import path from "path"
 import http from "http"
 import { Server } from "socket.io"
 import "./lib/redis" // Import Redis client to ensure connection
+import "./types/express"
 
 dotenv.config()
 

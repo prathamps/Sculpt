@@ -82,7 +82,7 @@ export function TopHeader({
 						</>
 					)}
 				</Button>
-				<DropdownMenu>
+				{/* <DropdownMenu>
 					<DropdownMenuTrigger asChild>
 						<Button size="icon" variant="ghost" className="h-8 w-8">
 							<MoreHorizontal className="h-4 w-4" />
@@ -96,7 +96,7 @@ export function TopHeader({
 							Delete Image
 						</DropdownMenuItem>
 					</DropdownMenuContent>
-				</DropdownMenu>
+				</DropdownMenu> */}
 			</div>
 		</header>
 	)
