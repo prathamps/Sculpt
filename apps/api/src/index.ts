@@ -17,6 +17,9 @@ import { Server } from "socket.io"
 import "./lib/redis" // Import Redis client to ensure connection
 // import "./types/express"
 
+// Export io instance to use in other modules
+export { io }
+
 dotenv.config()
 
 const app = express()
@@ -25,6 +28,13 @@ const allowedOrigins = [
 	"http://localhost:3000",
 	"https://sculpt-web-dpkp.vercel.app/",
 ]
+
+const corsOptions = {
+	origin: allowedOrigins,
+	credentials: true,
+}
+
+app.use(cors(corsOptions))
 
 // Configure Socket.io with CORS
 const io = new Server(server, {
@@ -170,15 +180,6 @@ io.on("connection", (socket) => {
 	})
 })
 
-// Export io instance to use in other modules
-export { io }
-
-const corsOptions = {
-	origin: allowedOrigins,
-	credentials: true,
-}
-
-app.use(cors(corsOptions))
 app.use(express.json())
 app.use(cookieParser())
 app.use(passport.initialize())
