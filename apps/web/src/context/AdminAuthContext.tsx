@@ -117,7 +117,7 @@ export const AdminAuthProvider = ({ children }: { children: ReactNode }) => {
 			adminLogout,
 			loading,
 		}),
-		[adminUser, loading]
+		[adminUser, loading, adminLogin, adminLogout]
 	)
 
 	return (

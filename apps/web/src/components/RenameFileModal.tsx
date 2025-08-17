@@ -67,7 +67,7 @@ export function RenameFileModal({
 			})
 
 			if (!res.ok) {
-				const errorData = await res.json().catch(() => null)
+				const errorData = await res.json().catch((): null => null)
 				throw new Error(errorData?.message || "Failed to rename file.")
 			}
 

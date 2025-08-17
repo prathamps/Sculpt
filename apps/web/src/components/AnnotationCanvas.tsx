@@ -64,8 +64,8 @@ export function AnnotationCanvas({
 				if (annotation.points.length === 0) return
 
 				// Convert normalized coordinates (0-1) to actual canvas pixels
-				const startX = annotation.points[0].x * ctx.canvas.width
-				const startY = annotation.points[0].y * ctx.canvas.height
+				const startX = annotation.points[0]?.x * ctx.canvas.width
+				const startY = annotation.points[0]?.y * ctx.canvas.height
 				ctx.moveTo(startX, startY)
 
 				if (annotation.type === "pencil") {
@@ -77,9 +77,9 @@ export function AnnotationCanvas({
 					annotation.points.length > 1
 				) {
 					const endX =
-						annotation.points[annotation.points.length - 1].x * ctx.canvas.width
+						annotation.points[annotation.points.length - 1]?.x * ctx.canvas.width
 					const endY =
-						annotation.points[annotation.points.length - 1].y *
+						annotation.points[annotation.points.length - 1]?.y *
 						ctx.canvas.height
 					if (annotation.type === "rect") {
 						ctx.rect(startX, startY, endX - startX, endY - startY)
@@ -168,7 +168,7 @@ export function AnnotationCanvas({
 			if (type === "pencil") {
 				if (points.length > 0) {
 					// Convert normalized coordinates (0-1) to canvas coordinates
-					drawCtx.moveTo(points[0].x * canvasWidth, points[0].y * canvasHeight)
+					drawCtx.moveTo(points[0]?.x * canvasWidth, points[0]?.y * canvasHeight)
 					points.forEach((p) => {
 						drawCtx.lineTo(p.x * canvasWidth, p.y * canvasHeight)
 					})
@@ -279,8 +279,8 @@ export function AnnotationCanvas({
 			currentPathRef.current.push(pos)
 			previewCtx.beginPath()
 			previewCtx.moveTo(
-				currentPathRef.current[0].x * width,
-				currentPathRef.current[0].y * height
+				currentPathRef.current[0]?.x * width,
+				currentPathRef.current[0]?.y * height
 			)
 			currentPathRef.current.forEach((p) => {
 				previewCtx.lineTo(p.x * width, p.y * height)
@@ -343,8 +343,8 @@ export function AnnotationCanvas({
 		if (e.touches.length > 0) {
 			const touch = e.touches[0]
 			const mouseEvent = new MouseEvent("mousedown", {
-				clientX: touch.clientX,
-				clientY: touch.clientY,
+				clientX: touch?.clientX,
+				clientY: touch?.clientY,
 			})
 			handleMouseDown(mouseEvent as any)
 		}
@@ -355,8 +355,8 @@ export function AnnotationCanvas({
 		if (!isDrawing || e.touches.length === 0) return
 		const touch = e.touches[0]
 		const mouseEvent = new MouseEvent("mousemove", {
-			clientX: touch.clientX,
-			clientY: touch.clientY,
+			clientX: touch?.clientX,
+			clientY: touch?.clientY,
 		})
 		handleMouseMove(mouseEvent as any)
 	}

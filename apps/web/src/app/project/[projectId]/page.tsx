@@ -38,9 +38,12 @@ export default function ProjectPage() {
 				const currentProject = data.find((p) => p.id === projectId)
 				if (currentProject) {
 					setSelectedProject(currentProject)
-				} else if (data.length > 0) {
+				} else if (data.length > 0 && data[0]?.id) {
 					// if current project not found, redirect to the first project
-					router.replace(`/project/${data[0].id}`)
+					const firstProjectId = data[0]?.id;
+					if (firstProjectId) {
+						router.replace(`/project/${firstProjectId}`)
+					}
 				}
 			}
 		} catch (error) {

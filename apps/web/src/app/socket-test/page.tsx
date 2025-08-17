@@ -23,10 +23,11 @@ export default function SocketTest() {
 
 	// Add a log entry with timestamp
 	const addLog = useCallback((message: string) => {
-		const timestamp = new Date().toISOString().split("T")[1].split(".")[0]
+		const timestampParts = new Date().toISOString().split("T")[1]?.split(".");
+		const timestamp = timestampParts && timestampParts[0] ? timestampParts[0] : "00:00:00";
 		setLogs((prev) => [`[${timestamp}] ${message}`, ...prev])
 	}, [])
-
+	const URI = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001"
 	// Connect to socket server
 	const connectSocket = useCallback(() => {
 		const userId = user?.id || manualUserId
@@ -45,7 +46,7 @@ export default function SocketTest() {
 		}
 
 		try {
-			const socketInstance = io("http://localhost:3001", {
+			const socketInstance = io(URI, {
 				withCredentials: true,
 				reconnectionAttempts: 3,
 				timeout: 10000,
@@ -54,8 +55,8 @@ export default function SocketTest() {
 
 			socketInstance.on("connect", () => {
 				setConnected(true)
-				setSocketId(socketInstance.id)
-				addLog(`Connected! Socket ID: ${socketInstance.id}`)
+				setSocketId(socketInstance.id || "")
+				addLog(`Connected! Socket ID: ${socketInstance.id || ""}`)
 
 				// Join user room
 				socketInstance.emit("join", userId)
@@ -137,7 +138,7 @@ export default function SocketTest() {
 		}
 
 		addLog("Requesting test notification from server...")
-		fetch("http://localhost:3001/api/notifications/test", {
+		fetch(`${URI}/api/notifications/test`, {
 			method: "POST",
 			headers: { "Content-Type": "application/json" },
 			credentials: "include",
@@ -159,7 +160,7 @@ export default function SocketTest() {
 		try {
 			addLog("Sending test notification request...")
 			const response = await fetch(
-				"http://localhost:3001/api/notifications/test",
+				`${URI}/api/notifications/test`,
 				{
 					method: "POST",
 					headers: {
@@ -183,7 +184,7 @@ export default function SocketTest() {
 	const sendTestComment = async () => {
 		try {
 			addLog("Sending test comment request...")
-			const response = await fetch("http://localhost:3001/api/comments/test", {
+				const response = await fetch(`${URI}/api/comments/test`, {
 				method: "POST",
 				headers: {
 					"Content-Type": "application/json",

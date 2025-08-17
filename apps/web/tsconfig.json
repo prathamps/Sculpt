@@ -22,7 +22,12 @@
 		"paths": {
 			"@/*": ["./src/*"]
 		},
-		"strictNullChecks": true
+		"strictNullChecks": false,
+		"typeRoots": [
+			"./node_modules/@types",
+			"../../node_modules/@types"
+		],
+		"types": ["node", "react", "react-dom"]
 	},
 	"include": [
 		"next-env.d.ts",

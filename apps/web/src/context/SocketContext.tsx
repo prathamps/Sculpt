@@ -75,13 +75,13 @@ export const SocketProvider = ({ children }: SocketProviderProps) => {
 				}
 			})
 
-			socketInstance.on("disconnect", (reason) => {
+			socketInstance.on("disconnect", (reason: string) => {
 				console.log("Socket disconnected:", reason)
 				setIsConnected(false)
 				// Do NOT set socketRef.current to null here
 			})
 
-			socketInstance.on("connect_error", (error) => {
+			socketInstance.on("connect_error", (error: Error) => {
 				console.error("Socket connection error:", error.message)
 				setIsConnected(false)
 			})
@@ -110,7 +110,7 @@ export const SocketProvider = ({ children }: SocketProviderProps) => {
 			if (response.ok) {
 				const projects = await response.json()
 				if (projects && projects.length > 0) {
-					projects.forEach((project: any) => {
+					projects.forEach((project: { id: string }) => {
 						socketInstance.emit("joinProject", project.id)
 						console.log(`Requested to join project room: ${project.id}`)
 					})
@@ -168,7 +168,7 @@ export const SocketProvider = ({ children }: SocketProviderProps) => {
 			joinImageVersion,
 			leaveImageVersion,
 		}),
-		[isConnected] // Only depends on isConnected, other values are from refs
+		[isConnected, joinImageVersion, leaveImageVersion]
 	)
 
 	return (
