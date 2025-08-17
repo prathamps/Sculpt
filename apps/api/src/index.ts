@@ -173,7 +173,10 @@ io.on("connection", (socket) => {
 export { io }
 
 const corsOptions = {
-	origin: "http://localhost:3000",
+	origin: [
+		"http://localhost:3000",
+		"https://sculpt-web-dpkp-8qn0kzq7n-prathamps-projects-816617f7.vercel.app",
+	],
 	credentials: true,
 }
 
