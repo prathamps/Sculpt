@@ -21,14 +21,15 @@ dotenv.config()
 
 const app = express()
 const server = http.createServer(app)
+const allowedOrigins = [
+	"http://localhost:3000",
+	"https://sculpt-web-dpkp.vercel.app/",
+]
 
 // Configure Socket.io with CORS
 const io = new Server(server, {
 	cors: {
-		origin: [
-			"http://localhost:3000",
-			"https://sculpt-web-dpkp-8qn0kzq7n-prathamps-projects-816617f7.vercel.app",
-		],
+		origin: allowedOrigins,
 		methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
 		credentials: true,
 		allowedHeaders: ["Content-Type", "Authorization"],
@@ -173,10 +174,7 @@ io.on("connection", (socket) => {
 export { io }
 
 const corsOptions = {
-	origin: [
-		"http://localhost:3000",
-		"https://sculpt-web-dpkp-8qn0kzq7n-prathamps-projects-816617f7.vercel.app",
-	],
+	origin: allowedOrigins,
 	credentials: true,
 }
 
