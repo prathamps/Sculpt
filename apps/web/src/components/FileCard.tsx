@@ -83,10 +83,10 @@ export function FileCard({
 
 	const imageUrl = getImageUrl()
 	const placeholderUrl = "/placeholder-image.svg"
-
+	const URI = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001"
 	const handleDelete = async () => {
 		try {
-			const res = await fetch(`http://localhost:3001/api/images/${file.id}`, {
+			const res = await fetch(`${URI}/api/images/${file.id}`, {
 				method: "DELETE",
 				credentials: "include",
 			})

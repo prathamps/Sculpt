@@ -73,14 +73,14 @@ export function MembersModal({
 	const [copiedToken, setCopiedToken] = useState<string | null>(null)
 	const [isLoadingLinks, setIsLoadingLinks] = useState(false)
 	const [isCreatingLink, setIsCreatingLink] = useState(false)
-
+	const URI = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001"
 	useEffect(() => {
 		if (project && isOpen) {
 			const fetchShareLinks = async () => {
 				setIsLoadingLinks(true)
 				try {
 					const res = await fetch(
-						`http://localhost:3001/api/projects/${project.id}/share-links`,
+						`${URI}/api/projects/${project.id}/share-links`,
 						{ credentials: "include" }
 					)
 					if (res.ok) {
@@ -112,7 +112,7 @@ export function MembersModal({
 	const handleRevokeLink = async (linkId: string) => {
 		try {
 			const res = await fetch(
-				`http://localhost:3001/api/projects/${project.id}/share-links/${linkId}`,
+				`${URI}/api/projects/${project.id}/share-links/${linkId}`,
 				{
 					method: "DELETE",
 					credentials: "include",
@@ -131,7 +131,7 @@ export function MembersModal({
 	const handleRemoveMember = async (userId: string) => {
 		try {
 			const res = await fetch(
-				`http://localhost:3001/api/projects/${project.id}/members/${userId}`,
+				`${URI}/api/projects/${project.id}/members/${userId}`,
 				{ method: "DELETE", credentials: "include" }
 			)
 			if (res.ok) {
@@ -150,17 +150,14 @@ export function MembersModal({
 		setError("")
 		setIsInviting(true)
 		try {
-			const res = await fetch(
-				`http://localhost:3001/api/projects/${project.id}/invite`,
-				{
-					method: "POST",
-					headers: {
-						"Content-Type": "application/json",
-					},
-					credentials: "include",
-					body: JSON.stringify({ email }),
-				}
-			)
+			const res = await fetch(`${URI}/api/projects/${project.id}/invite`, {
+				method: "POST",
+				headers: {
+					"Content-Type": "application/json",
+				},
+				credentials: "include",
+				body: JSON.stringify({ email }),
+			})
 
 			if (res.ok) {
 				setEmail("")
@@ -179,15 +176,12 @@ export function MembersModal({
 	const handleCreateShareLink = async () => {
 		setIsCreatingLink(true)
 		try {
-			const res = await fetch(
-				`http://localhost:3001/api/projects/${project.id}/share-links`,
-				{
-					method: "POST",
-					headers: { "Content-Type": "application/json" },
-					credentials: "include",
-					body: JSON.stringify({ role: newLinkRole }),
-				}
-			)
+			const res = await fetch(`${URI}/api/projects/${project.id}/share-links`, {
+				method: "POST",
+				headers: { "Content-Type": "application/json" },
+				credentials: "include",
+				body: JSON.stringify({ role: newLinkRole }),
+			})
 			if (res.ok) {
 				const newLink = await res.json()
 				setShareLinks((prev) => [...prev, newLink])

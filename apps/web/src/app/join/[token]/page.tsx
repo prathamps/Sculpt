@@ -10,7 +10,7 @@ export default function JoinPage() {
 	const { isAuthenticated, loading } = useAuth()
 	const [message, setMessage] = useState("Processing your invitation...")
 	const token = params.token as string
-
+	const URI = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001"
 	useEffect(() => {
 		if (loading) {
 			return // Wait until auth state is loaded
@@ -26,7 +26,7 @@ export default function JoinPage() {
 				return
 			}
 			try {
-				const res = await fetch(`http://localhost:3001/api/share/${token}`, {
+				const res = await fetch(`${URI}/api/share/${token}`, {
 					method: "POST",
 					credentials: "include",
 				})

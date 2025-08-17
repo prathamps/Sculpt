@@ -29,7 +29,7 @@ export function CreateProjectModal({
 }: CreateProjectModalProps) {
 	const [projectName, setProjectName] = useState("")
 	const [error, setError] = useState("")
-
+	const URI = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001"
 	const handleSubmit = async () => {
 		if (!projectName) {
 			setError("Project name is required.")
@@ -37,7 +37,7 @@ export function CreateProjectModal({
 		}
 		setError("")
 
-		const res = await fetch("http://localhost:3001/api/projects", {
+		const res = await fetch(`${URI}/api/projects`, {
 			method: "POST",
 			headers: { "Content-Type": "application/json" },
 			body: JSON.stringify({ name: projectName }),

@@ -45,7 +45,7 @@ export function AnnotationFooter({
 	const [comment, setComment] = useState("")
 	const [isSending, setIsSending] = useState(false)
 	const { user } = useAuth()
-
+	const URI = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001"
 	const handleSendComment = async () => {
 		if (!comment.trim()) return
 
@@ -60,7 +60,7 @@ export function AnnotationFooter({
 					: undefined
 
 			const res = await fetch(
-				`http://localhost:3001/api/images/versions/${imageVersionId}/comments`,
+				`${URI}/api/images/versions/${imageVersionId}/comments`,
 				{
 					method: "POST",
 					headers: {

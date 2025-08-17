@@ -50,12 +50,12 @@ export function CommentCard({
 
 	// Check if current user is the author of the comment
 	const isAuthor = user?.id === comment.userId
-
+	const URI = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001"
 	// Handle resolve/unresolve
 	const toggleResolved = async () => {
 		try {
 			const res = await fetch(
-				`http://localhost:3001/api/images/comments/${comment.id}/resolve`,
+				`${URI}/api/images/comments/${comment.id}/resolve`,
 				{
 					method: "POST",
 					credentials: "include",
@@ -82,16 +82,13 @@ export function CommentCard({
 
 		setIsLiking(true)
 		try {
-			const res = await fetch(
-				`http://localhost:3001/api/images/comments/${comment.id}/like`,
-				{
-					method: "POST",
-					credentials: "include",
-					headers: {
-						"Content-Type": "application/json",
-					},
-				}
-			)
+			const res = await fetch(`${URI}/api/images/comments/${comment.id}/like`, {
+				method: "POST",
+				credentials: "include",
+				headers: {
+					"Content-Type": "application/json",
+				},
+			})
 
 			if (res.ok) {
 				const data = await res.json()
@@ -111,13 +108,10 @@ export function CommentCard({
 
 		setIsDeleting(true)
 		try {
-			const res = await fetch(
-				`http://localhost:3001/api/images/comments/${comment.id}`,
-				{
-					method: "DELETE",
-					credentials: "include",
-				}
-			)
+			const res = await fetch(`${URI}/api/images/comments/${comment.id}`, {
+				method: "DELETE",
+				credentials: "include",
+			})
 
 			if (res.ok) {
 				// Notify parent component to refresh comments
@@ -154,7 +148,7 @@ export function CommentCard({
 		setIsSubmittingReply(true)
 		try {
 			const response = await fetch(
-				`http://localhost:3001/api/images/versions/${comment.imageVersionId}/comments`,
+				`${URI}/api/images/versions/${comment.imageVersionId}/comments`,
 				{
 					method: "POST",
 					credentials: "include",

@@ -140,8 +140,9 @@ export default function ProjectFileViewPage() {
 	const fetchImage = useCallback(async () => {
 		if (isAuthenticated) {
 			setIsImageLoading(true)
+			const URI = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001"
 			try {
-				const res = await fetch(`http://localhost:3001/api/images/${imageId}`, {
+				const res = await fetch(`${URI}/api/images/${imageId}`, {
 					credentials: "include",
 				})
 				if (res.ok) {
@@ -208,14 +209,12 @@ export default function ProjectFileViewPage() {
 				formData.append("versionName", versionName)
 			}
 
-			const res = await fetch(
-				`http://localhost:3001/api/images/${imageId}/versions`,
-				{
-					method: "POST",
-					credentials: "include",
-					body: formData,
-				}
-			)
+			const URI = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001"
+			const res = await fetch(`${URI}/api/images/${imageId}/versions`, {
+				method: "POST",
+				credentials: "include",
+				body: formData,
+			})
 
 			if (res.ok) {
 				// The response now contains the full enriched image
@@ -245,13 +244,11 @@ export default function ProjectFileViewPage() {
 		if (!confirm("Are you sure you want to delete this version?")) return
 
 		try {
-			const res = await fetch(
-				`http://localhost:3001/api/images/versions/${versionId}`,
-				{
-					method: "DELETE",
-					credentials: "include",
-				}
-			)
+			const URI = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001"
+			const res = await fetch(`${URI}/api/images/versions/${versionId}`, {
+				method: "DELETE",
+				credentials: "include",
+			})
 
 			if (res.ok) {
 				// Update the image state by removing the deleted version

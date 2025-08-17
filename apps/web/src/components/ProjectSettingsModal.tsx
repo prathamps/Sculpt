@@ -30,7 +30,7 @@ export function ProjectSettingsModal({
 }: ProjectSettingsModalProps) {
 	const [name, setName] = useState("")
 	const [isSaving, setIsSaving] = useState(false)
-
+	const URI = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001"
 	useEffect(() => {
 		if (project) {
 			setName(project.name)
@@ -43,15 +43,12 @@ export function ProjectSettingsModal({
 		e.preventDefault()
 		setIsSaving(true)
 		try {
-			const res = await fetch(
-				`http://localhost:3001/api/projects/${project.id}`,
-				{
-					method: "PUT",
-					headers: { "Content-Type": "application/json" },
-					credentials: "include",
-					body: JSON.stringify({ name }),
-				}
-			)
+			const res = await fetch(`${URI}/api/projects/${project.id}`, {
+				method: "PUT",
+				headers: { "Content-Type": "application/json" },
+				credentials: "include",
+				body: JSON.stringify({ name }),
+			})
 
 			if (!res.ok) {
 				throw new Error("Failed to update project.")

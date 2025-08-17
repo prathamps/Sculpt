@@ -15,7 +15,7 @@ export function ImageUploadForm({
 	onUploadComplete,
 }: ImageUploadFormProps) {
 	const [file, setFile] = useState<File | null>(null)
-
+	const URI = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001"
 	const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
 		if (e.target.files) {
 			setFile(e.target.files[0])
@@ -31,7 +31,7 @@ export function ImageUploadForm({
 		const formData = new FormData()
 		formData.append("image", file)
 
-		await fetch(`http://localhost:3001/api/projects/${projectId}/images`, {
+		await fetch(`${URI}/api/projects/${projectId}/images`, {
 			method: "POST",
 			credentials: "include",
 			body: formData,

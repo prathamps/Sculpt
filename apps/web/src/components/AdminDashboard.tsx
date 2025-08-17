@@ -33,10 +33,11 @@ export function AdminDashboard() {
 	const [loading, setLoading] = useState(true)
 	const [error, setError] = useState<string | null>(null)
 
+	const URI = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001"
 	useEffect(() => {
 		const fetchStats = async () => {
 			try {
-				const res = await fetch("http://localhost:3001/api/admin/stats", {
+				const res = await fetch(`${URI}/api/admin/stats`, {
 					credentials: "include",
 				})
 

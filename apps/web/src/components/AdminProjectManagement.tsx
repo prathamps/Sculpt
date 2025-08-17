@@ -58,11 +58,11 @@ export function AdminProjectManagement() {
 		null
 	)
 	const [isDialogOpen, setIsDialogOpen] = useState(false)
-
+	const URI = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001"
 	useEffect(() => {
 		const fetchProjects = async () => {
 			try {
-				const res = await fetch("http://localhost:3001/api/admin/projects", {
+				const res = await fetch(`${URI}/api/admin/projects`, {
 					credentials: "include",
 				})
 
@@ -141,7 +141,9 @@ export function AdminProjectManagement() {
 
 							return (
 								<tr key={project.id} className="border-t hover:bg-muted/50">
-									<td className="py-3 px-4 font-medium truncate">{project.name}</td>
+									<td className="py-3 px-4 font-medium truncate">
+										{project.name}
+									</td>
 									<td className="py-3 px-4">
 										{owner?.user.name || owner?.user.email || "Unknown"}
 									</td>
@@ -270,7 +272,9 @@ export function AdminProjectManagement() {
 											) : (
 												selectedProject.images.map((image) => (
 													<tr key={image.id} className="border-t">
-														<td className="py-2 px-4 text-sm truncate">{image.name}</td>
+														<td className="py-2 px-4 text-sm truncate">
+															{image.name}
+														</td>
 														<td className="py-2 px-4 text-sm">
 															{image.versions.length}
 														</td>

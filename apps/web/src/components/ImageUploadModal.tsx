@@ -39,7 +39,7 @@ export function ImageUploadModal({
 	const [isUploading, setIsUploading] = useState(false)
 	const [uploadProgress, setUploadProgress] = useState(0)
 	const [error, setError] = useState("")
-
+	const URI = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001"
 	const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
 		if (e.target.files) {
 			const selectedFiles = Array.from(e.target.files)
@@ -108,28 +108,22 @@ export function ImageUploadModal({
 				const fileToUpload = files[0]
 				formData.append("image", fileToUpload)
 
-				res = await fetch(
-					`http://localhost:3001/api/images/${imageId}/versions`,
-					{
-						method: "POST",
-						body: formData,
-						credentials: "include",
-					}
-				)
+				res = await fetch(`${URI}/api/images/${imageId}/versions`, {
+					method: "POST",
+					body: formData,
+					credentials: "include",
+				})
 			} else {
 				// Otherwise, we're uploading new images
 				files.forEach((file) => {
 					formData.append("images", file)
 				})
 
-				res = await fetch(
-					`http://localhost:3001/api/projects/${projectId}/images`,
-					{
-						method: "POST",
-						body: formData,
-						credentials: "include",
-					}
-				)
+				res = await fetch(`${URI}/api/projects/${projectId}/images`, {
+					method: "POST",
+					body: formData,
+					credentials: "include",
+				})
 			}
 
 			if (!res.ok) {
