@@ -27,6 +27,8 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined)
 
+const URI = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001"
+
 export const AuthProvider = ({ children }: { children: ReactNode }) => {
 	const [user, setUser] = useState<User | null>(null)
 	const [loading, setLoading] = useState(true)
@@ -35,7 +37,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 	useEffect(() => {
 		const fetchUser = async () => {
 			try {
-				const res = await fetch("http://localhost:3001/api/users/profile", {
+				const res = await fetch(`${URI}/api/users/profile`, {
 					credentials: "include",
 					headers: {
 						"Content-Type": "application/json",
@@ -61,7 +63,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 		// but we can re-fetch user profile here
 		const fetchUser = async () => {
 			try {
-				const res = await fetch("http://localhost:3001/api/users/profile", {
+				const res = await fetch(`${URI}/api/users/profile`, {
 					credentials: "include",
 				})
 				if (res.ok) {
@@ -81,7 +83,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 	const logout = () => {
 		// We need to make a request to the backend to clear the cookie
 		const doLogout = async () => {
-			await fetch("http://localhost:3001/api/auth/logout", {
+			await fetch(`${URI}/api/auth/logout`, {
 				method: "POST",
 				credentials: "include",
 			})

@@ -29,6 +29,8 @@ const AdminAuthContext = createContext<AdminAuthContextType | undefined>(
 	undefined
 )
 
+const URI = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001"
+
 export const AdminAuthProvider = ({ children }: { children: ReactNode }) => {
 	const [adminUser, setAdminUser] = useState<AdminUser | null>(null)
 	const [loading, setLoading] = useState(true)
@@ -38,7 +40,7 @@ export const AdminAuthProvider = ({ children }: { children: ReactNode }) => {
 		const fetchAdminUser = async () => {
 			try {
 				// We use a different endpoint for admin profile
-				const res = await fetch("http://localhost:3001/api/admin/profile", {
+				const res = await fetch(`${URI}/api/admin/profile`, {
 					credentials: "include",
 					headers: {
 						"Content-Type": "application/json",
@@ -64,7 +66,7 @@ export const AdminAuthProvider = ({ children }: { children: ReactNode }) => {
 		password: string
 	): Promise<boolean> => {
 		try {
-			const res = await fetch("http://localhost:3001/api/admin/login", {
+			const res = await fetch(`${URI}/api/admin/login`, {
 				method: "POST",
 				credentials: "include",
 				headers: {
@@ -75,14 +77,11 @@ export const AdminAuthProvider = ({ children }: { children: ReactNode }) => {
 
 			if (res.ok) {
 				// Fetch admin profile after successful login
-				const profileRes = await fetch(
-					"http://localhost:3001/api/admin/profile",
-					{
-						credentials: "include",
-					}
-				)
+				const profileRes = await fetch(`${URI}/api/admin/profile`, {
+					credentials: "include",
+				})
 
-								if (profileRes.ok) {
+				if (profileRes.ok) {
 					const data = await profileRes.json()
 					setAdminUser(data)
 					router.push("/admin")
@@ -99,7 +98,7 @@ export const AdminAuthProvider = ({ children }: { children: ReactNode }) => {
 
 	const adminLogout = async () => {
 		try {
-			await fetch("http://localhost:3001/api/admin/logout", {
+			await fetch(`${URI}/api/admin/logout`, {
 				method: "POST",
 				credentials: "include",
 			})
