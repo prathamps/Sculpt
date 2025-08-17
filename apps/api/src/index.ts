@@ -25,7 +25,10 @@ const server = http.createServer(app)
 // Configure Socket.io with CORS
 const io = new Server(server, {
 	cors: {
-		origin: "http://localhost:3000",
+		origin: [
+			"http://localhost:3000",
+			"https://sculpt-web-dpkp-8qn0kzq7n-prathamps-projects-816617f7.vercel.app",
+		],
 		methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
 		credentials: true,
 		allowedHeaders: ["Content-Type", "Authorization"],
