@@ -22,11 +22,12 @@ export { io }
 
 dotenv.config()
 
+
 const app = express()
 const server = http.createServer(app)
 const allowedOrigins = [
 	"http://localhost:3000",
-	"https://sculpt-web-dpkp.vercel.app/",
+	"https://sculpt-web-dpkp.vercel.app",
 ]
 
 const corsOptions = {

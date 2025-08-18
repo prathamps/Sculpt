@@ -5,6 +5,7 @@ import { Request } from "express"
 
 const cookieExtractor = (req: Request) => {
 	let token = null
+	console.log("Cookies: ", req.cookies)
 	if (req && req.cookies) {
 		token = req.cookies["token"]
 	}
