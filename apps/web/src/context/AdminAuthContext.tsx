@@ -8,7 +8,7 @@ import {
 	ReactNode,
 	useMemo,
 } from "react"
-import { useRouter } from "next/navigation"
+import { useRouter, usePathname } from "next/navigation"
 
 interface AdminUser {
 	id: string
@@ -35,6 +35,7 @@ export const AdminAuthProvider = ({ children }: { children: ReactNode }) => {
 	const [adminUser, setAdminUser] = useState<AdminUser | null>(null)
 	const [loading, setLoading] = useState(true)
 	const router = useRouter()
+	const pathname = usePathname()
 
 	useEffect(() => {
 		const fetchAdminUser = async () => {
@@ -58,8 +59,12 @@ export const AdminAuthProvider = ({ children }: { children: ReactNode }) => {
 				setLoading(false)
 			}
 		}
-		fetchAdminUser()
-	}, [])
+		if (pathname.startsWith("/admin")) {
+			fetchAdminUser()
+		} else {
+			setLoading(false)
+		}
+	}, [pathname])
 
 	const adminLogin = async (
 		email: string,
