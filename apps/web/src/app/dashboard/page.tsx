@@ -25,8 +25,9 @@ export default function DashboardPage() {
 	const handleRefreshProjects = useCallback(async () => {
 		if (!isAuthenticated) return
 		setIsLoading(true)
+		const URI = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001"
 		try {
-			const res = await fetch("http://localhost:3001/api/projects", {
+			const res = await fetch(`${URI}/api/projects`, {
 				credentials: "include",
 			})
 			if (res.ok) {
@@ -51,14 +52,12 @@ export default function DashboardPage() {
 	const handleDeleteProject = async () => {
 		if (!projectToDelete) return
 		setIsDeleting(true)
+		const URI = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001"
 		try {
-			const res = await fetch(
-				`http://localhost:3001/api/projects/${projectToDelete.id}`,
-				{
-					method: "DELETE",
-					credentials: "include",
-				}
-			)
+			const res = await fetch(`${URI}/api/projects/${projectToDelete.id}`, {
+				method: "DELETE",
+				credentials: "include",
+			})
 
 			if (!res.ok) {
 				throw new Error("Failed to delete project")
