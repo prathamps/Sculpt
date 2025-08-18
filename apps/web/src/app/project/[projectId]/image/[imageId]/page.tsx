@@ -326,7 +326,7 @@ export default function ProjectFileViewPage() {
 			// Comments will be refreshed through the CommentSidebar component
 		}
 	}
-
+	const URI = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001"
 	if (loading) {
 		return (
 			<div className="flex h-screen w-full items-center justify-center bg-background">
