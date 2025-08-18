@@ -33,7 +33,7 @@ export function ProjectCard({ project, onEdit, onDelete }: ProjectCardProps) {
 		month: "short",
 		day: "numeric",
 	})
-
+	const URI = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001"
 	// Get the image URL considering versions
 	const getImageUrl = () => {
 		if (!firstImage) return null
@@ -42,7 +42,7 @@ export function ProjectCard({ project, onEdit, onDelete }: ProjectCardProps) {
 
 		// Try to get the URL from latestVersion
 		if (firstImage.latestVersion?.url) {
-			const url = `http://localhost:3001/${firstImage.latestVersion.url}`
+			const url = `${URI}/${firstImage.latestVersion.url}`
 			console.log("Using latestVersion URL:", url)
 			return url
 		}
@@ -53,14 +53,14 @@ export function ProjectCard({ project, onEdit, onDelete }: ProjectCardProps) {
 			firstImage.versions.length > 0 &&
 			firstImage.versions[0]?.url
 		) {
-			const url = `http://localhost:3001/${firstImage.versions[0].url}`
+			const url = `${URI}/${firstImage.versions[0].url}`
 			console.log("Using versions[0] URL:", url)
 			return url
 		}
 
 		// Fallback for backward compatibility with legacy images
 		if ("url" in firstImage && firstImage.url) {
-			const url = `http://localhost:3001/${firstImage.url}`
+			const url = `${URI}/${firstImage.url}`
 			console.log("Using legacy URL:", url)
 			return url
 		}

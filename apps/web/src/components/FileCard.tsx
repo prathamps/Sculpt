@@ -53,26 +53,26 @@ export function FileCard({
 	const fileCreatedAt = new Date(file.createdAt)
 	const formattedDate = formatDistanceToNow(fileCreatedAt, { addSuffix: true })
 	const [imageError, setImageError] = useState(false)
-
+	const URI = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001"
 	// Get the URL from the latest version or fallback
 	const getImageUrl = () => {
 		console.log("FileCard: Generating URL for file:", file)
 
 		// Try to get the URL from latestVersion (used in project view)
 		if (file.latestVersion?.url) {
-			const url = `http://localhost:3001/${file.latestVersion.url}`
+			const url = `${URI}/${file.latestVersion.url}`
 			console.log("FileCard: Using latestVersion URL:", url)
 			return url
 		}
 		// Try to get the URL from the first version in the versions array
 		if (file.versions && file.versions.length > 0 && file.versions[0]?.url) {
-			const url = `http://localhost:3001/${file.versions[0].url}`
+			const url = `${URI}/${file.versions[0].url}`
 			console.log("FileCard: Using versions[0] URL:", url)
 			return url
 		}
 		// Fallback for backward compatibility with legacy images
 		if ("url" in file && file.url) {
-			const url = `http://localhost:3001/${file.url}`
+			const url = `${URI}/${file.url}`
 			console.log("FileCard: Using legacy URL:", url)
 			return url
 		}
@@ -83,7 +83,6 @@ export function FileCard({
 
 	const imageUrl = getImageUrl()
 	const placeholderUrl = "/placeholder-image.svg"
-	const URI = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001"
 	const handleDelete = async () => {
 		try {
 			const res = await fetch(`${URI}/api/images/${file.id}`, {

@@ -1,9 +1,9 @@
 import passport from "passport"
-import { Response, NextFunction } from "express"
+import { Request, Response, NextFunction } from "express"
 import { UserRole } from "@prisma/client"
 import jwt from "jsonwebtoken"
 import { prisma } from "../lib/prisma"
-import { AuthenticatedRequest, AuthenticatedUser } from "../types";
+import { AuthenticatedRequest, AuthenticatedUser } from "../types"
 
 export const authenticateJWT = (
 	req: Request,
@@ -20,7 +20,7 @@ export const authenticateJWT = (
 			if (!user) {
 				return res.status(401).json({ message: "Unauthorized" })
 			}
-			req.user = user
+			req.user = user as AuthenticatedUser
 			next()
 		}
 	)(req, res, next)
