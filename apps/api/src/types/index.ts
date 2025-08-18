@@ -1,24 +1,10 @@
-export interface User {
-	id: string
-	email: string
-	name?: string
-	role: "USER" | "ADMIN"
-	createdAt: Date
-	updatedAt: Date
+import { User, ProjectMember } from "@prisma/client";
+import { Request } from "express";
+
+export type AuthenticatedUser = Omit<User, "password">;
+
+export interface AuthenticatedRequest extends Request {
+  user?: AuthenticatedUser;
 }
 
-export interface Project {
-	id: string
-	name: string
-	createdAt: Date
-	updatedAt: Date
-}
-
-export interface Comment {
-	id: string
-	content: string
-	userId: string
-	imageVersionId: string
-	createdAt: Date
-	updatedAt: Date
-}
+export type ProjectMemberWithUser = ProjectMember & { user: User };

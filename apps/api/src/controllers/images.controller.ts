@@ -1,3 +1,4 @@
+import { AuthenticatedUser } from "../types";
 import { Request, Response } from "express"
 import * as imageService from "../services/images.service"
 
@@ -95,21 +96,14 @@ export const uploadImageVersion = async (
 ): Promise<void> => {
 	try {
 		const { imageId } = req.params
-		const { versionName } = req.body
 		const file = req.file as Express.Multer.File
 
 		if (!file) {
 			res.status(400).send("No file uploaded.")
 			return
 		}
-
-		const filePath = `uploads/${file.filename}`
 		// Create the new version
-		const version = await imageService.addImageVersion(
-			imageId,
-			filePath,
-			versionName
-		)
+		
 
 		// Get the full image with all versions to return to the client
 		const image = await imageService.getImageById(imageId)
@@ -212,7 +206,7 @@ export const addComment = async (
 	try {
 		const { imageVersionId } = req.params
 		const { content, parentId, annotation } = req.body
-		const userId = (req.user as any)?.id
+		const userId = (req.user as AuthenticatedUser)?.id
 
 		if (!userId) {
 			res.status(401).json({ message: "Unauthorized" })
@@ -253,7 +247,7 @@ export const deleteComment = async (
 ): Promise<void> => {
 	try {
 		const { commentId } = req.params
-		const userId = (req.user as any)?.id
+		const userId = (req.user as AuthenticatedUser)?.id
 
 		if (!userId) {
 			res.status(401).json({ message: "Unauthorized" })
@@ -286,7 +280,7 @@ export const toggleLikeComment = async (
 ): Promise<void> => {
 	try {
 		const { commentId } = req.params
-		const userId = (req.user as any)?.id
+		const userId = (req.user as AuthenticatedUser)?.id
 
 		if (!userId) {
 			res.status(401).json({ message: "Unauthorized" })
@@ -306,7 +300,7 @@ export const toggleResolveComment = async (
 ): Promise<void> => {
 	try {
 		const { commentId } = req.params
-		const userId = (req.user as any)?.id
+		const userId = (req.user as AuthenticatedUser)?.id
 
 		if (!userId) {
 			res.status(401).json({ message: "Unauthorized" })

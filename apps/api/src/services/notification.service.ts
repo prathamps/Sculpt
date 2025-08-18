@@ -2,13 +2,14 @@ import { prisma } from "../lib/prisma"
 import safeRedis from "../lib/redis"
 import { io } from "../index"
 import { Notification } from "@prisma/client"
+import { JsonValue } from "@prisma/client/runtime/library"
 
 export class NotificationService {
 	// Create a notification and send it via Socket.io
 	static async createNotification(data: {
 		userId: string
 		content: string
-		metadata?: Record<string, any>
+		metadata?: JsonValue
 	}): Promise<Notification> {
 		try {
 			console.log(
@@ -64,7 +65,7 @@ export class NotificationService {
 		projectId: string
 		content: string
 		excludeUserId?: string // Optional user to exclude (e.g., the user who triggered the notification)
-		metadata?: Record<string, any>
+		metadata?: JsonValue
 	}): Promise<void> {
 		try {
 			console.log(
@@ -97,7 +98,7 @@ export class NotificationService {
 					userId: member.userId,
 					content: data.content,
 					metadata: {
-						...data.metadata,
+						...(typeof data.metadata === 'object' && data.metadata !== null ? data.metadata : {}),
 						projectId: data.projectId,
 					},
 				})

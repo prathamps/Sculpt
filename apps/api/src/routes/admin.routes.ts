@@ -9,7 +9,7 @@ import {
 	adminProfile,
 	adminLogout,
 } from "../controllers/admin.controller"
-import { authenticateAdmin, adminOnly } from "../middleware/auth.middleware"
+import { authenticateAdmin } from "../middleware/auth.middleware"
 
 const router = Router()
 

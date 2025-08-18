@@ -1,10 +1,7 @@
-import { Request, Response } from "express"
+import { Response } from "express"
 import * as projectService from "../services/projects.service"
-import { User, Project, Image, ImageVersion } from "@prisma/client"
-
-interface AuthenticatedRequest extends Request {
-	user?: User
-}
+import { AuthenticatedRequest, ProjectMemberWithUser } from "../types";
+import { Project, Image, ImageVersion } from "@prisma/client"
 
 // Extended types for the transformed data
 interface ExtendedImage extends Image {
@@ -14,7 +11,7 @@ interface ExtendedImage extends Image {
 
 interface ExtendedProject extends Project {
 	images: ExtendedImage[]
-	members: any[] // We don't need to be specific about members here
+	members: ProjectMemberWithUser[]
 }
 
 export const createProject = async (
@@ -176,8 +173,7 @@ export const inviteToProject = async (
 		const project = await projectService.inviteUserToProject(id, email)
 		res.status(200).json(project)
 	} catch (error) {
-		// @ts-ignore
-		res.status(500).json({ message: error.message })
+		res.status(500).json({ message: "An unexpected error occurred." })
 	}
 }
 

@@ -1,9 +1,9 @@
 import passport from "passport"
-import { Request, Response, NextFunction } from "express"
+import { Response, NextFunction } from "express"
 import { UserRole } from "@prisma/client"
 import jwt from "jsonwebtoken"
 import { prisma } from "../lib/prisma"
-import { User } from "../types"
+import { AuthenticatedRequest, AuthenticatedUser } from "../types";
 
 export const authenticateJWT = (
 	req: Request,
@@ -13,7 +13,7 @@ export const authenticateJWT = (
 	passport.authenticate(
 		"jwt",
 		{ session: false },
-		(err: any, user: any, info: any) => {
+		(err: Error, user: Express.User) => {
 			if (err) {
 				return next(err)
 			}
@@ -28,7 +28,7 @@ export const authenticateJWT = (
 
 // Middleware specifically for admin authentication
 export const authenticateAdmin = async (
-	req: Request,
+	req: AuthenticatedRequest,
 	res: Response,
 	next: NextFunction
 ) => {
@@ -56,16 +56,16 @@ export const authenticateAdmin = async (
 
 		// Attach admin to request
 		req.user = admin
-		next()
-	} catch (error) {
+		return next()
+	} catch {
 		return res.status(401).json({ message: "Invalid admin token" })
 	}
 }
 
-export const adminOnly = (req: Request, res: Response, next: NextFunction) => {
-	const user = req.user as User
+export const adminOnly = (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+	const user = req.user as AuthenticatedUser
 	if (!user || user.role !== UserRole.ADMIN) {
 		return res.status(403).json({ message: "Forbidden: Admin access required" })
 	}
-	next()
+	return next()
 }

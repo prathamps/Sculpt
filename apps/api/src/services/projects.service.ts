@@ -1,5 +1,5 @@
 import { prisma } from "../lib/prisma"
-import { Project, User, ProjectRole, ShareLink } from "@prisma/client"
+import { Project, ProjectRole, ShareLink } from "@prisma/client"
 import { randomBytes } from "crypto"
 
 export const createProject = async (

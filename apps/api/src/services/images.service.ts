@@ -207,14 +207,17 @@ export const updateImageVersion = async (
 	})
 }
 
+import { Comment } from "@prisma/client";
+import { JsonValue } from "@prisma/client/runtime/library";
+
 // Comment-related functions
 export const addComment = async (
 	content: string,
 	imageVersionId: string,
 	userId: string,
 	parentId?: string,
-	annotation?: any
-): Promise<any> => {
+	annotation?: JsonValue
+): Promise<Comment> => {
 	// Import CommentsService here to avoid circular dependency
 	const { CommentsService } = require("./comments.service")
 
@@ -232,7 +235,7 @@ export const addComment = async (
 
 export const getCommentsForImageVersion = async (
 	imageVersionId: string
-): Promise<any[]> => {
+): Promise<Comment[]> => {
 	return prisma.comment.findMany({
 		where: {
 			imageVersionId,
@@ -262,7 +265,7 @@ export const getCommentsForImageVersion = async (
 	})
 }
 
-export const getCommentById = async (commentId: string): Promise<any> => {
+export const getCommentById = async (commentId: string): Promise<Comment | null> => {
 	return prisma.comment.findUnique({
 		where: {
 			id: commentId,
@@ -281,7 +284,7 @@ export const deleteComment = async (commentId: string): Promise<void> => {
 	console.log("Image service: Delegating comment deletion to CommentsService")
 
 	// Get comment to find the user ID
-	const comment = await getCommentById(commentId)
+	const comment: Comment | null = await getCommentById(commentId)
 	if (!comment) {
 		throw new Error("Comment not found")
 	}
@@ -307,7 +310,7 @@ export const toggleCommentResolved = async (
 	commentId: string
 ): Promise<{ resolved: boolean }> => {
 	// Get current comment
-	const comment = await prisma.comment.findUnique({
+	const comment: Comment | null = await prisma.comment.findUnique({
 		where: { id: commentId },
 	})
 

@@ -18,7 +18,11 @@ async function main() {
 
     console.log(`Successfully promoted ${user.email} to ADMIN.`);
   } catch (error) {
-    console.error(`Error promoting user: ${error.message}`);
+    if (error instanceof Error) {
+        console.error(`Error promoting user: ${error.message}`);
+    } else {
+        console.error('An unknown error occurred.');
+    }
   } finally {
     await prisma.$disconnect();
   }

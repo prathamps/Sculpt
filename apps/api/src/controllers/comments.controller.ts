@@ -1,20 +1,20 @@
 import { Request, Response } from "express"
 import { CommentsService } from "../services/comments.service"
-import { User } from "../types"
+import { AuthenticatedUser } from "../types"
 
 export class CommentsController {
 	// Get comments for an image version
 	static async getCommentsByImageVersion(req: Request, res: Response) {
 		try {
 			const { imageVersionId } = req.params
-			const userId = (req.user as User)?.id
+			const userId = (req.user as AuthenticatedUser)?.id
 
 			const comments = await CommentsService.getCommentsByImageVersionId(
 				imageVersionId,
 				userId
 			)
 			return res.status(200).json(comments)
-		} catch (error) {
+		} catch (error: unknown) {
 			console.error("Error fetching comments:", error)
 			return res.status(500).json({ message: "Internal server error" })
 		}
@@ -23,7 +23,7 @@ export class CommentsController {
 	// Create a new comment
 	static async createComment(req: Request, res: Response) {
 		try {
-			const userId = (req.user as User)?.id
+			const userId = (req.user as AuthenticatedUser)?.id
 			if (!userId) {
 				return res.status(401).json({ message: "Unauthorized" })
 			}
@@ -44,7 +44,7 @@ export class CommentsController {
 			})
 
 			return res.status(201).json(comment)
-		} catch (error) {
+		} catch (error: unknown) {
 			console.error("Error creating comment:", error)
 			return res.status(500).json({ message: "Internal server error" })
 		}
@@ -53,7 +53,7 @@ export class CommentsController {
 	// Update a comment
 	static async updateComment(req: Request, res: Response) {
 		try {
-			const userId = (req.user as User)?.id
+			const userId = (req.user as AuthenticatedUser)?.id
 			if (!userId) {
 				return res.status(401).json({ message: "Unauthorized" })
 			}
@@ -72,9 +72,9 @@ export class CommentsController {
 			)
 
 			return res.status(200).json(comment)
-		} catch (error) {
+		} catch (error: unknown) {
 			console.error("Error updating comment:", error)
-			if (error.message?.includes("permission")) {
+			if (error instanceof Error && error.message?.includes("permission")) {
 				return res.status(403).json({ message: error.message })
 			}
 			return res.status(500).json({ message: "Internal server error" })
@@ -84,7 +84,7 @@ export class CommentsController {
 	// Delete a comment
 	static async deleteComment(req: Request, res: Response) {
 		try {
-			const userId = (req.user as User)?.id
+			const userId = (req.user as AuthenticatedUser)?.id
 			if (!userId) {
 				return res.status(401).json({ message: "Unauthorized" })
 			}
@@ -94,9 +94,9 @@ export class CommentsController {
 			await CommentsService.deleteComment(commentId, userId)
 
 			return res.status(200).json({ message: "Comment deleted successfully" })
-		} catch (error) {
+		} catch (error: unknown) {
 			console.error("Error deleting comment:", error)
-			if (error.message?.includes("permission")) {
+			if (error instanceof Error && error.message?.includes("permission")) {
 				return res.status(403).json({ message: error.message })
 			}
 			return res.status(500).json({ message: "Internal server error" })
@@ -106,7 +106,7 @@ export class CommentsController {
 	// Like or unlike a comment
 	static async toggleLike(req: Request, res: Response) {
 		try {
-			const userId = (req.user as User)?.id
+			const userId = (req.user as AuthenticatedUser)?.id
 			if (!userId) {
 				return res.status(401).json({ message: "Unauthorized" })
 			}

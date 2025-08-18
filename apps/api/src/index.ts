@@ -22,7 +22,6 @@ export { io }
 
 dotenv.config()
 
-
 const app = express()
 const server = http.createServer(app)
 const allowedOrigins = [

@@ -1,11 +1,7 @@
-import { Request, Response } from "express"
+import { Response } from "express"
 import { NotificationService } from "../services/notification.service"
 import { io } from "../index"
-import { User } from "@prisma/client"
-
-interface AuthenticatedRequest extends Request {
-	user?: User
-}
+import { AuthenticatedRequest } from "../types"
 
 export class NotificationsController {
 	// Get all notifications for the logged-in user

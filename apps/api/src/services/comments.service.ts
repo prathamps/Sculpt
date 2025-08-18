@@ -1,6 +1,7 @@
+import { JsonValue } from "@prisma/client/runtime/library";
 import { prisma } from "../lib/prisma"
 import { Comment, CommentLike, User } from "@prisma/client"
-import safeRedis from "../lib/redis"
+
 import { io } from "../index"
 import { NotificationService } from "./notification.service"
 
@@ -19,7 +20,7 @@ export class CommentsService {
 		imageVersionId: string
 		userId: string
 		parentId?: string | null
-		annotation?: Record<string, any> | null
+		annotation?: JsonValue | null
 	}): Promise<Comment> {
 		try {
 			console.log("=== COMMENT CREATION STARTED ===")
@@ -37,7 +38,7 @@ export class CommentsService {
 					imageVersionId: data.imageVersionId,
 					userId: data.userId,
 					parentId: data.parentId || null,
-					annotation: data.annotation as any,
+					annotation: data.annotation,
 				},
 				include: {
 					user: true,

@@ -1,5 +1,5 @@
 import passport from "passport"
-import { Strategy as JwtStrategy, ExtractJwt } from "passport-jwt"
+import { Strategy as JwtStrategy } from "passport-jwt"
 import { prisma } from "./prisma"
 import { Request } from "express"
 
