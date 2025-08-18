@@ -419,7 +419,7 @@ export default function ProjectFileViewPage() {
 							</div>
 						) : selectedVersion ? (
 							<AnnotationCanvas
-								imageUrl={`http://localhost:3001/${selectedVersion.url}`}
+								imageUrl={`${URI}/${selectedVersion.url}`}
 								tool={tool}
 								color={color}
 								onAddAnnotation={handleAddAnnotation}

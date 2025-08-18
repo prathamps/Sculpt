@@ -31,7 +31,7 @@ export function RenameFileModal({
 	const [name, setName] = useState("")
 	const [isSaving, setIsSaving] = useState(false)
 	const [error, setError] = useState("")
-
+	const URI = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001"
 	useEffect(() => {
 		if (file) {
 			setName(file.name)
@@ -59,7 +59,7 @@ export function RenameFileModal({
 		setError("")
 
 		try {
-			const res = await fetch(`http://localhost:3001/api/images/${file.id}`, {
+			const res = await fetch(`${URI}/api/images/${file.id}`, {
 				method: "PUT",
 				headers: { "Content-Type": "application/json" },
 				credentials: "include",
