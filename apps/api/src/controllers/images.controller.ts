@@ -1,4 +1,4 @@
-import { AuthenticatedUser } from "../types";
+import { AuthenticatedUser } from "../types"
 import { Request, Response } from "express"
 import * as imageService from "../services/images.service"
 
@@ -103,8 +103,12 @@ export const uploadImageVersion = async (
 			return
 		}
 		// Create the new version
-		
 
+		await imageService.addImageVersion(
+			imageId,
+			`uploads/${file.filename}`,
+			req.body.versionName
+		)
 		// Get the full image with all versions to return to the client
 		const image = await imageService.getImageById(imageId)
 		if (!image) {
