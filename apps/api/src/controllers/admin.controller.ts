@@ -36,7 +36,7 @@ export const adminLogin = async (req: Request, res: Response) => {
 		res.cookie("admin_token", token, {
 			httpOnly: true,
 			secure: process.env.NODE_ENV === "production",
-			sameSite: "lax",
+			sameSite: "none",
 			maxAge: 8 * 3600000, // 8 hours
 		})
 
