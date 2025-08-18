@@ -103,14 +103,15 @@ export const uploadImageVersion = async (
 			return
 		}
 		// Create the new version
-
-		await imageService.addImageVersion(
+		const newVersion = await imageService.addImageVersion(
 			imageId,
 			`uploads/${file.filename}`,
 			req.body.versionName
 		)
+		console.log("[uploadImageVersion] New version created:", newVersion)
 		// Get the full image with all versions to return to the client
 		const image = await imageService.getImageById(imageId)
+		console.log("[uploadImageVersion] Image after adding version:", image)
 		if (!image) {
 			res.status(404).json({ message: "Image not found" })
 			return
