@@ -47,7 +47,7 @@ export function ProjectSidebar({
 	const [isDeleteConfirmOpen, setDeleteConfirmOpen] = useState(false)
 	const [isDeleting, setIsDeleting] = useState(false)
 	const [searchQuery, setSearchQuery] = useState("")
-
+	const URI = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001"
 	const filteredProjects = projects.filter((project) =>
 		project.name.toLowerCase().includes(searchQuery.toLowerCase())
 	)
@@ -55,13 +55,10 @@ export function ProjectSidebar({
 	const handleDeleteProject = async (projectId: string) => {
 		setIsDeleting(true)
 		try {
-			const res = await fetch(
-				`http://localhost:3001/api/projects/${projectId}`,
-				{
-					method: "DELETE",
-					credentials: "include",
-				}
-			)
+			const res = await fetch(`${URI}/api/projects/${projectId}`, {
+				method: "DELETE",
+				credentials: "include",
+			})
 
 			if (res.ok) {
 				onProjectChanged()
