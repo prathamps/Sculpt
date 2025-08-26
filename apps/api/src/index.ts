@@ -31,8 +31,31 @@ const allowedOrigins = [
 ]
 
 const corsOptions = {
-	origin: allowedOrigins,
+	origin: function (origin, callback) {
+		// Allow requests with no origin (like mobile apps or curl requests)
+		if (!origin) return callback(null, true)
+
+		// Allow all localhost origins for development
+		if (origin.includes("localhost") || origin.includes("127.0.0.1")) {
+			return callback(null, true)
+		}
+
+		// Allow specific production origins
+		if (allowedOrigins.includes(origin)) {
+			return callback(null, true)
+		}
+
+		// Allow Vercel preview deployments
+		if (origin.includes("vercel.app")) {
+			return callback(null, true)
+		}
+
+		// Reject other origins
+		callback(new Error("Not allowed by CORS"))
+	},
 	credentials: true,
+	methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+	allowedHeaders: ["Content-Type", "Authorization", "Cookie"],
 }
 
 app.use(cors(corsOptions))
@@ -40,10 +63,31 @@ app.use(cors(corsOptions))
 // Configure Socket.io with CORS
 const io = new Server(server, {
 	cors: {
-		origin: allowedOrigins,
+		origin: function (origin, callback) {
+			// Allow requests with no origin (like mobile apps)
+			if (!origin) return callback(null, true)
+
+			// Allow all localhost origins for development
+			if (origin.includes("localhost") || origin.includes("127.0.0.1")) {
+				return callback(null, true)
+			}
+
+			// Allow specific production origins
+			if (allowedOrigins.includes(origin)) {
+				return callback(null, true)
+			}
+
+			// Allow Vercel preview deployments
+			if (origin.includes("vercel.app")) {
+				return callback(null, true)
+			}
+
+			// Allow for mobile and other clients
+			callback(null, true)
+		},
 		methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
 		credentials: true,
-		allowedHeaders: ["Content-Type", "Authorization"],
+		allowedHeaders: ["Content-Type", "Authorization", "Cookie"],
 	},
 	transports: ["websocket", "polling"],
 	connectTimeout: 60000, // Increase connection timeout to 60 seconds

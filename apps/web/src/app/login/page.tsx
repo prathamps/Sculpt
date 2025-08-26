@@ -7,7 +7,7 @@ import Image from "next/image"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { useAuth } from "@/context/AuthContext"
-import { toast } from "sonner"
+import { authToasts, errorUtils } from "@/lib/auth-toasts"
 import { ArrowLeft, Loader2 } from "lucide-react"
 import { Label } from "@/components/ui/label"
 
@@ -22,6 +22,7 @@ export default function LoginPage() {
 		e.preventDefault()
 		setIsLoading(true)
 		const URI = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001"
+
 		try {
 			const res = await fetch(`${URI}/api/auth/login`, {
 				method: "POST",
@@ -32,15 +33,40 @@ export default function LoginPage() {
 
 			if (res.ok) {
 				login()
-				toast.success("Login successful!")
+				authToasts.showLoginSuccess()
 				router.push("/dashboard")
 			} else {
-				toast.error("Login failed. Please check your credentials.")
-				console.error("Login failed")
+				// Parse error response to get more details
+				let errorResponse
+				try {
+					errorResponse = await res.json()
+				} catch {
+					// If response is not JSON, use default error handling
+					errorResponse = null
+				}
+
+				// Determine error type based on status code and response
+				const errorType = errorUtils.getLoginErrorType(
+					res.status,
+					errorResponse
+				)
+				authToasts.showLoginError(errorType)
+
+				console.error("Login failed:", {
+					status: res.status,
+					statusText: res.statusText,
+					response: errorResponse,
+				})
 			}
 		} catch (error) {
-			toast.error("An error occurred during login.")
-			console.error(error)
+			// Handle network errors and other fetch failures
+			if (errorUtils.isNetworkError(error)) {
+				authToasts.showLoginError("network_error")
+			} else {
+				authToasts.showLoginError("unknown")
+			}
+
+			console.error("Login error:", error)
 		} finally {
 			setIsLoading(false)
 		}

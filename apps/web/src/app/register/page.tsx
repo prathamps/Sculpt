@@ -6,7 +6,7 @@ import Link from "next/link"
 import Image from "next/image"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { toast } from "sonner"
+import { authToasts, errorUtils } from "@/lib/auth-toasts"
 import { ArrowLeft, Loader2 } from "lucide-react"
 import { Label } from "@/components/ui/label"
 
@@ -21,6 +21,7 @@ export default function RegisterPage() {
 		e.preventDefault()
 		setIsLoading(true)
 		const URI = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001"
+
 		try {
 			const res = await fetch(`${URI}/api/auth/register`, {
 				method: "POST",
@@ -29,15 +30,30 @@ export default function RegisterPage() {
 			})
 
 			if (res.ok) {
-				toast.success("Registration successful! Please log in.")
+				authToasts.showSignupSuccess()
 				router.push("/login")
 			} else {
-				const errorData = await res.json()
-				toast.error(errorData.message || "Registration failed")
+				// Parse error response for better error handling
+				let errorData
+				try {
+					errorData = await res.json()
+				} catch {
+					// If response is not JSON, use default error handling
+					errorData = { message: "Registration failed" }
+				}
+
+				// Determine error type based on status code and response
+				const errorType = errorUtils.getSignupErrorType(res.status, errorData)
+				authToasts.showSignupError(errorType)
 			}
 		} catch (error) {
-			toast.error("An error occurred during registration")
-			console.error(error)
+			// Handle network errors and other fetch failures
+			if (errorUtils.isNetworkError(error)) {
+				authToasts.showSignupError("network_error")
+			} else {
+				authToasts.showSignupError("unknown")
+			}
+			console.error("Registration error:", error)
 		} finally {
 			setIsLoading(false)
 		}
