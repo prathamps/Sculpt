@@ -39,10 +39,6 @@ export default function RootLayout({
 										border: "1px solid hsl(var(--border))",
 										color: "hsl(var(--foreground))",
 									},
-									ariaProps: {
-										role: "status",
-										"aria-live": "polite",
-									},
 								}}
 							/>
 						</SocketProvider>
