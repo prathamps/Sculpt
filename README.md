@@ -151,6 +151,89 @@ Sculpt aims to become the industry standard for visual feedback and collaboratio
 
 We believe that miscommunication is the enemy of great design, and Sculpt is our answer to this challenge. Join us in transforming how teams work with visual content!
 
+## Premium & Platform Features
+
+Beyond the core collaboration tools, Sculpt ships with:
+
+### 🎬 Video annotation (frame-by-frame)
+
+Upload videos alongside images. The viewer provides play/pause, scrubbing and
+single-frame stepping, with the same pencil/rectangle/line tools overlaid on the
+video. Each annotation and comment is **anchored to a video timestamp** — clicking
+a comment's time badge seeks the player to that exact moment. Export the current
+annotated frame as a PNG straight from the player. _(PRO)_
+
+### 📤 Export annotations & reports
+
+- **Annotated PNG** — download the image with your drawings burned in (client-side).
+- **Reports** — `GET /api/export/image/:imageId/report.(json|csv)` produce a full
+  report of every version, comment, resolution status, annotation count and video
+  timestamp. The UI also offers a printable (PDF) report. _(reports are PRO)_
+
+### 💳 Subscriptions (PRO plan) — Razorpay or Stripe
+
+The billing provider is **pluggable and auto-detected**: set `RAZORPAY_*` keys to
+use Razorpay (India-friendly, recurring Subscriptions), or `STRIPE_*` keys to use
+Stripe. Razorpay takes precedence when both are present.
+
+**Razorpay test-mode setup:** use `rzp_test_` keys, create a **Plan**
+(Subscriptions → Plans) and set `RAZORPAY_PLAN_ID`. Configure a webhook pointing
+at `…/api/subscriptions/razorpay/webhook` (events: `subscription.*`) and set
+`RAZORPAY_WEBHOOK_SECRET`. Upgrade opens the in-page Razorpay Checkout modal; pay
+with a test card (`4111 1111 1111 1111`, any future expiry/CVV), the server
+verifies the signature, and webhooks keep the plan in sync. Cancel from the
+billing page.
+
+`FREE` vs `PRO` tiers are enforced server-side via a central limits table
+(`src/lib/plans.ts`):
+
+| | FREE | PRO |
+|---|---|---|
+| Projects | 3 | Unlimited |
+| Members / project | 3 | Unlimited |
+| Versions / file | 2 | Unlimited |
+| Video annotation | — | ✓ |
+| Report export | — | ✓ |
+
+Checkout, the billing portal and webhook sync live under `/api/subscriptions`.
+The webhook is mounted with a raw body for signature verification. Gated actions
+return HTTP `402` with an upgrade hint; the UI surfaces an **Upgrade** prompt.
+
+### ✉️ Email notifications for offline members
+
+Socket presence is tracked per user. When a notification is generated for a user
+who is **not currently connected**, it is also delivered by email (Nodemailer /
+SMTP). Configure any SMTP provider; if unset, email is skipped gracefully.
+
+### 🔐 OAuth login (Google & GitHub)
+
+`Continue with Google / GitHub` buttons appear automatically when the
+corresponding provider is configured. OAuth users are matched to existing
+accounts by email or created on the fly, then issued the same JWT cookie as
+password login.
+
+### 🚦 CI pipeline
+
+`.github/workflows/ci.yml` runs on every PR and push to `main`: it lints,
+type-checks and builds both apps and validates the Prisma schema. Releasing
+continues to use Railway (API) and Vercel (web) git auto-deploy. Run database
+migrations on deploy with `npx prisma migrate deploy`.
+
+## Configuration
+
+Copy the example env files and fill in what you need — every integration above is
+optional and degrades gracefully when its variables are absent:
+
+```bash
+cp apps/api/.env.example apps/api/.env
+cp apps/web/.env.example apps/web/.env.local
+```
+
+Key API variables: `DATABASE_URL`, `DIRECT_URL`, `JWT_SECRET`, `FRONTEND_URL`,
+`API_URL`, `REDIS_URL`, the `GOOGLE_*` / `GITHUB_*` OAuth pairs, the billing
+block (`RAZORPAY_*` or `STRIPE_*`), and the `SMTP_*` block. See
+`apps/api/.env.example` for the full list.
+
 ## License
 
 [MIT](LICENSE)

@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { useRouter } from "next/navigation"
 import Link from "next/link"
 import Image from "next/image"
@@ -10,6 +10,7 @@ import { useAuth } from "@/context/AuthContext"
 import { authToasts, errorUtils } from "@/lib/auth-toasts"
 import { ArrowLeft, Loader2 } from "lucide-react"
 import { Label } from "@/components/ui/label"
+import { OAuthButtons } from "@/components/OAuthButtons"
 
 export default function LoginPage() {
 	const [email, setEmail] = useState("")
@@ -17,6 +18,15 @@ export default function LoginPage() {
 	const [isLoading, setIsLoading] = useState(false)
 	const router = useRouter()
 	const { login } = useAuth()
+
+	useEffect(() => {
+		if (
+			typeof window !== "undefined" &&
+			new URLSearchParams(window.location.search).get("error") === "oauth"
+		) {
+			authToasts.showLoginError("unknown")
+		}
+	}, [])
 
 	const handleSubmit = async (e: React.FormEvent) => {
 		e.preventDefault()
@@ -147,6 +157,9 @@ export default function LoginPage() {
 								)}
 							</Button>
 						</form>
+						<div className="mt-4">
+							<OAuthButtons />
+						</div>
 					</div>
 					<div className="mt-6 text-center text-sm">
 						Don't have an account?{" "}

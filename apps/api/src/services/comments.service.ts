@@ -21,6 +21,7 @@ export class CommentsService {
 		userId: string
 		parentId?: string | null
 		annotation?: JsonValue | null
+		timestamp?: number | null
 	}): Promise<Comment> {
 		try {
 			console.log("=== COMMENT CREATION STARTED ===")
@@ -39,6 +40,7 @@ export class CommentsService {
 					userId: data.userId,
 					parentId: data.parentId || null,
 					annotation: data.annotation,
+					timestamp: data.timestamp ?? null,
 				},
 				include: {
 					user: true,

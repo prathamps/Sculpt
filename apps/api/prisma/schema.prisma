@@ -27,12 +27,20 @@ enum Plan {
   PRO
 }
 
+enum MediaType {
+  IMAGE
+  VIDEO
+}
+
 model User {
   id            String          @id @default(cuid())
   email         String          @unique
   name          String?
-  password      String
+  password      String? // nullable for OAuth-only accounts
   role          UserRole        @default(USER)
+  provider      String? // "local" | "google" | "github"
+  providerId    String? // provider account id (for OAuth)
+  avatarUrl     String?
   memberships   ProjectMember[]
   notifications Notification[]
   messages      Message[]
@@ -82,6 +90,8 @@ model ImageVersion {
   url         String
   versionName String    @default("Version 1")
   versionNumber Int     @default(1)
+  mediaType   MediaType @default(IMAGE)
+  duration    Float? // video duration in seconds (null for images)
   imageId     String
   image       Image     @relation(fields: [imageId], references: [id], onDelete: Cascade)
   annotations Json[]
@@ -102,6 +112,7 @@ model Comment {
   replies        Comment[]     @relation("CommentToComment")
   likes          CommentLike[]
   annotation     Json?         // Store annotation data as JSON
+  timestamp      Float?        // seconds into a video this comment is anchored to (null for images)
   resolved       Boolean       @default(false)
   createdAt      DateTime      @default(now())
   updatedAt      DateTime      @updatedAt
@@ -132,20 +143,27 @@ model Notification {
   id        String   @id @default(cuid())
   content   String
   read      Boolean  @default(false)
+  metadata  Json? // e.g. { type, imageVersionId, projectId, commentId }
   userId    String
   user      User     @relation(fields: [userId], references: [id])
   createdAt DateTime @default(now())
 }
 
 model Subscription {
-  id               String   @id @default(cuid())
-  userId           String   @unique
-  user             User     @relation(fields: [userId], references: [id])
-  plan             Plan     @default(FREE)
-  stripeCustomerId String?
-  status           String // e.g., 'active', 'canceled'
-  createdAt        DateTime @default(now())
-  updatedAt        DateTime @updatedAt
+  id                     String    @id @default(cuid())
+  userId                 String    @unique
+  user                   User      @relation(fields: [userId], references: [id])
+  plan                   Plan      @default(FREE)
+  provider               String? // 'stripe' | 'razorpay'
+  stripeCustomerId       String?
+  stripeSubscriptionId   String?   @unique
+  stripePriceId          String?
+  razorpaySubscriptionId String?   @unique
+  currentPeriodEnd       DateTime? // renewal date (provider-agnostic)
+  stripeCurrentPeriodEnd DateTime? // legacy; kept for back-compat
+  status                 String    @default("active") // e.g., 'active', 'canceled', 'past_due'
+  createdAt              DateTime  @default(now())
+  updatedAt              DateTime  @updatedAt
 }
 
 model ShareLink {

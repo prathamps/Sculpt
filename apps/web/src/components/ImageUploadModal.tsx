@@ -126,6 +126,16 @@ export function ImageUploadModal({
 				})
 			}
 
+			if (res.status === 402) {
+				const data = await res.json().catch(() => ({}))
+				setError(
+					data.message ||
+						"Video upload is a PRO feature. Upgrade to PRO to continue."
+				)
+				setUploadProgress(0)
+				return
+			}
+
 			if (!res.ok) {
 				throw new Error("Upload failed")
 			}

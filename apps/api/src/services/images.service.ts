@@ -1,5 +1,5 @@
 import { prisma } from "../lib/prisma"
-import { Image, ImageVersion } from "@prisma/client"
+import { Image, ImageVersion, MediaType } from "@prisma/client"
 import fs from "fs/promises"
 import path from "path"
 
@@ -7,6 +7,8 @@ interface ImagePayload {
 	url: string
 	name: string
 	projectId: string
+	mediaType?: MediaType
+	duration?: number | null
 }
 
 export const addImagesToProject = async (
@@ -24,6 +26,8 @@ export const addImagesToProject = async (
 							url: img.url,
 							versionName: "Version 1",
 							versionNumber: 1,
+							mediaType: img.mediaType ?? MediaType.IMAGE,
+							duration: img.duration ?? null,
 						},
 					},
 				},
@@ -108,24 +112,25 @@ export const getImageVersionById = async (
 	})
 }
 
+export const getVersionCount = async (imageId: string): Promise<number> => {
+	return prisma.imageVersion.count({ where: { imageId } })
+}
+
 export const addImageVersion = async (
 	imageId: string,
 	filePath: string,
-	versionName?: string
+	versionName?: string,
+	mediaType: MediaType = MediaType.IMAGE,
+	duration?: number | null
 ): Promise<ImageVersion> => {
-	// Get the current versions
-	const currentVersions = await prisma.imageVersion.findMany({
+	// Plan-based version limits are enforced in the controller; here we just
+	// compute the next version number.
+	const latest = await prisma.imageVersion.findFirst({
 		where: { imageId },
 		orderBy: { versionNumber: "desc" },
 	})
 
-	// Check if we've hit the maximum number of allowed versions (2)
-	if (currentVersions.length >= 2) {
-		throw new Error("Maximum number of versions (2) reached for this image")
-	}
-
-	const nextVersionNumber =
-		currentVersions.length > 0 ? currentVersions[0].versionNumber + 1 : 1
+	const nextVersionNumber = latest ? latest.versionNumber + 1 : 1
 
 	// Create the new version
 	return prisma.imageVersion.create({
@@ -134,6 +139,8 @@ export const addImageVersion = async (
 			versionName: versionName || `Version ${nextVersionNumber}`,
 			versionNumber: nextVersionNumber,
 			imageId,
+			mediaType,
+			duration: duration ?? null,
 		},
 	})
 }
@@ -216,7 +223,8 @@ export const addComment = async (
 	imageVersionId: string,
 	userId: string,
 	parentId?: string,
-	annotation?: JsonValue
+	annotation?: JsonValue,
+	timestamp?: number | null
 ): Promise<Comment> => {
 	// Import CommentsService here to avoid circular dependency
 	const { CommentsService } = require("./comments.service")
@@ -230,6 +238,7 @@ export const addComment = async (
 		userId,
 		parentId: parentId || null,
 		annotation: annotation || null,
+		timestamp: timestamp ?? null,
 	})
 }
 

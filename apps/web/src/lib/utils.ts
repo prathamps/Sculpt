@@ -28,3 +28,16 @@ export function formatDate(dateString: string): string {
 	const date = new Date(dateString)
 	return formatDistanceToNow(date, { addSuffix: true })
 }
+
+/**
+ * Format a number of seconds as m:ss (or m:ss.d for sub-second precision)
+ */
+export function formatVideoTime(seconds: number, withDecimals = false): string {
+	if (!isFinite(seconds) || seconds < 0) seconds = 0
+	const mins = Math.floor(seconds / 60)
+	const secs = seconds - mins * 60
+	if (withDecimals) {
+		return `${mins}:${secs.toFixed(1).padStart(4, "0")}`
+	}
+	return `${mins}:${Math.floor(secs).toString().padStart(2, "0")}`
+}

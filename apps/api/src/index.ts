@@ -11,6 +11,13 @@ import shareRoutes from "./routes/share.routes"
 import notificationRoutes from "./routes/notifications.routes"
 import commentRoutes from "./routes/comments.routes"
 import adminRoutes from "./routes/admin.routes"
+import subscriptionRoutes from "./routes/subscription.routes"
+import exportRoutes from "./routes/export.routes"
+import {
+	handleWebhook as stripeWebhook,
+	handleRazorpayWebhook,
+} from "./controllers/subscription.controller"
+import { markOnline, markOffline } from "./lib/presence"
 import path from "path"
 import http from "http"
 import { Server } from "socket.io"
@@ -104,6 +111,11 @@ io.on("connection", (socket) => {
 	socket.on("join", (userId) => {
 		if (userId) {
 			socket.join(`user:${userId}`)
+			socket.data.userId = userId
+			// Track presence so offline users get email fallbacks instead.
+			markOnline(userId, socket.id).catch((e) =>
+				console.error("presence markOnline error", e)
+			)
 			console.log(`User ${userId} joined their room via socket ${socket.id}`)
 
 			// Emit a connection confirmation event
@@ -221,9 +233,28 @@ io.on("connection", (socket) => {
 	})
 
 	socket.on("disconnect", (reason) => {
+		const userId = socket.data.userId as string | undefined
+		if (userId) {
+			markOffline(userId, socket.id).catch((e) =>
+				console.error("presence markOffline error", e)
+			)
+		}
 		console.log(`Client disconnected: ${socket.id}, reason: ${reason}`)
 	})
 })
+
+// Payment webhooks must receive the raw body for signature verification, so
+// they are mounted BEFORE express.json() parses everything else.
+app.post(
+	"/api/subscriptions/webhook",
+	express.raw({ type: "application/json" }),
+	stripeWebhook
+)
+app.post(
+	"/api/subscriptions/razorpay/webhook",
+	express.raw({ type: "application/json" }),
+	handleRazorpayWebhook
+)
 
 app.use(express.json())
 app.use(cookieParser())
@@ -240,6 +271,8 @@ app.use("/api/share", shareRoutes)
 app.use("/api/notifications", notificationRoutes)
 app.use("/api/comments", commentRoutes)
 app.use("/api/admin", adminRoutes)
+app.use("/api/subscriptions", subscriptionRoutes)
+app.use("/api/export", exportRoutes)
 
 const port = process.env.PORT || 3001
 

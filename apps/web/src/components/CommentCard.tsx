@@ -9,8 +9,9 @@ import {
 	Trash2,
 	Edit3,
 	Send,
+	Clock,
 } from "lucide-react"
-import { cn } from "@/lib/utils"
+import { cn, formatVideoTime } from "@/lib/utils"
 import {
 	DropdownMenu,
 	DropdownMenuContent,
@@ -27,12 +28,14 @@ interface CommentCardProps {
 	comment: CommentType
 	onCommentUpdate?: () => void
 	onHighlightAnnotation?: (annotation: any) => void
+	onSeek?: (t: number) => void
 }
 
 export function CommentCard({
 	comment,
 	onCommentUpdate,
 	onHighlightAnnotation,
+	onSeek,
 }: CommentCardProps) {
 	const { user } = useAuth()
 	const [isDeleting, setIsDeleting] = useState(false)
@@ -198,6 +201,20 @@ export function CommentCard({
 								{comment.user.name || comment.user.email}
 							</span>
 							<span className="text-xs text-muted-foreground">{timestamp}</span>
+							{typeof comment.timestamp === "number" && (
+								<button
+									type="button"
+									onClick={(e) => {
+										e.stopPropagation()
+										onSeek?.(comment.timestamp as number)
+									}}
+									className="flex items-center gap-1 rounded bg-primary/10 px-1.5 py-0.5 text-xs text-primary hover:bg-primary/20"
+									title="Jump to this moment"
+								>
+									<Clock className="h-3 w-3" />
+									{formatVideoTime(comment.timestamp)}
+								</button>
+							)}
 							{comment.resolved && (
 								<span className="flex items-center gap-1 text-xs text-green-500">
 									<CheckCircle2 className="h-3 w-3" />
@@ -353,6 +370,7 @@ export function CommentCard({
 							comment={reply}
 							onCommentUpdate={onCommentUpdate}
 							onHighlightAnnotation={onHighlightAnnotation}
+							onSeek={onSeek}
 						/>
 					))}
 				</div>

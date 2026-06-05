@@ -24,12 +24,14 @@ interface CommentSidebarProps {
 	imageVersionId: string
 	className?: string
 	onHighlightAnnotation?: (annotation: any) => void
+	onSeek?: (t: number) => void
 }
 
 export function CommentSidebar({
 	imageVersionId,
 	className,
 	onHighlightAnnotation,
+	onSeek,
 }: CommentSidebarProps) {
 	const { user } = useAuth()
 	const { socket, isConnected, joinImageVersion, leaveImageVersion } =
@@ -280,6 +282,7 @@ export function CommentSidebar({
 									comment={comment}
 									onCommentUpdate={handleCommentUpdate}
 									onHighlightAnnotation={handleHighlightAnnotation}
+									onSeek={onSeek}
 								/>
 							))
 						) : (

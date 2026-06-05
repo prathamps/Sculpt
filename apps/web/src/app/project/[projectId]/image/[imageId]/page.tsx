@@ -5,9 +5,12 @@ import { useAuth } from "@/context/AuthContext"
 import { useSocket } from "@/context/SocketContext"
 import { useRouter, useParams } from "next/navigation"
 import { AnnotationCanvas } from "@/components/AnnotationCanvas"
+import { VideoAnnotationCanvas } from "@/components/VideoAnnotationCanvas"
 import { AnnotationFooter } from "@/components/AnnotationFooter"
 import { CommentSidebar } from "@/components/CommentSidebar"
 import { TopHeader } from "@/components/TopHeader"
+import { ExportMenu } from "@/components/ExportMenu"
+import { toast } from "sonner"
 import { Loader2, ChevronDown, Upload, Trash2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import {
@@ -56,6 +59,20 @@ function useMediaQuery(query: string): boolean {
 	return matches
 }
 
+// Read a video file's duration (seconds) client-side, or null if unavailable.
+function getVideoDuration(file: File): Promise<number | null> {
+	return new Promise((resolve) => {
+		const video = document.createElement("video")
+		video.preload = "metadata"
+		video.onloadedmetadata = () => {
+			resolve(isFinite(video.duration) ? video.duration : null)
+			URL.revokeObjectURL(video.src)
+		}
+		video.onerror = () => resolve(null)
+		video.src = URL.createObjectURL(file)
+	})
+}
+
 export type AnnotationTool = "pencil" | "rect" | "line"
 
 interface Annotation {
@@ -63,6 +80,7 @@ interface Annotation {
 	type: AnnotationTool
 	color: string
 	points: { x: number; y: number }[]
+	t?: number // video timestamp (seconds) for video annotations
 }
 
 export default function ProjectFileViewPage() {
@@ -93,6 +111,15 @@ export default function ProjectFileViewPage() {
 	const [history, setHistory] = useState<Annotation[][]>([[]])
 	const [historyIndex, setHistoryIndex] = useState(0)
 	const [isSidebarOpen, setIsSidebarOpen] = useState(true)
+
+	// Video-specific state
+	const [currentVideoTime, setCurrentVideoTime] = useState(0)
+	const [seekRequest, setSeekRequest] = useState<{
+		time: number
+		nonce: number
+	} | null>(null)
+
+	const isVideo = selectedVersion?.mediaType === "VIDEO"
 
 	// Use media query to determine if we're on a small screen
 	const isSmallScreen = useMediaQuery("(max-width: 768px)")
@@ -196,7 +223,18 @@ export default function ProjectFileViewPage() {
 		setAnnotations([])
 		setHistory([[]])
 		setHistoryIndex(0)
+		setCurrentVideoTime(0)
+		setSeekRequest(null)
 	}
+
+	const handleSeekToTimestamp = (t: number) => {
+		setSeekRequest((prev) => ({ time: t, nonce: (prev?.nonce ?? 0) + 1 }))
+	}
+
+	// For videos, anchor the comment to the current playhead. Drawing pauses the
+	// video on its frame, so a draw-then-comment lands on the right frame; a
+	// seek-then-comment correctly uses the new position.
+	const videoTimestamp = isVideo ? currentVideoTime : null
 
 	const handleUploadNewVersion = async () => {
 		if (!uploadFile || !imageId) return
@@ -209,12 +247,29 @@ export default function ProjectFileViewPage() {
 				formData.append("versionName", versionName)
 			}
 
+			// For videos, capture the duration client-side and send it along.
+			if (uploadFile.type.startsWith("video/")) {
+				const duration = await getVideoDuration(uploadFile)
+				if (duration != null) formData.append("duration", String(duration))
+			}
+
 			const URI = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001"
 			const res = await fetch(`${URI}/api/images/${imageId}/versions`, {
 				method: "POST",
 				credentials: "include",
 				body: formData,
 			})
+
+			if (res.status === 402) {
+				const data = await res.json().catch(() => ({}))
+				toast.error(data.message || "Upgrade to PRO to add more versions.", {
+					action: {
+						label: "Upgrade",
+						onClick: () => router.push("/billing"),
+					},
+				})
+				return
+			}
 
 			if (res.ok) {
 				// The response now contains the full enriched image
@@ -390,15 +445,20 @@ export default function ProjectFileViewPage() {
 									</DropdownMenuItem>
 								))}
 								<DropdownMenuSeparator />
-								{image.versions.length < 2 && (
-									<DropdownMenuItem onClick={() => setIsUploadModalOpen(true)}>
-										<Upload className="mr-2 h-4 w-4" />
-										Upload new version
-									</DropdownMenuItem>
-								)}
+								<DropdownMenuItem onClick={() => setIsUploadModalOpen(true)}>
+									<Upload className="mr-2 h-4 w-4" />
+									Upload new version
+								</DropdownMenuItem>
 							</DropdownMenuContent>
 						</DropdownMenu>
 					</div>
+				)}
+				{image && selectedVersion && (
+					<ExportMenu
+						image={image}
+						selectedVersion={selectedVersion}
+						annotations={annotations}
+					/>
 				)}
 			</TopHeader>
 			<div
@@ -418,25 +478,49 @@ export default function ProjectFileViewPage() {
 								<Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
 							</div>
 						) : selectedVersion ? (
-							<AnnotationCanvas
-								imageUrl={`${URI}/${selectedVersion.url}`}
-								tool={tool}
-								color={color}
-								onAddAnnotation={handleAddAnnotation}
-								annotations={
-									highlightedAnnotation
-										? [
-												...annotations.map((a) => ({
-													...a,
-													isHighlighted: false,
-												})),
-												...(Array.isArray(highlightedAnnotation)
-													? highlightedAnnotation
-													: [highlightedAnnotation]),
-										  ]
-										: annotations
-								}
-							/>
+							isVideo ? (
+								<VideoAnnotationCanvas
+									videoUrl={`${URI}/${selectedVersion.url}`}
+									tool={tool}
+									color={color}
+									onAddAnnotation={handleAddAnnotation}
+									onTimeChange={(t) => setCurrentVideoTime(t)}
+									seekRequest={seekRequest}
+									annotations={
+										highlightedAnnotation
+											? [
+													...annotations.map((a) => ({
+														...a,
+														isHighlighted: false,
+													})),
+													...(Array.isArray(highlightedAnnotation)
+														? highlightedAnnotation
+														: [highlightedAnnotation]),
+											  ]
+											: annotations
+									}
+								/>
+							) : (
+								<AnnotationCanvas
+									imageUrl={`${URI}/${selectedVersion.url}`}
+									tool={tool}
+									color={color}
+									onAddAnnotation={handleAddAnnotation}
+									annotations={
+										highlightedAnnotation
+											? [
+													...annotations.map((a) => ({
+														...a,
+														isHighlighted: false,
+													})),
+													...(Array.isArray(highlightedAnnotation)
+														? highlightedAnnotation
+														: [highlightedAnnotation]),
+											  ]
+											: annotations
+									}
+								/>
+							)
 						) : (
 							<div className="flex h-full w-full items-center justify-center">
 								<p className="text-muted-foreground">No version available</p>
@@ -459,6 +543,7 @@ export default function ProjectFileViewPage() {
 							annotations={annotations}
 							imageVersionId={selectedVersion?.id || ""}
 							onCommentAdded={handleCommentAdded}
+							timestamp={videoTimestamp}
 						/>
 					</div>
 				</main>
@@ -471,6 +556,7 @@ export default function ProjectFileViewPage() {
 								: "h-full w-80 border-l"
 						}
 						onHighlightAnnotation={handleHighlightAnnotation}
+						onSeek={isVideo ? handleSeekToTimestamp : undefined}
 					/>
 				)}
 			</div>
@@ -481,7 +567,7 @@ export default function ProjectFileViewPage() {
 					<DialogHeader>
 						<DialogTitle>Upload New Version</DialogTitle>
 						<DialogDescription>
-							Upload a new version of this image
+							Upload a new version (image or video) of this file
 						</DialogDescription>
 					</DialogHeader>
 					<div className="space-y-4">
@@ -497,7 +583,7 @@ export default function ProjectFileViewPage() {
 							<Input
 								type="file"
 								onChange={(e) => setUploadFile(e.target.files?.[0] || null)}
-								accept="image/*"
+								accept="image/*,video/*"
 							/>
 						</div>
 						<div className="flex justify-end gap-2">

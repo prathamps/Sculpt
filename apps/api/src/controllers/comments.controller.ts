@@ -29,7 +29,7 @@ export class CommentsController {
 			}
 
 			const { imageVersionId } = req.params
-			const { content, parentId, annotation } = req.body
+			const { content, parentId, annotation, timestamp } = req.body
 
 			if (!content) {
 				return res.status(400).json({ message: "Content is required" })
@@ -41,6 +41,7 @@ export class CommentsController {
 				userId,
 				parentId: parentId || null,
 				annotation: annotation || null,
+				timestamp: typeof timestamp === "number" ? timestamp : null,
 			})
 
 			return res.status(201).json(comment)

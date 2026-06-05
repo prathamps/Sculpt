@@ -20,7 +20,10 @@ export interface Annotation {
 	color: string
 	points: Point[]
 	isHighlighted?: boolean
+	t?: number // timestamp (seconds) for video annotations
 }
+
+export type MediaType = "IMAGE" | "VIDEO"
 
 export interface ImageVersion {
 	id: string
@@ -28,6 +31,8 @@ export interface ImageVersion {
 	versionName: string
 	versionNumber: number
 	imageId: string
+	mediaType?: MediaType
+	duration?: number | null
 	createdAt: string
 	updatedAt: string
 }
@@ -64,6 +69,7 @@ export interface Comment {
 	likeCount?: number
 	isLikedByCurrentUser?: boolean
 	annotation?: Annotation | Annotation[] // Can be a single annotation or an array of annotations
+	timestamp?: number | null // seconds into a video this comment is anchored to
 	createdAt: string
 	updatedAt: string
 }
