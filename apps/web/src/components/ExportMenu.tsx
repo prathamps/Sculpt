@@ -107,7 +107,7 @@ export function ExportMenu({
 				a.click()
 				URL.revokeObjectURL(url)
 			})
-		} catch (err) {
+		} catch {
 			toast.error("Could not export image. The file may be unavailable.")
 		} finally {
 			setBusy(false)
@@ -133,7 +133,7 @@ export function ExportMenu({
 			a.download = `${image.name || "report"}-report.${format}`
 			a.click()
 			URL.revokeObjectURL(url)
-		} catch (err) {
+		} catch {
 			toast.error("Could not generate the report.")
 		} finally {
 			setBusy(false)
@@ -162,7 +162,7 @@ export function ExportMenu({
 			win.document.close()
 			win.focus()
 			setTimeout(() => win.print(), 400)
-		} catch (err) {
+		} catch {
 			toast.error("Could not generate the report.")
 		} finally {
 			setBusy(false)
@@ -214,12 +214,36 @@ function escapeHtml(s: unknown): string {
 		.replace(/>/g, "&gt;")
 }
 
+// Shape of the report JSON returned by /api/export/image/:id/report.json
+interface ReportComment {
+	author?: string
+	content?: string
+	resolved?: boolean
+	timestamp?: number | null
+	annotationCount?: number
+}
+interface ReportVersion {
+	versionName?: string
+	comments?: ReportComment[]
+}
+interface ImageReport {
+	image?: { name?: string; projectName?: string }
+	generatedAt?: string
+	summary?: {
+		totalVersions?: number
+		totalComments?: number
+		resolvedComments?: number
+		openComments?: number
+	}
+	versions?: ReportVersion[]
+}
+
 // Build a self-contained printable HTML document from the report JSON.
-function buildPrintableHtml(report: any): string {
+function buildPrintableHtml(report: ImageReport): string {
 	const rows = (report.versions || [])
-		.flatMap((v: any) =>
+		.flatMap((v: ReportVersion) =>
 			(v.comments || []).map(
-				(c: any) => `
+				(c: ReportComment) => `
 				<tr>
 					<td>${escapeHtml(v.versionName)}</td>
 					<td>${escapeHtml(c.author)}</td>

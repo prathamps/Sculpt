@@ -66,7 +66,7 @@ export default function BillingPage() {
 							Plans & Billing
 						</h1>
 						<p className="mt-2 text-muted-foreground">
-							You're on the{" "}
+							You&apos;re on the{" "}
 							<span
 								className={cn(
 									"font-medium",
@@ -93,7 +93,7 @@ export default function BillingPage() {
 					{!billingConfigured && (
 						<div className="mb-6 flex items-center gap-2 rounded-lg border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-500">
 							<AlertCircle className="h-4 w-4 flex-shrink-0" />
-							Billing isn't configured on this server yet. Add your Razorpay keys
+							Billing isn&apos;t configured on this server yet. Add your Razorpay keys
 							(RAZORPAY_KEY_ID, RAZORPAY_KEY_SECRET, RAZORPAY_PLAN_ID) — or Stripe
 							keys — to enable PRO checkout.
 						</div>

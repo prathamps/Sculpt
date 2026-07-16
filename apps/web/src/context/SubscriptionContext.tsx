@@ -154,7 +154,7 @@ export const SubscriptionProvider = ({ children }: { children: ReactNode }) => {
 			}
 
 			toast.error("Could not start checkout.")
-		} catch (error) {
+		} catch {
 			toast.error("Could not start checkout. Please try again.")
 		}
 	}, [refresh])
@@ -171,7 +171,7 @@ export const SubscriptionProvider = ({ children }: { children: ReactNode }) => {
 				return
 			}
 			toast.error(data.message || "Could not open the billing portal.")
-		} catch (error) {
+		} catch {
 			toast.error("Could not open the billing portal. Please try again.")
 		}
 	}, [])
@@ -193,7 +193,7 @@ export const SubscriptionProvider = ({ children }: { children: ReactNode }) => {
 				return
 			}
 			toast.error(data.message || "Could not cancel the subscription.")
-		} catch (error) {
+		} catch {
 			toast.error("Could not cancel the subscription. Please try again.")
 		}
 	}, [refresh])

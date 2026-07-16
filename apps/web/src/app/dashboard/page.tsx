@@ -15,7 +15,7 @@ import { ConfirmationModal } from "@/components/ConfirmationModal"
 import { PlusIcon, Loader2Icon, FolderPlusIcon } from "lucide-react"
 
 export default function DashboardPage() {
-	const { user, loading, isAuthenticated } = useAuth()
+	const { loading, isAuthenticated } = useAuth()
 	const { refresh: refreshSubscription } = useSubscription()
 	const router = useRouter()
 

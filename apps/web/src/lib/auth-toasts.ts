@@ -152,13 +152,9 @@ export const errorUtils = {
 	/**
 	 * Determine login error type from HTTP status code and response
 	 * @param status - HTTP status code
-	 * @param response - API response object (optional)
 	 * @returns LoginErrorType
 	 */
-	getLoginErrorType(
-		status: number,
-		response?: ApiErrorResponse
-	): LoginErrorType {
+	getLoginErrorType(status: number): LoginErrorType {
 		switch (status) {
 			case 401:
 				return "invalid_credentials"

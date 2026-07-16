@@ -1,7 +1,7 @@
 "use client"
 
 import { useState } from "react"
-import { Globe, Paperclip, Mic, Send, Undo, Redo, Trash2 } from "lucide-react"
+import { Send, Undo, Redo, Trash2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"

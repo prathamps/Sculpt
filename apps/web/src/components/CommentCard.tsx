@@ -1,5 +1,5 @@
 import { useState } from "react"
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
+import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { Button } from "@/components/ui/button"
 import {
 	ThumbsUp,
@@ -19,7 +19,7 @@ import {
 	DropdownMenuSeparator,
 	DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
-import { Comment as CommentType } from "@/types"
+import { Annotation, Comment as CommentType } from "@/types"
 import { formatDistanceToNow } from "date-fns"
 import { useAuth } from "@/context/AuthContext"
 import { Textarea } from "@/components/ui/textarea"
@@ -27,7 +27,7 @@ import { Textarea } from "@/components/ui/textarea"
 interface CommentCardProps {
 	comment: CommentType
 	onCommentUpdate?: () => void
-	onHighlightAnnotation?: (annotation: any) => void
+	onHighlightAnnotation?: (annotation: Annotation | Annotation[]) => void
 	onSeek?: (t: number) => void
 }
 

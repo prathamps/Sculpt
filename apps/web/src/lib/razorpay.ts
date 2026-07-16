@@ -1,9 +1,37 @@
+// Minimal typing for the Razorpay Checkout script injected at runtime.
+export interface RazorpayPaymentResponse {
+	razorpay_payment_id: string
+	razorpay_subscription_id: string
+	razorpay_signature: string
+}
+
+interface RazorpayInstance {
+	open(): void
+}
+
+type RazorpayConstructor = new (options: {
+	key: string
+	subscription_id: string
+	name: string
+	description: string
+	prefill: { email: string }
+	theme: { color: string }
+	handler: (response: RazorpayPaymentResponse) => void
+	modal: { ondismiss: () => void }
+}) => RazorpayInstance
+
+declare global {
+	interface Window {
+		Razorpay?: RazorpayConstructor
+	}
+}
+
 // Lazily inject the Razorpay Checkout script (once) and resolve when ready.
 let loadingPromise: Promise<boolean> | null = null
 
 export function loadRazorpayScript(): Promise<boolean> {
 	if (typeof window === "undefined") return Promise.resolve(false)
-	if ((window as any).Razorpay) return Promise.resolve(true)
+	if (window.Razorpay) return Promise.resolve(true)
 	if (loadingPromise) return loadingPromise
 
 	loadingPromise = new Promise<boolean>((resolve) => {
@@ -41,13 +69,9 @@ export interface RazorpayCheckoutParams {
 // payment response on success, or null if the user dismisses the modal.
 export function openRazorpayCheckout(
 	params: RazorpayCheckoutParams
-): Promise<{
-	razorpay_payment_id: string
-	razorpay_subscription_id: string
-	razorpay_signature: string
-} | null> {
+): Promise<RazorpayPaymentResponse | null> {
 	return new Promise((resolve) => {
-		const RazorpayCtor = (window as any).Razorpay
+		const RazorpayCtor = window.Razorpay
 		if (!RazorpayCtor) {
 			resolve(null)
 			return
@@ -59,7 +83,7 @@ export function openRazorpayCheckout(
 			description: params.description,
 			prefill: { email: params.email },
 			theme: { color: "#4783E8" },
-			handler: (response: any) => resolve(response),
+			handler: (response: RazorpayPaymentResponse) => resolve(response),
 			modal: { ondismiss: () => resolve(null) },
 		})
 		rzp.open()

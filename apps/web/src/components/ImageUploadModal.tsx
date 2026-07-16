@@ -146,7 +146,7 @@ export function ImageUploadModal({
 				onUploadComplete()
 				onClose()
 			}, 500)
-		} catch (err) {
+		} catch {
 			setError("An error occurred during upload.")
 			setUploadProgress(0)
 		} finally {

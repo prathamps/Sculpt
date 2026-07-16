@@ -94,7 +94,7 @@ export default function ProjectFileViewPage() {
 	)
 	const [tool, setTool] = useState<AnnotationTool>("pencil")
 	const [color, setColor] = useState("#4783E8")
-	const [clearCounter, setClearCounter] = useState(0)
+	const [, setClearCounter] = useState(0)
 	const [isImageLoading, setIsImageLoading] = useState(true)
 	const [isUploadModalOpen, setIsUploadModalOpen] = useState(false)
 	const [uploadFile, setUploadFile] = useState<File | null>(null)
@@ -341,7 +341,9 @@ export default function ProjectFileViewPage() {
 		}
 	}
 
-	const handleHighlightAnnotation = (annotation: any) => {
+	const handleHighlightAnnotation = (
+		annotation: Annotation | Annotation[] | null
+	) => {
 		if (!annotation) return
 
 		// Convert the stored JSON annotation to the format our component expects

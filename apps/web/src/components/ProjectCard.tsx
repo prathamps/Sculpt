@@ -6,7 +6,7 @@ import {
 	Trash2,
 	ExternalLink,
 	MoreHorizontal,
-	ImageIcon,
+	
 	ChevronRight,
 } from "lucide-react"
 import { Project } from "@/types"
@@ -18,7 +18,6 @@ import {
 	DropdownMenuTrigger,
 } from "./ui/dropdown-menu"
 import { Avatar, AvatarFallback, AvatarImage } from "./ui/avatar"
-import { cn } from "@/lib/utils"
 import { useState } from "react"
 
 interface ProjectCardProps {
