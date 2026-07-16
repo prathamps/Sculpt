@@ -7,15 +7,15 @@ import { Project } from "@/types"
 import {
 	PlusIcon,
 	FolderIcon,
-	Users,
+	
 	Grid2X2,
 	ListIcon,
 	SlidersHorizontal,
-	Check,
+	
 	FileImageIcon,
-	VideoIcon,
+	
 	ClockIcon,
-	CalendarIcon,
+	
 	X,
 	Search,
 } from "lucide-react"
@@ -24,9 +24,9 @@ import { cn } from "@/lib/utils"
 import {
 	DropdownMenu,
 	DropdownMenuContent,
-	DropdownMenuGroup,
+	
 	DropdownMenuCheckboxItem,
-	DropdownMenuItem,
+	
 	DropdownMenuLabel,
 	DropdownMenuSeparator,
 	DropdownMenuTrigger,
@@ -58,7 +58,7 @@ export function ProjectContentView({
 		if (!project) return []
 
 		// First filter by type
-		let filtered = project.images.filter((file) => {
+		const filtered = project.images.filter((file) => {
 			// Filter by search query
 			if (
 				searchQuery &&
@@ -427,7 +427,7 @@ export function ProjectContentView({
 								No files match your filters
 							</h2>
 							<p className="mt-2 max-w-md text-sm text-muted-foreground">
-								Try adjusting your search or filter criteria to find what you're
+								Try adjusting your search or filter criteria to find what you&apos;re
 								looking for.
 							</p>
 							<Button

@@ -43,55 +43,8 @@ export function AnnotationCanvas({
 	const [image, setImage] = useState<HTMLImageElement | null>(null)
 	const [isLoading, setIsLoading] = useState(true)
 	const [error, setError] = useState<string | null>(null)
-	const [canvasDimensions, setCanvasDimensions] = useState({
-		width: 0,
-		height: 0,
-	})
-
 	const startPosRef = useRef<Point | null>(null)
 	const currentPathRef = useRef<Point[]>([])
-
-	const drawExistingAnnotations = useCallback(
-		(ctx: CanvasRenderingContext2D) => {
-			annotations.forEach((annotation) => {
-				ctx.strokeStyle = annotation.color
-				ctx.lineWidth = annotation.isHighlighted ? 4 : 2
-				ctx.lineCap = "round"
-				ctx.lineJoin = "round"
-
-				ctx.beginPath()
-
-				if (annotation.points.length === 0) return
-
-				// Convert normalized coordinates (0-1) to actual canvas pixels
-				const startX = annotation.points[0]?.x * ctx.canvas.width
-				const startY = annotation.points[0]?.y * ctx.canvas.height
-				ctx.moveTo(startX, startY)
-
-				if (annotation.type === "pencil") {
-					annotation.points.forEach((p) => {
-						ctx.lineTo(p.x * ctx.canvas.width, p.y * ctx.canvas.height)
-					})
-				} else if (
-					(annotation.type === "rect" || annotation.type === "line") &&
-					annotation.points.length > 1
-				) {
-					const endX =
-						annotation.points[annotation.points.length - 1]?.x * ctx.canvas.width
-					const endY =
-						annotation.points[annotation.points.length - 1]?.y *
-						ctx.canvas.height
-					if (annotation.type === "rect") {
-						ctx.rect(startX, startY, endX - startX, endY - startY)
-					} else {
-						ctx.lineTo(endX, endY)
-					}
-				}
-				ctx.stroke()
-			})
-		},
-		[annotations]
-	)
 
 	const redrawAll = useCallback(() => {
 		if (
@@ -346,7 +299,7 @@ export function AnnotationCanvas({
 				clientX: touch?.clientX,
 				clientY: touch?.clientY,
 			})
-			handleMouseDown(mouseEvent as any)
+			handleMouseDown(mouseEvent as unknown as React.MouseEvent)
 		}
 	}
 
@@ -358,13 +311,13 @@ export function AnnotationCanvas({
 			clientX: touch?.clientX,
 			clientY: touch?.clientY,
 		})
-		handleMouseMove(mouseEvent as any)
+		handleMouseMove(mouseEvent as unknown as React.MouseEvent)
 	}
 
 	const handleTouchEnd = (e: React.TouchEvent) => {
 		e.preventDefault()
 		const mouseEvent = new MouseEvent("mouseup")
-		handleMouseUp(mouseEvent as any)
+		handleMouseUp(mouseEvent as unknown as React.MouseEvent)
 	}
 
 	if (isLoading) {

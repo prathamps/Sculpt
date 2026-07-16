@@ -39,7 +39,7 @@ export default function JoinPage() {
 					const data = await res.json()
 					setMessage(data.message || "Failed to join project.")
 				}
-			} catch (error) {
+			} catch {
 				setMessage("An unexpected error occurred.")
 			}
 		}

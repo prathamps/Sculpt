@@ -9,6 +9,7 @@ import { Input } from "@/components/ui/input"
 import { authToasts, errorUtils } from "@/lib/auth-toasts"
 import { ArrowLeft, Loader2 } from "lucide-react"
 import { Label } from "@/components/ui/label"
+import { OAuthButtons } from "@/components/OAuthButtons"
 
 export default function RegisterPage() {
 	const [name, setName] = useState("")
@@ -146,6 +147,9 @@ export default function RegisterPage() {
 								)}
 							</Button>
 						</form>
+						<div className="mt-4">
+							<OAuthButtons />
+						</div>
 					</div>
 					<div className="mt-6 text-center text-sm">
 						Already have an account?{" "}

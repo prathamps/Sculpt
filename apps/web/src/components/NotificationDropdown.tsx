@@ -84,7 +84,11 @@ export function NotificationDropdown() {
 			setHasUnread(true)
 		}
 
-		const handleProjectUpdate = (data: any) => {
+		const handleProjectUpdate = (data: {
+			type?: string
+			content: string
+			metadata?: Notification["metadata"]
+		}) => {
 			if (data.type === "notification") {
 				console.log("Project notification received:", data)
 				const notification: Notification = {

@@ -1,8 +1,10 @@
 import { prisma } from "../lib/prisma"
 import safeRedis from "../lib/redis"
 import { io } from "../index"
-import { Notification } from "@prisma/client"
+import { Notification, Prisma } from "@prisma/client"
 import { JsonValue } from "@prisma/client/runtime/library"
+import { isUserOnline } from "../lib/presence"
+import { sendNotificationEmail } from "./email.service"
 
 export class NotificationService {
 	// Create a notification and send it via Socket.io
@@ -16,11 +18,14 @@ export class NotificationService {
 				`Creating notification for user ${data.userId}: "${data.content}"`
 			)
 
-			// Create notification in database
+			// Create notification in database (persisting metadata for click-through)
 			const notification = await prisma.notification.create({
 				data: {
 					userId: data.userId,
 					content: data.content,
+					...(data.metadata !== undefined && data.metadata !== null
+						? { metadata: data.metadata as Prisma.InputJsonValue }
+						: {}),
 				},
 			})
 
@@ -51,6 +56,26 @@ export class NotificationService {
 				io.to(`user:${data.userId}`).emit("notification", fullNotification)
 			} catch (socketError) {
 				console.error(`Socket error when sending notification: ${socketError}`)
+			}
+
+			// If the recipient is offline, fall back to an email notification.
+			try {
+				if (!isUserOnline(data.userId)) {
+					const recipient = await prisma.user.findUnique({
+						where: { id: data.userId },
+						select: { email: true, name: true },
+					})
+					if (recipient?.email) {
+						await sendNotificationEmail({
+							to: recipient.email,
+							name: recipient.name,
+							content: data.content,
+							metadata: data.metadata,
+						})
+					}
+				}
+			} catch (emailError) {
+				console.error(`Email fallback error: ${emailError}`)
 			}
 
 			return notification

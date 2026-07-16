@@ -2,6 +2,27 @@ import { Request, Response } from "express"
 import { registerUser, loginUser } from "../services/auth.service"
 import { Prisma } from "@prisma/client"
 import jwt from "jsonwebtoken"
+import { oauthProviders } from "../lib/passport"
+import { AuthenticatedUser } from "../types"
+
+const FRONTEND_URL =
+	process.env.FRONTEND_URL ||
+	process.env.NEXT_PUBLIC_APP_URL ||
+	"http://localhost:3000"
+
+// Sets the auth cookie for a user id (shared by password + OAuth login).
+const setAuthCookie = (res: Response, userId: string) => {
+	const token = jwt.sign({ id: userId }, process.env.JWT_SECRET || "your_jwt_secret", {
+		expiresIn: "1h",
+	})
+	const isProduction = process.env.NODE_ENV === "production"
+	res.cookie("token", token, {
+		httpOnly: true,
+		secure: isProduction,
+		sameSite: isProduction ? "none" : "lax",
+		maxAge: 3600000,
+	})
+}
 
 export const register = async (req: Request, res: Response) => {
 	try {
@@ -25,22 +46,7 @@ export const login = async (req: Request, res: Response) => {
 			return res.status(401).json({ message: "Invalid credentials" })
 		}
 
-		const token = jwt.sign(
-			{ id: user.id },
-			process.env.JWT_SECRET || "your_jwt_secret",
-			{
-				expiresIn: "1h",
-			}
-		)
-
-		const isProduction = process.env.NODE_ENV === "production"
-
-		res.cookie("token", token, {
-			httpOnly: true,
-			secure: isProduction,
-			sameSite: isProduction ? "none" : "lax",
-			maxAge: 3600000, // 1 hour
-		})
+		setAuthCookie(res, user.id)
 
 		return res.status(200).json({ message: "Logged in successfully" })
 	} catch (error) {
@@ -48,7 +54,23 @@ export const login = async (req: Request, res: Response) => {
 	}
 }
 
-export const logout = (res: Response) => {
+export const logout = (_req: Request, res: Response) => {
 	res.clearCookie("token")
 	return res.status(200).json({ message: "Logged out successfully" })
+}
+
+// Lists which OAuth providers are configured so the UI can render buttons.
+export const getOAuthProviders = (_req: Request, res: Response) => {
+	return res.status(200).json(oauthProviders)
+}
+
+// Final step of the OAuth dance: passport has attached req.user; we mint our
+// own JWT cookie and bounce the browser back to the frontend callback page.
+export const oauthCallback = (req: Request, res: Response) => {
+	const user = req.user as AuthenticatedUser | undefined
+	if (!user) {
+		return res.redirect(`${FRONTEND_URL}/login?error=oauth`)
+	}
+	setAuthCookie(res, user.id)
+	return res.redirect(`${FRONTEND_URL}/oauth/callback`)
 }

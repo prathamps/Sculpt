@@ -53,7 +53,7 @@ export const AdminAuthProvider = ({ children }: { children: ReactNode }) => {
 				} else {
 					setAdminUser(null)
 				}
-			} catch (error) {
+			} catch {
 				setAdminUser(null)
 			} finally {
 				setLoading(false)

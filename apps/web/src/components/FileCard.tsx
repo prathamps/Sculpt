@@ -2,14 +2,14 @@
 
 import Link from "next/link"
 import {
-	Pencil,
+	
 	PencilIcon,
-	Trash2,
+	
 	Trash2Icon,
 	MoreHorizontal,
 	ImageIcon,
 	PlayIcon,
-	CalendarIcon,
+	
 	Clock,
 	ExternalLink,
 	FileIcon,
@@ -28,7 +28,7 @@ import { cn } from "@/lib/utils"
 import { formatDistanceToNow } from "date-fns"
 import { Card, CardContent } from "./ui/card"
 import { MoreVertical } from "lucide-react"
-import { formatBytes, formatDate } from "@/lib/utils"
+import { formatBytes } from "@/lib/utils"
 import { Button } from "./ui/button"
 
 interface FileCardProps {
@@ -45,8 +45,8 @@ export function FileCard({
 	projectId,
 	onProjectChanged,
 	viewMode = "grid",
-	onRename,
-	onDelete,
+	
+	
 }: FileCardProps) {
 	const [isRenameModalOpen, setRenameModalOpen] = useState(false)
 	const isVideo = file.name.toLowerCase().endsWith(".mp4")
@@ -94,7 +94,7 @@ export function FileCard({
 			} else {
 				alert("Failed to delete file.")
 			}
-		} catch (error) {
+		} catch {
 			alert("An error occurred while deleting the file.")
 		}
 	}

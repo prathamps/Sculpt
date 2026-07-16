@@ -3,6 +3,7 @@ import { Inter } from "next/font/google"
 import { AuthProvider } from "@/context/AuthContext"
 import { AdminAuthProvider } from "@/context/AdminAuthContext"
 import { SocketProvider } from "@/context/SocketContext"
+import { SubscriptionProvider } from "@/context/SubscriptionContext"
 import { Toaster } from "sonner"
 
 const inter = Inter({ subsets: ["latin"] })
@@ -23,8 +24,9 @@ export default function RootLayout({
 			<body className={inter.className}>
 				<AuthProvider>
 					<AdminAuthProvider>
-						<SocketProvider>
-							{children}
+						<SubscriptionProvider>
+							<SocketProvider>
+								{children}
 							<Toaster
 								position="bottom-right"
 								theme="dark"
@@ -41,7 +43,8 @@ export default function RootLayout({
 									},
 								}}
 							/>
-						</SocketProvider>
+							</SocketProvider>
+						</SubscriptionProvider>
 					</AdminAuthProvider>
 				</AuthProvider>
 			</body>

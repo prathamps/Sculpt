@@ -69,12 +69,12 @@ export const adminProfile = async (req: Request, res: Response) => {
 	})
 }
 
-export const adminLogout = (res: Response) => {
+export const adminLogout = (_req: Request, res: Response) => {
 	res.clearCookie("admin_token")
 	return res.status(200).json({ message: "Admin logged out successfully" })
 }
 
-export const getUsers = async (res: Response) => {
+export const getUsers = async (_req: Request, res: Response) => {
 	try {
 		const users = await getAllUsers()
 		return res.status(200).json(users)
@@ -101,7 +101,7 @@ export const changeUserRole = async (req: Request, res: Response) => {
 	}
 }
 
-export const getProjects = async (res: Response) => {
+export const getProjects = async (_req: Request, res: Response) => {
 	try {
 		const projects = await getAllProjects()
 		return res.status(200).json(projects)
@@ -127,7 +127,7 @@ export const getProject = async (req: Request, res: Response) => {
 	}
 }
 
-export const getStats = async (res: Response) => {
+export const getStats = async (_req: Request, res: Response) => {
 	try {
 		const stats = await getDashboardStats()
 		return res.status(200).json(stats)

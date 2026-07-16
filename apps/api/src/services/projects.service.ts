@@ -1,11 +1,17 @@
 import { prisma } from "../lib/prisma"
 import { Project, ProjectRole, ShareLink } from "@prisma/client"
 import { randomBytes } from "crypto"
+import {
+	assertCanCreateProject,
+	assertCanInviteMember,
+} from "./subscription.service"
 
 export const createProject = async (
 	name: string,
 	ownerId: string
 ): Promise<Project> => {
+	// FREE plan caps the number of projects a user can own.
+	await assertCanCreateProject(ownerId)
 	return prisma.project.create({
 		data: {
 			name,
@@ -161,6 +167,9 @@ export const inviteUserToProject = async (
 		throw new Error("User to invite not found.")
 	}
 
+	// FREE plan caps members per project (governed by the owner's plan).
+	await assertCanInviteMember(projectId)
+
 	await prisma.projectMember.create({
 		data: {
 			projectId: projectId,
@@ -269,6 +278,17 @@ export const joinProjectWithShareLink = async (
 	const link = await prisma.shareLink.findUnique({ where: { token } })
 	if (!link) {
 		throw new Error("Invalid or expired share link.")
+	}
+
+	// Enforce the member cap for NEW members joining via a link (existing
+	// members just have their role updated, so they don't count again).
+	const existingMembership = await prisma.projectMember.findUnique({
+		where: {
+			projectId_userId: { projectId: link.projectId, userId },
+		},
+	})
+	if (!existingMembership) {
+		await assertCanInviteMember(link.projectId)
 	}
 
 	// Add or update user's membership

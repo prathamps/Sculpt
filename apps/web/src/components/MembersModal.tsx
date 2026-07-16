@@ -11,8 +11,7 @@ import {
 } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
-import { Project, ProjectMember } from "@/types"
+import { Project } from "@/types"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { useAuth } from "@/context/AuthContext"
 import {
@@ -123,7 +122,7 @@ export function MembersModal({
 			} else {
 				alert("Failed to revoke share link.")
 			}
-		} catch (error) {
+		} catch {
 			alert("An error occurred while revoking the share link.")
 		}
 	}
@@ -140,7 +139,7 @@ export function MembersModal({
 				const data = await res.json()
 				alert(data.message || "Failed to remove member.")
 			}
-		} catch (err) {
+		} catch {
 			alert("An unexpected error occurred.")
 		}
 	}
@@ -166,7 +165,7 @@ export function MembersModal({
 				const data = await res.json()
 				setError(data.message || "Failed to invite user.")
 			}
-		} catch (err) {
+		} catch {
 			setError("An unexpected error occurred.")
 		} finally {
 			setIsInviting(false)
@@ -188,7 +187,7 @@ export function MembersModal({
 			} else {
 				alert("Failed to create share link.")
 			}
-		} catch (error) {
+		} catch {
 			alert("An error occurred while creating the share link.")
 		} finally {
 			setIsCreatingLink(false)

@@ -1,0 +1,34 @@
+services:
+  postgres:
+    image: postgres:17-alpine
+    container_name: sculpt-postgres
+    environment:
+      POSTGRES_USER: sculpt
+      POSTGRES_PASSWORD: sculpt
+      POSTGRES_DB: sculpt
+    ports:
+      - "5432:5432"
+    volumes:
+      - sculpt_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U sculpt -d sculpt"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    container_name: sculpt-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - sculpt_redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  sculpt_pgdata:
+  sculpt_redisdata:

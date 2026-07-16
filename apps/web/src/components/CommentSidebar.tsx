@@ -1,9 +1,9 @@
 "use client"
-import { useState, useEffect, useCallback, useRef } from "react"
+import { useState, useEffect, useCallback } from "react"
 import { CommentCard } from "./CommentCard"
 import { Button } from "./ui/button"
 import { Input } from "./ui/input"
-import { Filter, Search, MessageSquare, Plus, Loader2 } from "lucide-react"
+import { Filter, Search, MessageSquare, Loader2 } from "lucide-react"
 import {
 	DropdownMenu,
 	DropdownMenuContent,
@@ -14,7 +14,7 @@ import {
 import { cn } from "@/lib/utils"
 import { useAuth } from "@/context/AuthContext"
 import { useSocket } from "@/context/SocketContext"
-import { Comment } from "@/types"
+import { Annotation, Comment } from "@/types"
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001"
 
@@ -23,13 +23,15 @@ type CommentFilter = "all" | "unresolved" | "resolved"
 interface CommentSidebarProps {
 	imageVersionId: string
 	className?: string
-	onHighlightAnnotation?: (annotation: any) => void
+	onHighlightAnnotation?: (annotation: Annotation | Annotation[]) => void
+	onSeek?: (t: number) => void
 }
 
 export function CommentSidebar({
 	imageVersionId,
 	className,
 	onHighlightAnnotation,
+	onSeek,
 }: CommentSidebarProps) {
 	const { user } = useAuth()
 	const { socket, isConnected, joinImageVersion, leaveImageVersion } =
@@ -38,7 +40,6 @@ export function CommentSidebar({
 	const [filter, setFilter] = useState<CommentFilter>("all")
 	const [comments, setComments] = useState<Comment[]>([])
 	const [isLoading, setIsLoading] = useState(false)
-	const currentImageVersionIdRef = useRef<string | null>(null)
 
 	const fetchComments = useCallback(async () => {
 		if (!imageVersionId) return
@@ -141,7 +142,13 @@ export function CommentSidebar({
 				liked,
 				userId,
 				imageVersionId: M_imageVersionId,
-			}: any) => {
+			}: {
+				id: string
+				count: number
+				liked: boolean
+				userId: string
+				imageVersionId: string
+			}) => {
 				console.log(`[CommentSidebar] Received comment-like-updated event:`, {
 					id,
 					count,
@@ -200,7 +207,7 @@ export function CommentSidebar({
 		fetchComments()
 	}, [fetchComments])
 
-	const handleHighlightAnnotation = (annotation: any) => {
+	const handleHighlightAnnotation = (annotation: Annotation | Annotation[]) => {
 		if (onHighlightAnnotation) {
 			onHighlightAnnotation(annotation)
 		}
@@ -280,6 +287,7 @@ export function CommentSidebar({
 									comment={comment}
 									onCommentUpdate={handleCommentUpdate}
 									onHighlightAnnotation={handleHighlightAnnotation}
+									onSeek={onSeek}
 								/>
 							))
 						) : (
