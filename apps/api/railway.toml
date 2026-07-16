@@ -3,5 +3,7 @@ builder = "nixpacks"
 buildCommand = "npm install && npx prisma generate && npm run build"
 
 [deploy]
-startCommand = "npm start"
+# Apply pending Prisma migrations before booting so the schema always matches
+# the deployed code (README: "Run database migrations on deploy").
+startCommand = "npx prisma migrate deploy && npm start"
 restartPolicyType = "on_failure"
