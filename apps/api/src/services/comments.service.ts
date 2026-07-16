@@ -7,7 +7,7 @@ import { NotificationService } from "./notification.service"
 
 type CommentWithLikesAndUser = Comment & {
 	likes: CommentLike[]
-	user: User
+	user: Omit<User, "password">
 	likeCount?: number
 	isLikedByCurrentUser?: boolean
 	replies?: CommentWithLikesAndUser[]
@@ -349,7 +349,7 @@ export class CommentsService {
 
 	// Helper method to create notifications for comments
 	private static async handleCommentNotifications(
-		comment: Comment & { user: User },
+		comment: Comment & { user: Omit<User, "password"> },
 		currentUserId: string
 	): Promise<void> {
 		try {

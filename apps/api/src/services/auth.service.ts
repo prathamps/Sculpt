@@ -3,6 +3,10 @@ import bcrypt from "bcrypt"
 import { prisma } from "../lib/prisma"
 import { ensureSubscription } from "./subscription.service"
 
+// User as returned by the API surface — the password hash is globally omitted
+// from Prisma results (see lib/prisma.ts).
+export type SafeUser = Omit<User, "password">
+
 interface RegisterUserInput {
 	email: string
 	password: string
@@ -14,7 +18,9 @@ interface LoginUserInput {
 	password: string
 }
 
-export const registerUser = async (data: RegisterUserInput): Promise<User> => {
+export const registerUser = async (
+	data: RegisterUserInput
+): Promise<SafeUser> => {
 	const hashedPassword = await bcrypt.hash(data.password, 10)
 
 	const user = await prisma.user.create({
@@ -33,10 +39,12 @@ export const registerUser = async (data: RegisterUserInput): Promise<User> => {
 }
 
 export const loginUser = async (data: LoginUserInput): Promise<User | null> => {
+	// Opt back in to the password column (globally omitted) for the compare.
 	const user = await prisma.user.findUnique({
 		where: {
 			email: data.email,
 		},
+		omit: { password: false },
 	})
 
 	if (!user) return null
@@ -64,7 +72,7 @@ interface OAuthUserInput {
 // Find a user by email (linking OAuth to an existing account) or create one.
 export const findOrCreateOAuthUser = async (
 	data: OAuthUserInput
-): Promise<User> => {
+): Promise<SafeUser> => {
 	const existing = await prisma.user.findUnique({
 		where: { email: data.email },
 	})
@@ -106,10 +114,12 @@ export const loginAdmin = async (
 	email: string,
 	password: string
 ): Promise<User | null> => {
+	// Opt back in to the password column (globally omitted) for the compare.
 	const user = await prisma.user.findUnique({
 		where: {
 			email,
 		},
+		omit: { password: false },
 	})
 
 	if (!user) return null
