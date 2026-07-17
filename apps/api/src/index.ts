@@ -11,12 +11,7 @@ import shareRoutes from "./routes/share.routes"
 import notificationRoutes from "./routes/notifications.routes"
 import commentRoutes from "./routes/comments.routes"
 import adminRoutes from "./routes/admin.routes"
-import subscriptionRoutes from "./routes/subscription.routes"
 import exportRoutes from "./routes/export.routes"
-import {
-	handleWebhook as stripeWebhook,
-	handleRazorpayWebhook,
-} from "./controllers/subscription.controller"
 import { markOnline, markOffline } from "./lib/presence"
 import path from "path"
 import http from "http"
@@ -243,19 +238,6 @@ io.on("connection", (socket) => {
 	})
 })
 
-// Payment webhooks must receive the raw body for signature verification, so
-// they are mounted BEFORE express.json() parses everything else.
-app.post(
-	"/api/subscriptions/webhook",
-	express.raw({ type: "application/json" }),
-	stripeWebhook
-)
-app.post(
-	"/api/subscriptions/razorpay/webhook",
-	express.raw({ type: "application/json" }),
-	handleRazorpayWebhook
-)
-
 app.use(express.json())
 app.use(cookieParser())
 app.use(passport.initialize())
@@ -271,7 +253,6 @@ app.use("/api/share", shareRoutes)
 app.use("/api/notifications", notificationRoutes)
 app.use("/api/comments", commentRoutes)
 app.use("/api/admin", adminRoutes)
-app.use("/api/subscriptions", subscriptionRoutes)
 app.use("/api/export", exportRoutes)
 
 const port = process.env.PORT || 3001

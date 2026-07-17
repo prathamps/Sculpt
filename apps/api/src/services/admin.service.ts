@@ -10,12 +10,6 @@ export const getAllUsers = async () => {
 			role: true,
 			createdAt: true,
 			updatedAt: true,
-			subscription: {
-				select: {
-					plan: true,
-					status: true,
-				},
-			},
 		},
 		orderBy: {
 			createdAt: "desc",

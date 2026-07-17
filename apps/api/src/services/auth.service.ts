@@ -1,7 +1,6 @@
 import { User, UserRole } from "@prisma/client"
 import bcrypt from "bcrypt"
 import { prisma } from "../lib/prisma"
-import { ensureSubscription } from "./subscription.service"
 
 // User as returned by the API surface — the password hash is globally omitted
 // from Prisma results (see lib/prisma.ts).
@@ -32,9 +31,6 @@ export const registerUser = async (
 		},
 	})
 
-	// Every account starts on the FREE plan.
-	await ensureSubscription(user.id)
-
 	return user
 }
 
@@ -54,9 +50,6 @@ export const loginUser = async (data: LoginUserInput): Promise<User | null> => {
 
 	const validPassword = await bcrypt.compare(data.password, user.password)
 	if (!validPassword) return null
-
-	// Backfill a subscription for older accounts created before billing existed.
-	await ensureSubscription(user.id)
 
 	return user
 }
@@ -92,7 +85,6 @@ export const findOrCreateOAuthUser = async (
 					},
 			  })
 			: existing
-		await ensureSubscription(user.id)
 		return user
 	}
 
@@ -106,7 +98,6 @@ export const findOrCreateOAuthUser = async (
 			password: null,
 		},
 	})
-	await ensureSubscription(created.id)
 	return created
 }
 
@@ -146,12 +137,6 @@ export const getUsersByRole = async (role: UserRole) => {
 			role: true,
 			createdAt: true,
 			updatedAt: true,
-			subscription: {
-				select: {
-					plan: true,
-					status: true,
-				},
-			},
 		},
 	})
 }

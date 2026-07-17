@@ -112,10 +112,6 @@ export const getImageVersionById = async (
 	})
 }
 
-export const getVersionCount = async (imageId: string): Promise<number> => {
-	return prisma.imageVersion.count({ where: { imageId } })
-}
-
 export const addImageVersion = async (
 	imageId: string,
 	filePath: string,

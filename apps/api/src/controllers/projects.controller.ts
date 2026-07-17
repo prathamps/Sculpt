@@ -2,20 +2,6 @@ import { Response } from "express"
 import * as projectService from "../services/projects.service"
 import { AuthenticatedRequest, ProjectMemberWithUser } from "../types";
 import { Project, Image, ImageVersion } from "@prisma/client"
-import { PlanLimitError } from "../lib/plans"
-
-// Translate a PlanLimitError into HTTP 402 with an upgrade hint.
-const handlePlanLimit = (error: unknown, res: Response): boolean => {
-	if (error instanceof PlanLimitError) {
-		res.status(402).json({
-			message: error.message,
-			code: error.code,
-			limit: error.limit,
-		})
-		return true
-	}
-	return false
-}
 
 // Extended types for the transformed data
 interface ExtendedImage extends Image {
@@ -38,7 +24,6 @@ export const createProject = async (
 		const project = await projectService.createProject(name, ownerId)
 		res.status(201).json(project)
 	} catch (error) {
-		if (handlePlanLimit(error, res)) return
 		res.status(500).json({ message: "Error creating project", error })
 	}
 }
@@ -188,7 +173,6 @@ export const inviteToProject = async (
 		const project = await projectService.inviteUserToProject(id, email)
 		res.status(200).json(project)
 	} catch (error) {
-		if (handlePlanLimit(error, res)) return
 		if (error instanceof Error) {
 			res.status(400).json({ message: error.message })
 			return
@@ -262,7 +246,6 @@ export const joinProjectWithShareLink = async (
 		const project = await projectService.joinProjectWithShareLink(token, userId)
 		res.status(200).json(project)
 	} catch (error) {
-		if (handlePlanLimit(error, res)) return
 		if (error instanceof Error) {
 			res.status(404).json({ message: error.message })
 		} else {

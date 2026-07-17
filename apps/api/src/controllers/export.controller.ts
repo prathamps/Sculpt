@@ -6,22 +6,7 @@ import {
 	getImageProjectId,
 	isProjectMember,
 } from "../services/report.service"
-import { assertCanExportReports } from "../services/subscription.service"
-import { PlanLimitError } from "../lib/plans"
 
-const handlePlanLimit = (error: unknown, res: Response): boolean => {
-	if (error instanceof PlanLimitError) {
-		res.status(402).json({
-			message: error.message,
-			code: error.code,
-			limit: error.limit,
-		})
-		return true
-	}
-	return false
-}
-
-// Shared guard: caller must be a project member and have export rights (PRO).
 const authorizeExport = async (
 	imageId: string,
 	userId: string,
@@ -37,7 +22,6 @@ const authorizeExport = async (
 		res.status(403).json({ message: "You are not a member of this project" })
 		return false
 	}
-	await assertCanExportReports(userId) // throws PlanLimitError on FREE
 	return true
 }
 
@@ -65,7 +49,6 @@ export const getImageReportJson = async (
 		)
 		res.status(200).json(report)
 	} catch (error) {
-		if (handlePlanLimit(error, res)) return
 		res.status(500).json({ message: "Error generating report", error })
 	}
 }
@@ -93,7 +76,6 @@ export const getImageReportCsv = async (
 		)
 		res.status(200).send(csv)
 	} catch (error) {
-		if (handlePlanLimit(error, res)) return
 		res.status(500).json({ message: "Error generating report", error })
 	}
 }

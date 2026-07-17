@@ -2,25 +2,6 @@ import { AuthenticatedUser } from "../types"
 import { Request, Response } from "express"
 import * as imageService from "../services/images.service"
 import { detectMediaType } from "../middleware/upload.middleware"
-import {
-	assertCanUploadVideo,
-	assertCanAddVersion,
-} from "../services/subscription.service"
-import { PlanLimitError } from "../lib/plans"
-
-// Translate a PlanLimitError into HTTP 402 (Payment Required) with an upgrade
-// hint, or return false if the error is something else.
-const handlePlanLimit = (error: unknown, res: Response): boolean => {
-	if (error instanceof PlanLimitError) {
-		res.status(402).json({
-			message: error.message,
-			code: error.code,
-			limit: error.limit,
-		})
-		return true
-	}
-	return false
-}
 
 export const uploadImage = async (
 	req: Request,
@@ -29,19 +10,10 @@ export const uploadImage = async (
 	try {
 		const { projectId } = req.params
 		const files = req.files as Express.Multer.File[]
-		const userId = (req.user as AuthenticatedUser)?.id
 
 		if (!files || files.length === 0) {
 			res.status(400).send("No files uploaded.")
 			return
-		}
-
-		// Video upload is a PRO feature — gate before persisting anything.
-		const hasVideo = files.some(
-			(file) => detectMediaType(file.mimetype) === "VIDEO"
-		)
-		if (hasVideo && userId) {
-			await assertCanUploadVideo(userId)
 		}
 
 		// Each file will create a new image with a first version
@@ -63,7 +35,6 @@ export const uploadImage = async (
 			res.status(201).json({ count: 0 })
 		}
 	} catch (error) {
-		if (handlePlanLimit(error, res)) return
 		res.status(500).json({ message: "Error uploading image", error })
 	}
 }
@@ -129,7 +100,6 @@ export const uploadImageVersion = async (
 	try {
 		const { imageId } = req.params
 		const file = req.file as Express.Multer.File
-		const userId = (req.user as AuthenticatedUser)?.id
 
 		if (!file) {
 			res.status(400).send("No file uploaded.")
@@ -137,16 +107,6 @@ export const uploadImageVersion = async (
 		}
 
 		const mediaType = detectMediaType(file.mimetype)
-
-		if (userId) {
-			// Enforce plan version cap (FREE = 2, PRO = unlimited).
-			const currentCount = await imageService.getVersionCount(imageId)
-			await assertCanAddVersion(userId, currentCount)
-			// Video versions are a PRO feature.
-			if (mediaType === "VIDEO") {
-				await assertCanUploadVideo(userId)
-			}
-		}
 
 		// Create the new version
 		const newVersion = await imageService.addImageVersion(
@@ -177,7 +137,6 @@ export const uploadImageVersion = async (
 		// Return the full image object with versions and latestVersion
 		res.status(201).json(enrichedImage)
 	} catch (error) {
-		if (handlePlanLimit(error, res)) return
 		res.status(500).json({ message: "Error uploading image version", error })
 	}
 }

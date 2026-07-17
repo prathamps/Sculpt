@@ -22,11 +22,6 @@ enum ProjectRole {
   VIEWER
 }
 
-enum Plan {
-  FREE
-  PRO
-}
-
 enum MediaType {
   IMAGE
   VIDEO
@@ -48,7 +43,6 @@ model User {
   commentLikes  CommentLike[]
   createdAt     DateTime        @default(now())
   updatedAt     DateTime        @updatedAt
-  subscription  Subscription?
 }
 
 model Project {
@@ -147,23 +141,6 @@ model Notification {
   userId    String
   user      User     @relation(fields: [userId], references: [id])
   createdAt DateTime @default(now())
-}
-
-model Subscription {
-  id                     String    @id @default(cuid())
-  userId                 String    @unique
-  user                   User      @relation(fields: [userId], references: [id])
-  plan                   Plan      @default(FREE)
-  provider               String? // 'stripe' | 'razorpay'
-  stripeCustomerId       String?
-  stripeSubscriptionId   String?   @unique
-  stripePriceId          String?
-  razorpaySubscriptionId String?   @unique
-  currentPeriodEnd       DateTime? // renewal date (provider-agnostic)
-  stripeCurrentPeriodEnd DateTime? // legacy; kept for back-compat
-  status                 String    @default("active") // e.g., 'active', 'canceled', 'past_due'
-  createdAt              DateTime  @default(now())
-  updatedAt              DateTime  @updatedAt
 }
 
 model ShareLink {
