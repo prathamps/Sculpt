@@ -13,13 +13,26 @@ export const metadata = {
 		"A powerful real-time image collaboration platform that streamlines the process of giving and receiving visual feedback.",
 }
 
+const themeScript = `
+try {
+	var t = localStorage.getItem('theme');
+	if (t === 'light') document.documentElement.classList.remove('dark');
+	else document.documentElement.classList.add('dark');
+} catch (e) {
+	document.documentElement.classList.add('dark');
+}
+`
+
 export default function RootLayout({
 	children,
 }: {
 	children: React.ReactNode
 }) {
 	return (
-		<html className="dark" lang="en" suppressHydrationWarning>
+		<html lang="en" suppressHydrationWarning>
+			<head>
+				<script dangerouslySetInnerHTML={{ __html: themeScript }} />
+			</head>
 			<body className={inter.className}>
 				<AuthProvider>
 					<AdminAuthProvider>
@@ -27,19 +40,12 @@ export default function RootLayout({
 							{children}
 							<Toaster
 								position="bottom-right"
-								theme="dark"
+								theme="system"
 								richColors
 								closeButton={false}
 								duration={4000}
 								visibleToasts={5}
 								expand={false}
-								toastOptions={{
-									style: {
-										background: "hsl(var(--background))",
-										border: "1px solid hsl(var(--border))",
-										color: "hsl(var(--foreground))",
-									},
-								}}
 							/>
 						</SocketProvider>
 					</AdminAuthProvider>

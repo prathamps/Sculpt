@@ -59,14 +59,16 @@ export function AnnotationToolbar({
 						<TooltipTrigger asChild>
 							<button
 								onClick={() => setTool(name)}
+								aria-label={label}
+								aria-pressed={tool === name}
 								className={cn(
-									"flex h-7 w-7 items-center justify-center rounded-sm transition-colors",
+									"flex h-7 w-7 items-center justify-center rounded-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
 									tool === name
 										? "bg-primary text-primary-foreground"
 										: "text-muted-foreground hover:bg-muted hover:text-foreground"
 								)}
 							>
-								<Icon className="h-4 w-4" />
+								<Icon className="h-4 w-4" aria-hidden="true" />
 							</button>
 						</TooltipTrigger>
 						<TooltipContent side="bottom" className="text-xs">
@@ -82,6 +84,7 @@ export function AnnotationToolbar({
 								<button
 									className="h-7 w-7 cursor-pointer rounded-sm outline-none ring-offset-background focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
 									style={{ backgroundColor: color }}
+									aria-label="Choose drawing color"
 								/>
 							</DropdownMenuTrigger>
 						</TooltipTrigger>
@@ -99,8 +102,12 @@ export function AnnotationToolbar({
 									<TooltipTrigger asChild>
 										<button
 											onClick={() => setColor(value)}
+											aria-label={label}
+											aria-pressed={
+												color.toUpperCase() === value.toUpperCase()
+											}
 											className={cn(
-												"h-8 w-full rounded transition-all",
+												"h-8 w-full rounded transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
 												color.toUpperCase() === value.toUpperCase() &&
 													"ring-2 ring-ring ring-offset-2 ring-offset-card"
 											)}

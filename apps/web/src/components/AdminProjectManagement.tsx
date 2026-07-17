@@ -88,7 +88,7 @@ export function AdminProjectManagement() {
 
 		try {
 			const res = await fetch(
-				`http://localhost:3001/api/admin/projects/${projectId}`,
+				`${URI}/api/admin/projects/${projectId}`,
 				{
 					credentials: "include",
 				}

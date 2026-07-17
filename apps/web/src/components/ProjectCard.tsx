@@ -110,11 +110,14 @@ export function ProjectCard({ project, onEdit, onDelete }: ProjectCardProps) {
 				</div>
 			</Link>
 
-			<div className="absolute right-2 top-2 opacity-0 transition-opacity group-hover:opacity-100">
+			<div className="absolute right-2 top-2 opacity-0 transition-opacity focus-within:opacity-100 group-hover:opacity-100">
 				<DropdownMenu>
 					<DropdownMenuTrigger asChild>
-						<button className="flex h-8 w-8 items-center justify-center rounded-md bg-background/80 text-foreground/80 backdrop-blur-sm hover:bg-background">
-							<MoreHorizontal className="h-4 w-4" />
+						<button
+							className="flex h-8 w-8 items-center justify-center rounded-md bg-background/80 text-foreground/80 backdrop-blur-sm hover:bg-background focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+							aria-label={`Actions for ${project.name}`}
+						>
+							<MoreHorizontal className="h-4 w-4" aria-hidden="true" />
 						</button>
 					</DropdownMenuTrigger>
 					<DropdownMenuContent align="end" className="w-52">

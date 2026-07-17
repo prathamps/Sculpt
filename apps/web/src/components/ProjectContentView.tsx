@@ -196,27 +196,29 @@ export function ProjectContentView({
 					<div className="flex items-center rounded-md border border-border/40 bg-background p-0.5">
 						<button
 							className={cn(
-								"flex h-7 w-7 items-center justify-center rounded",
+								"flex h-7 w-7 items-center justify-center rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
 								viewMode === "grid"
 									? "bg-card text-foreground"
 									: "text-muted-foreground hover:text-foreground"
 							)}
 							onClick={() => setViewMode("grid")}
-							title="Grid view"
+							aria-label="Grid view"
+							aria-pressed={viewMode === "grid"}
 						>
-							<Grid2X2 className="h-4 w-4" />
+							<Grid2X2 className="h-4 w-4" aria-hidden="true" />
 						</button>
 						<button
 							className={cn(
-								"flex h-7 w-7 items-center justify-center rounded",
+								"flex h-7 w-7 items-center justify-center rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
 								viewMode === "list"
 									? "bg-card text-foreground"
 									: "text-muted-foreground hover:text-foreground"
 							)}
 							onClick={() => setViewMode("list")}
-							title="List view"
+							aria-label="List view"
+							aria-pressed={viewMode === "list"}
 						>
-							<ListIcon className="h-4 w-4" />
+							<ListIcon className="h-4 w-4" aria-hidden="true" />
 						</button>
 					</div>
 					<Button
@@ -248,9 +250,10 @@ export function ProjectContentView({
 				<div className="mb-4 rounded-md border border-border/50 bg-card/50 p-3">
 					<div className="flex flex-wrap items-center gap-3">
 						<div className="relative flex-1 min-w-[200px]">
-							<Search className="absolute left-2 top-2 h-4 w-4 text-muted-foreground" />
+							<Search className="absolute left-2 top-2 h-4 w-4 text-muted-foreground" aria-hidden="true" />
 							<Input
 								placeholder="Search files..."
+								aria-label="Search files"
 								value={searchQuery}
 								onChange={(e) => setSearchQuery(e.target.value)}
 								className="pl-8 h-8 bg-background/70"
@@ -261,8 +264,9 @@ export function ProjectContentView({
 									size="icon"
 									className="absolute right-1 top-1 h-6 w-6 text-muted-foreground hover:text-primary"
 									onClick={() => setSearchQuery("")}
+									aria-label="Clear search"
 								>
-									<X className="h-3.5 w-3.5" />
+									<X className="h-3.5 w-3.5" aria-hidden="true" />
 								</Button>
 							)}
 						</div>

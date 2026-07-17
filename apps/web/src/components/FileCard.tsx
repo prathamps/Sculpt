@@ -134,8 +134,8 @@ export function FileCard({
 							size="icon"
 							className="h-8 w-8 text-muted-foreground hover:text-primary"
 						>
-							<Link href={`/project/${projectId}/image/${file.id}`}>
-								<ExternalLink className="h-4 w-4" />
+							<Link href={`/project/${projectId}/image/${file.id}`} aria-label={`Open ${file.name}`}>
+								<ExternalLink className="h-4 w-4" aria-hidden="true" />
 							</Link>
 						</Button>
 						<DropdownMenu>
@@ -144,8 +144,9 @@ export function FileCard({
 									variant="ghost"
 									size="icon"
 									className="h-8 w-8 text-muted-foreground hover:text-primary"
+									aria-label={`Actions for ${file.name}`}
 								>
-									<MoreHorizontal className="h-4 w-4" />
+									<MoreHorizontal className="h-4 w-4" aria-hidden="true" />
 								</Button>
 							</DropdownMenuTrigger>
 							<DropdownMenuContent align="end" className="w-52">
@@ -242,8 +243,9 @@ export function FileCard({
 									variant="ghost"
 									size="icon"
 									className="h-8 w-8 text-muted-foreground hover:text-foreground"
+									aria-label={`Actions for ${file.name}`}
 								>
-									<MoreVertical className="h-4 w-4" />
+									<MoreVertical className="h-4 w-4" aria-hidden="true" />
 								</Button>
 							</DropdownMenuTrigger>
 							<DropdownMenuContent align="end">

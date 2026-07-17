@@ -106,7 +106,11 @@ export function AnnotationFooter({
 					<AvatarFallback>{user?.name?.charAt(0) || "U"}</AvatarFallback>
 				</Avatar>
 				<div className="relative flex-1">
+					<label htmlFor="comment-input" className="sr-only">
+						Add a comment
+					</label>
 					<Textarea
+						id="comment-input"
 						placeholder="Add a comment..."
 						value={comment}
 						onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) =>
@@ -119,11 +123,12 @@ export function AnnotationFooter({
 						className="absolute bottom-1 right-1 h-7 w-7 text-muted-foreground hover:text-foreground"
 						onClick={handleSendComment}
 						disabled={!comment.trim() || isSending}
+						aria-label="Send comment"
 					>
 						{isSending ? (
 							<span className="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent" />
 						) : (
-							<Send className="h-4 w-4" />
+							<Send className="h-4 w-4" aria-hidden="true" />
 						)}
 					</Button>
 				</div>
@@ -158,8 +163,9 @@ export function AnnotationFooter({
 							onClick={onUndo}
 							disabled={!canUndo}
 							className={cn("h-7 w-7 rounded-sm", !canUndo && "opacity-40")}
+							aria-label="Undo"
 						>
-							<Undo className="h-4 w-4" />
+							<Undo className="h-4 w-4" aria-hidden="true" />
 						</Button>
 						<Button
 							size="icon"
@@ -167,16 +173,18 @@ export function AnnotationFooter({
 							onClick={onRedo}
 							disabled={!canRedo}
 							className={cn("h-7 w-7 rounded-sm", !canRedo && "opacity-40")}
+							aria-label="Redo"
 						>
-							<Redo className="h-4 w-4" />
+							<Redo className="h-4 w-4" aria-hidden="true" />
 						</Button>
 						<Button
 							size="icon"
 							variant="ghost"
 							onClick={onClear}
 							className="h-7 w-7 rounded-sm text-destructive hover:text-destructive/90"
+							aria-label="Clear all drawings"
 						>
-							<Trash2 className="h-4 w-4" />
+							<Trash2 className="h-4 w-4" aria-hidden="true" />
 						</Button>
 					</div>
 				</div>

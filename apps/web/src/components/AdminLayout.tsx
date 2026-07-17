@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import Link from "next/link"
 import { usePathname } from "next/navigation"
 import { cn } from "@/lib/utils"
@@ -23,8 +23,16 @@ interface AdminLayoutProps {
 
 export function AdminLayout({ children }: AdminLayoutProps) {
 	const pathname = usePathname()
-	const [isSidebarOpen, setIsSidebarOpen] = useState(true)
+	const [isSidebarOpen, setIsSidebarOpen] = useState(false)
 	const { adminLogout } = useAdminAuth()
+
+	useEffect(() => {
+		const mq = window.matchMedia("(min-width: 768px)")
+		const apply = () => setIsSidebarOpen(mq.matches)
+		apply()
+		mq.addEventListener("change", apply)
+		return () => mq.removeEventListener("change", apply)
+	}, [])
 
 	const toggleSidebar = () => {
 		setIsSidebarOpen(!isSidebarOpen)
@@ -70,11 +78,13 @@ export function AdminLayout({ children }: AdminLayoutProps) {
 					<button
 						onClick={toggleSidebar}
 						className="flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground hover:bg-secondary md:hidden"
+						aria-label={isSidebarOpen ? "Close menu" : "Open menu"}
+						aria-expanded={isSidebarOpen}
 					>
 						{isSidebarOpen ? (
-							<X className="h-5 w-5" />
+							<X className="h-5 w-5" aria-hidden="true" />
 						) : (
-							<Menu className="h-5 w-5" />
+							<Menu className="h-5 w-5" aria-hidden="true" />
 						)}
 					</button>
 
@@ -96,12 +106,23 @@ export function AdminLayout({ children }: AdminLayoutProps) {
 				</Button>
 			</header>
 
-			<div className="flex flex-1 overflow-hidden">
+			<div className="relative flex flex-1 overflow-hidden">
+				{/* Mobile backdrop */}
+				{isSidebarOpen && (
+					<div
+						className="absolute inset-0 z-20 bg-black/60 md:hidden"
+						onClick={toggleSidebar}
+						aria-hidden="true"
+					/>
+				)}
 				{/* Sidebar */}
 				<div
 					className={cn(
-						"bg-muted/40 border-r transition-all duration-300 ease-in-out",
-						isSidebarOpen ? "w-64" : "w-0 -ml-64 md:w-16 md:ml-0"
+						"z-30 bg-muted/40 border-r transition-all duration-300 ease-in-out",
+						"absolute inset-y-0 left-0 md:relative",
+						isSidebarOpen
+							? "w-64 translate-x-0"
+							: "w-64 -translate-x-full md:w-16 md:translate-x-0"
 					)}
 				>
 					<div className="flex h-16 items-center justify-between px-4">
