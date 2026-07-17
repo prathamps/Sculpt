@@ -1,7 +1,7 @@
 {
 	"name": "api",
 	"version": "1.0.0",
-	"description": "",
+	"description": "Sculpt API — real-time visual collaboration backend",
 	"main": "index.js",
 	"scripts": {
 		"dev": "ts-node-dev --respawn --transpile-only src/index.ts",
@@ -10,7 +10,7 @@
 	},
 	"keywords": [],
 	"author": "",
-	"license": "ISC",
+	"license": "MIT",
 	"dependencies": {
 		"@prisma/client": "^6.10.0",
 		"bcrypt": "^6.0.0",
