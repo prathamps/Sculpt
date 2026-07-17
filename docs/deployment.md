@@ -50,6 +50,7 @@ Build both apps (`npm run build`) and run `node dist/index.js` (API, after `npx 
 | `JWT_SECRET` | ✅ | signing key for auth cookies — use a long random value |
 | `FRONTEND_URL`, `API_URL` | ✅ in prod | CORS + OAuth redirect construction |
 | `REDIS_URL` | optional | presence mirroring; falls back to in-memory |
+| `TRUST_PROXY` | behind a proxy | number of trusted proxy hops so `req.ip` and audit IPs use `X-Forwarded-For` (leave unset when direct-facing) |
 | `GOOGLE_*`, `GITHUB_*` | optional | OAuth login buttons appear only when set |
 | `SMTP_*` | optional | email notifications for offline members |
 | `S3_BUCKET`, `S3_REGION`, `S3_ENDPOINT`, `S3_PUBLIC_URL` | optional | switch file storage to any S3-compatible store |

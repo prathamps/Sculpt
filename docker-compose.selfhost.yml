@@ -44,6 +44,7 @@ services:
       JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET to a long random string}
       FRONTEND_URL: ${FRONTEND_URL:-http://localhost:3000}
       API_URL: ${API_URL:-http://localhost:3001}
+      TRUST_PROXY: ${TRUST_PROXY:-}
       NODE_ENV: production
     volumes:
       - sculpt_uploads:/app/uploads
