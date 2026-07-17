@@ -6,6 +6,17 @@ import {
 	getImageProjectId,
 	isProjectMember,
 } from "./report.service"
+import { recordAudit, requestIp } from "../audit/audit.service"
+
+const auditExport = (req: Request, imageId: string, format: string) =>
+	recordAudit({
+		action: "report.exported",
+		targetType: "image",
+		targetId: imageId,
+		actorId: (req.user as AuthenticatedUser)?.id,
+		metadata: { format },
+		ipAddress: requestIp(req),
+	})
 
 const authorizeExport = async (
 	imageId: string,
@@ -47,6 +58,7 @@ export const getImageReportJson = async (
 			"Content-Disposition",
 			`attachment; filename="${slug(report.image.name)}-report.json"`
 		)
+		await auditExport(req, imageId, "json")
 		res.status(200).json(report)
 	} catch (error) {
 		res.status(500).json({ message: "Error generating report", error })
@@ -74,6 +86,7 @@ export const getImageReportCsv = async (
 			"Content-Disposition",
 			`attachment; filename="${slug(report.image.name)}-report.csv"`
 		)
+		await auditExport(req, imageId, "csv")
 		res.status(200).send(csv)
 	} catch (error) {
 		res.status(500).json({ message: "Error generating report", error })

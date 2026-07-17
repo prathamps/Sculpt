@@ -41,8 +41,25 @@ model User {
   messages      Message[]
   comments      Comment[]
   commentLikes  CommentLike[]
+  auditLogs     AuditLog[]
   createdAt     DateTime        @default(now())
   updatedAt     DateTime        @updatedAt
+}
+
+model AuditLog {
+  id         String   @id @default(cuid())
+  actorId    String?
+  actor      User?    @relation(fields: [actorId], references: [id], onDelete: SetNull)
+  action     String
+  targetType String
+  targetId   String?
+  metadata   Json?
+  ipAddress  String?
+  createdAt  DateTime @default(now())
+
+  @@index([actorId, createdAt])
+  @@index([targetType, targetId])
+  @@index([createdAt])
 }
 
 model Project {

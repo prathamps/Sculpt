@@ -4,6 +4,7 @@ import { Prisma } from "@prisma/client"
 import jwt from "jsonwebtoken"
 import { oauthProviders } from "./passport"
 import { AuthenticatedUser } from "../../types"
+import { recordAudit, requestIp } from "../audit/audit.service"
 
 const FRONTEND_URL =
 	process.env.FRONTEND_URL ||
@@ -27,6 +28,13 @@ const setAuthCookie = (res: Response, userId: string) => {
 export const register = async (req: Request, res: Response) => {
 	try {
 		const user = await registerUser(req.body)
+		await recordAudit({
+			action: "user.registered",
+			targetType: "user",
+			targetId: user.id,
+			actorId: user.id,
+			ipAddress: requestIp(req),
+		})
 		return res.status(201).json({ message: "User created successfully", user })
 	} catch (error) {
 		if (
@@ -43,10 +51,23 @@ export const login = async (req: Request, res: Response) => {
 	try {
 		const user = await loginUser(req.body)
 		if (!user) {
+			await recordAudit({
+				action: "user.login_failed",
+				targetType: "user",
+				metadata: { email: req.body?.email },
+				ipAddress: requestIp(req),
+			})
 			return res.status(401).json({ message: "Invalid credentials" })
 		}
 
 		setAuthCookie(res, user.id)
+		await recordAudit({
+			action: "user.login_succeeded",
+			targetType: "user",
+			targetId: user.id,
+			actorId: user.id,
+			ipAddress: requestIp(req),
+		})
 
 		return res.status(200).json({ message: "Logged in successfully" })
 	} catch (error) {
@@ -72,5 +93,12 @@ export const oauthCallback = (req: Request, res: Response) => {
 		return res.redirect(`${FRONTEND_URL}/login?error=oauth`)
 	}
 	setAuthCookie(res, user.id)
+	void recordAudit({
+		action: "user.oauth_login",
+		targetType: "user",
+		targetId: user.id,
+		actorId: user.id,
+		ipAddress: requestIp(req),
+	})
 	return res.redirect(`${FRONTEND_URL}/oauth/callback`)
 }

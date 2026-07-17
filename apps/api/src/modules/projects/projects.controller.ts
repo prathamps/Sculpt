@@ -2,6 +2,7 @@ import { Response } from "express"
 import * as projectService from "./projects.service"
 import { AuthenticatedRequest, ProjectMemberWithUser } from "../../types";
 import { Project, Image, ImageVersion } from "@prisma/client"
+import { recordAudit, requestIp } from "../audit/audit.service"
 
 // Extended types for the transformed data
 interface ExtendedImage extends Image {
@@ -22,6 +23,14 @@ export const createProject = async (
 		const { name } = req.body
 		const ownerId = req.user!.id
 		const project = await projectService.createProject(name, ownerId)
+		await recordAudit({
+			action: "project.created",
+			targetType: "project",
+			targetId: project.id,
+			actorId: ownerId,
+			metadata: { name },
+			ipAddress: requestIp(req),
+		})
 		res.status(201).json(project)
 	} catch (error) {
 		res.status(500).json({ message: "Error creating project", error })
@@ -115,6 +124,14 @@ export const updateProject = async (
 			{ name },
 			userId
 		)
+		await recordAudit({
+			action: "project.updated",
+			targetType: "project",
+			targetId: id,
+			actorId: userId,
+			metadata: { name },
+			ipAddress: requestIp(req),
+		})
 		res.status(200).json(updatedProject)
 	} catch (error) {
 		if (error instanceof Error) {
@@ -133,6 +150,13 @@ export const deleteProject = async (
 		const { id } = req.params
 		const userId = req.user!.id
 		await projectService.deleteProject(id, userId)
+		await recordAudit({
+			action: "project.deleted",
+			targetType: "project",
+			targetId: id,
+			actorId: userId,
+			ipAddress: requestIp(req),
+		})
 		res.status(204).send()
 	} catch (error) {
 		if (error instanceof Error) {
@@ -153,6 +177,14 @@ export const removeMemberFromProject = async (
 		const { projectId, userId } = req.params
 		const requesterId = req.user!.id
 		await projectService.removeUserFromProject(projectId, userId, requesterId)
+		await recordAudit({
+			action: "project.member_removed",
+			targetType: "project",
+			targetId: projectId,
+			actorId: requesterId,
+			metadata: { removedUserId: userId },
+			ipAddress: requestIp(req),
+		})
 		res.status(200).json({ message: "Member removed successfully." })
 	} catch (error) {
 		if (error instanceof Error) {
@@ -171,6 +203,14 @@ export const inviteToProject = async (
 		const { id } = req.params
 		const { email } = req.body
 		const project = await projectService.inviteUserToProject(id, email)
+		await recordAudit({
+			action: "project.member_invited",
+			targetType: "project",
+			targetId: id,
+			actorId: req.user!.id,
+			metadata: { invitedEmail: email },
+			ipAddress: requestIp(req),
+		})
 		res.status(200).json(project)
 	} catch (error) {
 		if (error instanceof Error) {
@@ -190,6 +230,14 @@ export const createShareLink = async (
 		const { role } = req.body
 		const userId = req.user!.id
 		const link = await projectService.createShareLink(projectId, userId, role)
+		await recordAudit({
+			action: "share_link.created",
+			targetType: "project",
+			targetId: projectId,
+			actorId: userId,
+			metadata: { role },
+			ipAddress: requestIp(req),
+		})
 		res.status(201).json(link)
 	} catch (error) {
 		if (error instanceof Error) {
@@ -226,6 +274,13 @@ export const revokeShareLink = async (
 		const { linkId } = req.params
 		const userId = req.user!.id
 		await projectService.revokeShareLink(linkId, userId)
+		await recordAudit({
+			action: "share_link.revoked",
+			targetType: "share_link",
+			targetId: linkId,
+			actorId: userId,
+			ipAddress: requestIp(req),
+		})
 		res.status(204).send()
 	} catch (error) {
 		if (error instanceof Error) {
@@ -244,6 +299,13 @@ export const joinProjectWithShareLink = async (
 		const { token } = req.params
 		const userId = req.user!.id
 		const project = await projectService.joinProjectWithShareLink(token, userId)
+		await recordAudit({
+			action: "project.member_joined_via_link",
+			targetType: "project",
+			targetId: project.id,
+			actorId: userId,
+			ipAddress: requestIp(req),
+		})
 		res.status(200).json(project)
 	} catch (error) {
 		if (error instanceof Error) {

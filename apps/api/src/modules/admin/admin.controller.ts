@@ -10,6 +10,11 @@ import {
 import { loginAdmin } from "../auth/auth.service"
 import { UserRole } from "@prisma/client"
 import jwt from "jsonwebtoken"
+import {
+	listAuditLogs,
+	recordAudit,
+	requestIp,
+} from "../audit/audit.service"
 
 export const adminLogin = async (req: Request, res: Response) => {
 	try {
@@ -17,6 +22,12 @@ export const adminLogin = async (req: Request, res: Response) => {
 		const admin = await loginAdmin(email, password)
 
 		if (!admin) {
+			await recordAudit({
+				action: "admin.login_failed",
+				targetType: "user",
+				metadata: { email },
+				ipAddress: requestIp(req),
+			})
 			return res.status(401).json({ message: "Invalid credentials" })
 		}
 
@@ -39,6 +50,14 @@ export const adminLogin = async (req: Request, res: Response) => {
 			secure: process.env.NODE_ENV === "production",
 			sameSite: "none",
 			maxAge: 8 * 3600000, // 8 hours
+		})
+
+		await recordAudit({
+			action: "admin.login_succeeded",
+			targetType: "user",
+			targetId: admin.id,
+			actorId: admin.id,
+			ipAddress: requestIp(req),
 		})
 
 		return res.status(200).json({ message: "Admin logged in successfully" })
@@ -94,6 +113,14 @@ export const changeUserRole = async (req: Request, res: Response) => {
 		}
 
 		const updatedUser = await updateUserRole(userId, role)
+		await recordAudit({
+			action: "user.role_changed",
+			targetType: "user",
+			targetId: userId,
+			actorId: (req.user as AuthenticatedUser)?.id,
+			metadata: { role },
+			ipAddress: requestIp(req),
+		})
 		return res.status(200).json(updatedUser)
 	} catch (error) {
 		console.error("Error updating user role:", error)
@@ -134,5 +161,23 @@ export const getStats = async (_req: Request, res: Response) => {
 	} catch (error) {
 		console.error("Error fetching statistics:", error)
 		return res.status(500).json({ message: "Error fetching statistics" })
+	}
+}
+
+export const getAuditLogs = async (req: Request, res: Response) => {
+	try {
+		const page = Math.max(1, Number(req.query.page) || 1)
+		const pageSize = Math.min(100, Math.max(1, Number(req.query.pageSize) || 25))
+		const result = await listAuditLogs({
+			page,
+			pageSize,
+			action: typeof req.query.action === "string" ? req.query.action : undefined,
+			actorId:
+				typeof req.query.actorId === "string" ? req.query.actorId : undefined,
+		})
+		return res.status(200).json(result)
+	} catch (error) {
+		console.error("Error fetching audit logs:", error)
+		return res.status(500).json({ message: "Error fetching audit logs" })
 	}
 }

@@ -5,6 +5,7 @@ import {
 	getProjects,
 	getProject,
 	getStats,
+	getAuditLogs,
 	adminLogin,
 	adminProfile,
 	adminLogout,
@@ -34,5 +35,8 @@ router.get("/projects/:projectId", getProject)
 
 // Dashboard statistics
 router.get("/stats", getStats)
+
+// Audit trail
+router.get("/audit-logs", getAuditLogs)
 
 export default router

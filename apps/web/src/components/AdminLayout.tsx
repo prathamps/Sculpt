@@ -10,6 +10,7 @@ import {
 	Users,
 	FolderKanban,
 	Settings,
+	ScrollText,
 	Menu,
 	X,
 	LogOut,
@@ -47,6 +48,12 @@ export function AdminLayout({ children }: AdminLayoutProps) {
 			href: "/admin/projects",
 			icon: FolderKanban,
 			current: pathname === "/admin/projects",
+		},
+		{
+			name: "Audit Log",
+			href: "/admin/audit",
+			icon: ScrollText,
+			current: pathname === "/admin/audit",
 		},
 		{
 			name: "Settings",

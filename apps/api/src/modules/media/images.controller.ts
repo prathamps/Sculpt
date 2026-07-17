@@ -5,6 +5,7 @@ import { CommentsService } from "../comments/comments.service"
 import { detectMediaType } from "../../middleware/upload.middleware"
 import { storage } from "../../storage"
 import { AppError } from "../../lib/errors"
+import { recordAudit, requestIp } from "../audit/audit.service"
 
 const requireUserId = (req: Request, res: Response): string | null => {
 	const userId = (req.user as AuthenticatedUser)?.id
@@ -50,6 +51,15 @@ export const uploadImage = async (
 		)
 
 		const images = await imageService.addImagesToProject(imagePayloads)
+
+		await recordAudit({
+			action: "media.uploaded",
+			targetType: "project",
+			targetId: projectId,
+			actorId: (req.user as AuthenticatedUser)?.id,
+			metadata: { files: imagePayloads.map((p) => p.name) },
+			ipAddress: requestIp(req),
+		})
 
 		if (images.count > 0) {
 			const newImages = await imageService.getImagesForProject(projectId)
@@ -133,6 +143,15 @@ export const uploadImageVersion = async (
 			req.body.duration ? Number(req.body.duration) : null
 		)
 
+		await recordAudit({
+			action: "media.version_uploaded",
+			targetType: "image",
+			targetId: imageId,
+			actorId: (req.user as AuthenticatedUser)?.id,
+			metadata: { versionName: req.body.versionName ?? null },
+			ipAddress: requestIp(req),
+		})
+
 		const image = await imageService.getImageById(imageId)
 		if (!image) {
 			res.status(404).json({ message: "Image not found" })
@@ -151,6 +170,13 @@ export const deleteImage = async (
 	try {
 		const { id } = req.params
 		await imageService.deleteImage(id)
+		await recordAudit({
+			action: "media.deleted",
+			targetType: "image",
+			targetId: id,
+			actorId: (req.user as AuthenticatedUser)?.id,
+			ipAddress: requestIp(req),
+		})
 		res.status(204).send()
 	} catch (error) {
 		res.status(500).json({ message: "Error deleting image", error })
@@ -164,6 +190,13 @@ export const deleteImageVersion = async (
 	try {
 		const { versionId } = req.params
 		await imageService.deleteImageVersion(versionId)
+		await recordAudit({
+			action: "media.version_deleted",
+			targetType: "image_version",
+			targetId: versionId,
+			actorId: (req.user as AuthenticatedUser)?.id,
+			ipAddress: requestIp(req),
+		})
 		res.status(204).send()
 	} catch (error) {
 		if (
@@ -185,6 +218,14 @@ export const updateImage = async (
 		const { id } = req.params
 		const { name } = req.body
 		const updatedImage = await imageService.updateImage(id, { name })
+		await recordAudit({
+			action: "media.updated",
+			targetType: "image",
+			targetId: id,
+			actorId: (req.user as AuthenticatedUser)?.id,
+			metadata: { name },
+			ipAddress: requestIp(req),
+		})
 		res.status(200).json(updatedImage)
 	} catch (error) {
 		res.status(500).json({ message: "Error updating image", error })
