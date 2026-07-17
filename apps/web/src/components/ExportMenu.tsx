@@ -13,6 +13,7 @@ import {
 } from "@/components/ui/dropdown-menu"
 import { toast } from "sonner"
 import { Image as ImageType, ImageVersion, Annotation } from "@/types"
+import { mediaUrl } from "@/lib/utils"
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001"
 
@@ -74,7 +75,7 @@ export function ExportMenu({
 		try {
 			const img = new window.Image()
 			img.crossOrigin = "anonymous"
-			img.src = `${API_URL}/${selectedVersion.url}`
+			img.src = mediaUrl(selectedVersion.url)
 			await new Promise<void>((resolve, reject) => {
 				img.onload = () => resolve()
 				img.onerror = () => reject(new Error("Failed to load image"))

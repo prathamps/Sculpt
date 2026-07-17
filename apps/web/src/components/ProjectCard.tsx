@@ -10,6 +10,7 @@ import {
 	ChevronRight,
 } from "lucide-react"
 import { Project } from "@/types"
+import { mediaUrl } from "@/lib/utils"
 import {
 	DropdownMenu,
 	DropdownMenuContent,
@@ -32,41 +33,13 @@ export function ProjectCard({ project, onEdit, onDelete }: ProjectCardProps) {
 		month: "short",
 		day: "numeric",
 	})
-	const URI = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001"
-	// Get the image URL considering versions
 	const getImageUrl = () => {
 		if (!firstImage) return null
-
-		console.log("First image data:", firstImage)
-
-		// Try to get the URL from latestVersion
-		if (firstImage.latestVersion?.url) {
-			const url = `${URI}/${firstImage.latestVersion.url}`
-			console.log("Using latestVersion URL:", url)
-			return url
-		}
-
-		// Try to get the URL from the first version in the versions array
-		if (
-			firstImage.versions &&
-			firstImage.versions.length > 0 &&
-			firstImage.versions[0]?.url
-		) {
-			const url = `${URI}/${firstImage.versions[0].url}`
-			console.log("Using versions[0] URL:", url)
-			return url
-		}
-
-		// Fallback for backward compatibility with legacy images
-		if ("url" in firstImage && firstImage.url) {
-			const url = `${URI}/${firstImage.url}`
-			console.log("Using legacy URL:", url)
-			return url
-		}
-
-		// No image URL available
-		console.log("No valid image URL found, using placeholder")
-		return "/placeholder-image.svg"
+		const url =
+			firstImage.latestVersion?.url ??
+			firstImage.versions?.[0]?.url ??
+			(firstImage as unknown as { url?: string }).url
+		return url ? mediaUrl(url) : "/placeholder-image.svg"
 	}
 
 	const imageUrl = getImageUrl()

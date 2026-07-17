@@ -2,15 +2,15 @@ import multer from "multer"
 import path from "path"
 import fs from "fs"
 import { Request } from "express"
+import { uploadsDir } from "../storage"
 
-const uploadDir = path.join(__dirname, "../../uploads")
+const stagingDir = path.join(uploadsDir, ".staging")
 
-// Ensure the upload directory exists
-fs.mkdirSync(uploadDir, { recursive: true })
+fs.mkdirSync(stagingDir, { recursive: true })
 
-const storage = multer.diskStorage({
-	destination: (req, file, cb) => {
-		cb(null, uploadDir)
+const staging = multer.diskStorage({
+	destination: (_req, _file, cb) => {
+		cb(null, stagingDir)
 	},
 	filename: (_req, file, cb) => {
 		const uniqueSuffix = Date.now() + "-" + Math.round(Math.random() * 1e9)
@@ -21,9 +21,7 @@ const storage = multer.diskStorage({
 	},
 })
 
-// Accept images and videos. Plan-based gating (video = PRO) happens in the
-// controllers; here we only reject unrelated file types.
-const fileFilter = (
+const imagesAndVideosOnly = (
 	_req: Request,
 	file: Express.Multer.File,
 	cb: multer.FileFilterCallback
@@ -38,11 +36,10 @@ const fileFilter = (
 const MAX_FILE_SIZE_MB = Number(process.env.MAX_UPLOAD_MB || 200)
 
 export const upload = multer({
-	storage,
-	fileFilter,
+	storage: staging,
+	fileFilter: imagesAndVideosOnly,
 	limits: { fileSize: MAX_FILE_SIZE_MB * 1024 * 1024 },
 })
 
-// Helper used by controllers to classify an uploaded file.
 export const detectMediaType = (mimetype: string): "IMAGE" | "VIDEO" =>
 	mimetype.startsWith("video/") ? "VIDEO" : "IMAGE"

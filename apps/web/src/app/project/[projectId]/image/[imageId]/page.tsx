@@ -21,6 +21,7 @@ import {
 	DropdownMenuSeparator,
 } from "@/components/ui/dropdown-menu"
 import { Image, ImageVersion } from "@/types"
+import { mediaUrl } from "@/lib/utils"
 import {
 	Dialog,
 	DialogContent,
@@ -471,7 +472,7 @@ export default function ProjectFileViewPage() {
 						) : selectedVersion ? (
 							isVideo ? (
 								<VideoAnnotationCanvas
-									videoUrl={`${URI}/${selectedVersion.url}`}
+									videoUrl={mediaUrl(selectedVersion.url)}
 									tool={tool}
 									color={color}
 									onAddAnnotation={handleAddAnnotation}
@@ -493,7 +494,7 @@ export default function ProjectFileViewPage() {
 								/>
 							) : (
 								<AnnotationCanvas
-									imageUrl={`${URI}/${selectedVersion.url}`}
+									imageUrl={mediaUrl(selectedVersion.url)}
 									tool={tool}
 									color={color}
 									onAddAnnotation={handleAddAnnotation}

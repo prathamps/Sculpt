@@ -6,6 +6,17 @@ export function cn(...inputs: ClassValue[]) {
 	return twMerge(clsx(inputs))
 }
 
+const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001"
+
+/**
+ * Resolve a stored media URL: absolute URLs (e.g. S3) pass through,
+ * relative ones are served by the API.
+ */
+export function mediaUrl(url: string): string {
+	if (url.startsWith("http://") || url.startsWith("https://")) return url
+	return `${API_URL}/${url}`
+}
+
 /**
  * Format bytes to a human-readable format
  */
