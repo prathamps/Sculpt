@@ -1,6 +1,8 @@
 import { prisma } from "../../lib/prisma"
 import { Project, ProjectRole, ShareLink } from "@prisma/client"
 import { randomBytes } from "crypto"
+import { ForbiddenError } from "../../lib/errors"
+import { isProjectOwner } from "./access"
 
 export const createProject = async (
 	name: string,
@@ -151,8 +153,13 @@ export const removeUserFromProject = async (
 
 export const inviteUserToProject = async (
 	projectId: string,
-	userEmail: string
+	userEmail: string,
+	requesterId: string
 ): Promise<Project | null> => {
+	if (!(await isProjectOwner(projectId, requesterId))) {
+		throw new ForbiddenError("Only project owners can invite members.")
+	}
+
 	const userToInvite = await prisma.user.findUnique({
 		where: { email: userEmail },
 	})

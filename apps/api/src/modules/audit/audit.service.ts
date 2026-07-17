@@ -35,13 +35,10 @@ export interface AuditEntry {
 	ipAddress?: string | null
 }
 
-export const requestIp = (req: Request): string | null => {
-	const forwarded = req.headers["x-forwarded-for"]
-	if (typeof forwarded === "string" && forwarded.length > 0) {
-		return forwarded.split(",")[0].trim()
-	}
-	return req.ip ?? null
-}
+// Express resolves req.ip from X-Forwarded-For only when `trust proxy` is
+// configured (see app.ts / TRUST_PROXY), so a direct-facing deployment records
+// the real socket address and the header can't be spoofed into the audit trail.
+export const requestIp = (req: Request): string | null => req.ip ?? null
 
 export const recordAudit = async (entry: AuditEntry): Promise<void> => {
 	try {

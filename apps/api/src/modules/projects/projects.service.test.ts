@@ -10,6 +10,11 @@ vi.mock("../../lib/prisma", () => ({
 		},
 		projectMember: {
 			delete: vi.fn(),
+			findFirst: vi.fn(),
+			create: vi.fn(),
+		},
+		user: {
+			findUnique: vi.fn(),
 		},
 	},
 }))
@@ -19,7 +24,9 @@ import {
 	removeUserFromProject,
 	updateProject,
 	deleteProject,
+	inviteUserToProject,
 } from "./projects.service"
+import { ForbiddenError } from "../../lib/errors"
 
 const mocked = vi.mocked(prisma, true)
 
@@ -110,5 +117,31 @@ describe("deleteProject", () => {
 			"Project not found or user not authorized"
 		)
 		expect(mocked.project.delete).not.toHaveBeenCalled()
+	})
+})
+
+describe("inviteUserToProject", () => {
+	beforeEach(() => vi.clearAllMocks())
+
+	it("refuses when the requester is not the project owner", async () => {
+		mocked.projectMember.findFirst.mockResolvedValue(null)
+
+		await expect(
+			inviteUserToProject("p1", "victim@example.com", "not-owner")
+		).rejects.toBeInstanceOf(ForbiddenError)
+		expect(mocked.user.findUnique).not.toHaveBeenCalled()
+		expect(mocked.projectMember.create).not.toHaveBeenCalled()
+	})
+
+	it("adds the invitee as a member when an owner invites", async () => {
+		mocked.projectMember.findFirst.mockResolvedValue({ id: "m1" } as never)
+		mocked.user.findUnique.mockResolvedValue({ id: "invitee" } as never)
+		mocked.project.findUnique.mockResolvedValue({ id: "p1" } as never)
+
+		await inviteUserToProject("p1", "invitee@example.com", "owner")
+
+		expect(mocked.projectMember.create).toHaveBeenCalledWith({
+			data: { projectId: "p1", userId: "invitee", role: "MEMBER" },
+		})
 	})
 })

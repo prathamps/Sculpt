@@ -51,8 +51,12 @@ export class S3Storage implements StoragePort {
 	async remove(url: string): Promise<void> {
 		if (!url.startsWith(`${this.publicBaseUrl}/`)) return
 		const key = url.slice(this.publicBaseUrl.length + 1)
-		await this.client.send(
-			new DeleteObjectCommand({ Bucket: this.config.bucket, Key: key })
-		)
+		try {
+			await this.client.send(
+				new DeleteObjectCommand({ Bucket: this.config.bucket, Key: key })
+			)
+		} catch (error) {
+			console.error(`Failed to remove object ${key} from storage`, error)
+		}
 	}
 }

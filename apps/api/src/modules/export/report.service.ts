@@ -40,27 +40,7 @@ const countAnnotations = (annotation: unknown): number => {
 	return 0
 }
 
-// Returns the projectId an image belongs to, or null if it doesn't exist.
-export const getImageProjectId = async (
-	imageId: string
-): Promise<string | null> => {
-	const image = await prisma.image.findUnique({
-		where: { id: imageId },
-		select: { projectId: true },
-	})
-	return image?.projectId ?? null
-}
-
-export const isProjectMember = async (
-	projectId: string,
-	userId: string
-): Promise<boolean> => {
-	const member = await prisma.projectMember.findFirst({
-		where: { projectId, userId },
-		select: { id: true },
-	})
-	return !!member
-}
+export { getImageProjectId, isProjectMember } from "../projects/access"
 
 export const buildImageReport = async (
 	imageId: string

@@ -3,6 +3,7 @@ import * as projectService from "./projects.service"
 import { AuthenticatedRequest, ProjectMemberWithUser } from "../../types";
 import { Project, Image, ImageVersion } from "@prisma/client"
 import { recordAudit, requestIp } from "../audit/audit.service"
+import { AppError } from "../../lib/errors"
 
 // Extended types for the transformed data
 interface ExtendedImage extends Image {
@@ -202,7 +203,7 @@ export const inviteToProject = async (
 	try {
 		const { id } = req.params
 		const { email } = req.body
-		const project = await projectService.inviteUserToProject(id, email)
+		const project = await projectService.inviteUserToProject(id, email, req.user!.id)
 		await recordAudit({
 			action: "project.member_invited",
 			targetType: "project",
@@ -213,6 +214,10 @@ export const inviteToProject = async (
 		})
 		res.status(200).json(project)
 	} catch (error) {
+		if (error instanceof AppError) {
+			res.status(error.statusCode).json({ message: error.message })
+			return
+		}
 		if (error instanceof Error) {
 			res.status(400).json({ message: error.message })
 			return

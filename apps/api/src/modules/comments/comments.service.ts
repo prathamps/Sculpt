@@ -231,7 +231,7 @@ export class CommentsService {
 			})
 
 			if (!comment) {
-				throw new Error(
+				throw new ForbiddenError(
 					"Comment not found or you don't have permission to delete it"
 				)
 			}

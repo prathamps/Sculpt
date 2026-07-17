@@ -89,18 +89,18 @@ describe("listAuditLogs", () => {
 })
 
 describe("requestIp", () => {
-	it("prefers the first x-forwarded-for hop", () => {
+	it("uses Express-resolved req.ip so a spoofed header can't win", () => {
 		const req = {
-			headers: { "x-forwarded-for": "203.0.113.7, 10.0.0.2" },
+			headers: { "x-forwarded-for": "203.0.113.7" },
 			ip: "10.0.0.2",
 		} as unknown as Request
 
-		expect(requestIp(req)).toBe("203.0.113.7")
+		expect(requestIp(req)).toBe("10.0.0.2")
 	})
 
-	it("falls back to the socket ip", () => {
-		const req = { headers: {}, ip: "192.168.1.9" } as unknown as Request
+	it("returns null when no ip is resolved", () => {
+		const req = { headers: {} } as unknown as Request
 
-		expect(requestIp(req)).toBe("192.168.1.9")
+		expect(requestIp(req)).toBeNull()
 	})
 })

@@ -8,16 +8,31 @@ const stagingDir = path.join(uploadsDir, ".staging")
 
 fs.mkdirSync(stagingDir, { recursive: true })
 
+const MIME_EXTENSIONS: Record<string, string> = {
+	"image/jpeg": ".jpg",
+	"image/png": ".png",
+	"image/gif": ".gif",
+	"image/webp": ".webp",
+	"image/svg+xml": ".png",
+	"video/mp4": ".mp4",
+	"video/webm": ".webm",
+	"video/quicktime": ".mov",
+}
+
+// Derive the stored extension from the declared MIME type, never the original
+// filename, so an uploaded file can't be served as HTML/JS from the API origin
+// regardless of what the client named it (image/svg is normalised away too).
+const safeExtension = (file: Express.Multer.File): string =>
+	MIME_EXTENSIONS[file.mimetype] ??
+	(file.mimetype.startsWith("video/") ? ".mp4" : ".img")
+
 const staging = multer.diskStorage({
 	destination: (_req, _file, cb) => {
 		cb(null, stagingDir)
 	},
 	filename: (_req, file, cb) => {
 		const uniqueSuffix = Date.now() + "-" + Math.round(Math.random() * 1e9)
-		cb(
-			null,
-			file.fieldname + "-" + uniqueSuffix + path.extname(file.originalname)
-		)
+		cb(null, file.fieldname + "-" + uniqueSuffix + safeExtension(file))
 	},
 })
 

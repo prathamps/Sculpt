@@ -1,11 +1,15 @@
 import http from "http"
 import { Server, Socket } from "socket.io"
 import { markOnline, markOffline } from "../lib/presence"
+import { isAllowedOrigin } from "../lib/cors"
 
 export const io = new Server({
 	cors: {
-		origin: true,
-		methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+		origin: (origin, callback) =>
+			isAllowedOrigin(origin ?? undefined)
+				? callback(null, true)
+				: callback(new Error("Not allowed by CORS")),
+		methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
 		credentials: true,
 		allowedHeaders: ["Content-Type", "Authorization", "Cookie"],
 	},

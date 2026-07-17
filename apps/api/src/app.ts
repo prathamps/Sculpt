@@ -1,7 +1,6 @@
 import express from "express"
 import cors from "cors"
 import cookieParser from "cookie-parser"
-import path from "path"
 import passport from "./modules/auth/passport"
 import authRoutes from "./modules/auth/auth.routes"
 import userRoutes from "./modules/auth/users.routes"
@@ -12,18 +11,12 @@ import commentRoutes from "./modules/comments/comments.routes"
 import notificationRoutes from "./modules/notifications/notifications.routes"
 import exportRoutes from "./modules/export/export.routes"
 import adminRoutes from "./modules/admin/admin.routes"
+import { isAllowedOrigin } from "./lib/cors"
+import { uploadsDir } from "./storage"
 
 const corsOptions: cors.CorsOptions = {
 	origin: (origin, callback) => {
-		if (!origin) return callback(null, true)
-		if (
-			origin.includes("localhost") ||
-			origin.includes("127.0.0.1") ||
-			origin.includes("vercel.app") ||
-			origin === process.env.FRONTEND_URL
-		) {
-			return callback(null, true)
-		}
+		if (isAllowedOrigin(origin)) return callback(null, true)
 		callback(new Error("Not allowed by CORS"))
 	},
 	credentials: true,
@@ -34,12 +27,30 @@ const corsOptions: cors.CorsOptions = {
 export const createApp = (): express.Express => {
 	const app = express()
 
+	// req.ip / X-Forwarded-For are only trusted when a known proxy count is set,
+	// so audit-logged IPs can't be spoofed on a direct-facing deployment.
+	if (process.env.TRUST_PROXY) {
+		const hops = Number(process.env.TRUST_PROXY)
+		app.set("trust proxy", Number.isNaN(hops) ? process.env.TRUST_PROXY : hops)
+	}
+
 	app.use(cors(corsOptions))
 	app.use(express.json())
 	app.use(cookieParser())
 	app.use(passport.initialize())
 
-	app.use("/uploads", express.static(path.join(__dirname, "../uploads")))
+	app.use(
+		"/uploads",
+		express.static(uploadsDir, {
+			setHeaders: (res) => {
+				// Stop the browser from sniffing an uploaded file into an executable
+				// type, and never render user uploads inline on the API origin.
+				res.setHeader("X-Content-Type-Options", "nosniff")
+				res.setHeader("Content-Disposition", "inline")
+				res.setHeader("Content-Security-Policy", "default-src 'none'")
+			},
+		})
+	)
 
 	app.get("/health", (_req, res) => {
 		res.json({ status: "ok" })
