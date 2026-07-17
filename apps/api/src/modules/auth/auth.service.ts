@@ -1,6 +1,7 @@
 import { User, UserRole } from "@prisma/client"
 import bcrypt from "bcrypt"
 import { prisma } from "../../lib/prisma"
+import { ForbiddenError, ValidationError } from "../../lib/errors"
 
 // User as returned by the API surface — the password hash is globally omitted
 // from Prisma results (see lib/prisma.ts).
@@ -139,4 +140,48 @@ export const getUsersByRole = async (role: UserRole) => {
 			updatedAt: true,
 		},
 	})
+}
+
+export const updateUserProfile = async (
+	userId: string,
+	data: { name?: string; avatarUrl?: string | null }
+): Promise<SafeUser> => {
+	const name = data.name?.trim()
+	if (name !== undefined && name.length === 0) {
+		throw new ValidationError("Name cannot be empty.")
+	}
+	return prisma.user.update({
+		where: { id: userId },
+		data: {
+			...(name !== undefined ? { name } : {}),
+			...(data.avatarUrl !== undefined ? { avatarUrl: data.avatarUrl } : {}),
+		},
+	})
+}
+
+export const changeUserPassword = async (
+	userId: string,
+	currentPassword: string,
+	newPassword: string
+): Promise<void> => {
+	if (!newPassword || newPassword.length < 8) {
+		throw new ValidationError(
+			"New password must be at least 8 characters long."
+		)
+	}
+	const user = await prisma.user.findUnique({
+		where: { id: userId },
+		omit: { password: false },
+	})
+	if (!user) throw new ValidationError("User not found.")
+	if (!user.password) {
+		throw new ForbiddenError(
+			"This account signs in with a social provider and has no password to change."
+		)
+	}
+	const valid = await bcrypt.compare(currentPassword, user.password)
+	if (!valid) throw new ForbiddenError("Your current password is incorrect.")
+
+	const hashed = await bcrypt.hash(newPassword, 10)
+	await prisma.user.update({ where: { id: userId }, data: { password: hashed } })
 }

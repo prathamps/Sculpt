@@ -30,8 +30,9 @@ export function Header({ onMenuClick }: HeaderProps) {
 					<button
 						onClick={onMenuClick}
 						className="flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground hover:bg-secondary md:hidden"
+						aria-label="Open menu"
 					>
-						<Menu className="h-5 w-5" />
+						<Menu className="h-5 w-5" aria-hidden="true" />
 					</button>
 				)}
 				<Link href="/dashboard" className="flex items-center gap-2">
@@ -46,13 +47,16 @@ export function Header({ onMenuClick }: HeaderProps) {
 				{user && <NotificationDropdown />}
 				<DropdownMenu>
 					<DropdownMenuTrigger asChild>
-						<button className="flex items-center gap-2 rounded-full border border-border/50 bg-background px-2 py-1.5 text-sm hover:bg-secondary">
+						<button
+							className="flex items-center gap-2 rounded-full border border-border/50 bg-background px-2 py-1.5 text-sm hover:bg-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+							aria-label="Account menu"
+						>
 							<Avatar className="h-6 w-6">
 								<AvatarImage
 									src={`https://api.dicebear.com/7.x/micah/svg?seed=${
 										user?.email || "user"
 									}`}
-									alt={user?.name || "User"}
+									alt=""
 								/>
 								<AvatarFallback>{user?.name?.charAt(0) || "U"}</AvatarFallback>
 							</Avatar>
@@ -76,9 +80,13 @@ export function Header({ onMenuClick }: HeaderProps) {
 								</Link>
 							</DropdownMenuItem>
 						)}
-						<DropdownMenuItem>
-							<User className="mr-2 h-4 w-4" />
-							Account Settings
+						<DropdownMenuItem asChild>
+							<Link href="/account">
+								<span className="flex items-center">
+									<User className="mr-2 h-4 w-4" />
+									Account Settings
+								</span>
+							</Link>
 						</DropdownMenuItem>
 						<DropdownMenuSeparator />
 						<DropdownMenuItem onClick={logout} className="text-destructive">

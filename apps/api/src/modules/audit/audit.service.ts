@@ -8,6 +8,8 @@ export type AuditAction =
 	| "user.login_failed"
 	| "user.logged_out"
 	| "user.oauth_login"
+	| "user.password_changed"
+	| "user.profile_updated"
 	| "user.role_changed"
 	| "admin.login_succeeded"
 	| "admin.login_failed"

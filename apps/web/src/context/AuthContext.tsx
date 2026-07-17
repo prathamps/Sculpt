@@ -15,6 +15,7 @@ interface User {
 	name: string
 	email: string
 	role: "USER" | "ADMIN"
+	avatarUrl?: string | null
 }
 
 interface AuthContextType {
@@ -22,6 +23,7 @@ interface AuthContextType {
 	isAuthenticated: boolean
 	login: () => void
 	logout: () => void
+	refresh: () => Promise<void>
 	loading: boolean
 }
 
@@ -82,6 +84,17 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 		fetchUser()
 	}
 
+	const refresh = async () => {
+		try {
+			const res = await fetch(`${URI}/api/users/profile`, {
+				credentials: "include",
+			})
+			setUser(res.ok ? await res.json() : null)
+		} catch {
+			setUser(null)
+		}
+	}
+
 	const logout = () => {
 		// We need to make a request to the backend to clear the cookie
 		const doLogout = async () => {
@@ -101,9 +114,10 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 			isAuthenticated: !!user,
 			login,
 			logout,
+			refresh,
 			loading,
 		}),
-		[user, loading, login, logout]
+		[user, loading, login, logout, refresh]
 	)
 
 	return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>
