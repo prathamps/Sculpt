@@ -4,6 +4,7 @@ import { AuthenticatedRequest, ProjectMemberWithUser } from "../../types";
 import { Project, Image, ImageVersion } from "@prisma/client"
 import { recordAudit, requestIp } from "../audit/audit.service"
 import { AppError } from "../../lib/errors"
+import { getMemberRole } from "./access"
 
 // Extended types for the transformed data
 interface ExtendedImage extends Image {
@@ -70,6 +71,23 @@ export const getProjects = async (
 		res.status(200).json(projects)
 	} catch (error) {
 		res.status(500).json({ message: "Error fetching projects", error })
+	}
+}
+
+export const getMyRole = async (
+	req: AuthenticatedRequest,
+	res: Response
+): Promise<void> => {
+	try {
+		const { id } = req.params
+		const role = await getMemberRole(id, req.user!.id)
+		if (!role) {
+			res.status(403).json({ message: "You are not a member of this project" })
+			return
+		}
+		res.status(200).json({ role })
+	} catch (error) {
+		res.status(500).json({ message: "Error fetching role", error })
 	}
 }
 

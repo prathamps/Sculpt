@@ -29,6 +29,7 @@ interface CommentCardProps {
 	onCommentUpdate?: () => void
 	onHighlightAnnotation?: (annotation: Annotation | Annotation[]) => void
 	onSeek?: (t: number) => void
+	canReply?: boolean
 }
 
 export function CommentCard({
@@ -36,6 +37,7 @@ export function CommentCard({
 	onCommentUpdate,
 	onHighlightAnnotation,
 	onSeek,
+	canReply = true,
 }: CommentCardProps) {
 	const { user } = useAuth()
 	const [isDeleting, setIsDeleting] = useState(false)
@@ -129,13 +131,7 @@ export function CommentCard({
 		}
 	}
 
-	// Handle annotation highlighting
-	const handleCardClick = () => {
-		if (comment.annotation && onHighlightAnnotation) {
-			// Pass the annotation data directly, whether it's an array or a single object
-			onHighlightAnnotation(comment.annotation)
-		}
-	}
+	const hasTimestamp = typeof comment.timestamp === "number"
 
 	// Count annotations if they're stored as an array
 	const annotationCount = Array.isArray(comment.annotation)
@@ -143,6 +139,20 @@ export function CommentCard({
 		: comment.annotation
 		? 1
 		: 0
+
+	// Selecting a comment reveals its drawing and, for video, seeks the player
+	// to the frame the comment was left on.
+	const isSelectable = !!comment.annotation || hasTimestamp
+	const handleSelect = () => {
+		if (comment.annotation) onHighlightAnnotation?.(comment.annotation)
+		if (hasTimestamp) onSeek?.(comment.timestamp as number)
+	}
+	const handleCardKeyDown = (e: React.KeyboardEvent) => {
+		if (e.key === "Enter" || e.key === " ") {
+			e.preventDefault()
+			handleSelect()
+		}
+	}
 
 	// Handle reply submission
 	const submitReply = async () => {
@@ -182,106 +192,116 @@ export function CommentCard({
 	return (
 		<div
 			className={cn(
-				"flex flex-col gap-3 w-full",
-				comment.annotation &&
-					"cursor-pointer hover:bg-accent/10 rounded p-2 -m-2"
+				"flex flex-col gap-3 w-full rounded-lg",
+				isSelectable &&
+					"cursor-pointer p-2 -m-0 transition-colors hover:bg-accent/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
 			)}
-			onClick={handleCardClick}
+			onClick={isSelectable ? handleSelect : undefined}
+			onKeyDown={isSelectable ? handleCardKeyDown : undefined}
+			role={isSelectable ? "button" : undefined}
+			tabIndex={isSelectable ? 0 : undefined}
+			aria-label={
+				isSelectable
+					? `Comment by ${comment.user.name || comment.user.email}. Select to view its drawing${hasTimestamp ? " and jump to its moment in the video" : ""}.`
+					: undefined
+			}
 		>
-			<div className="flex items-start gap-2.5 w-full">
-				<Avatar className="h-7 w-7 flex-shrink-0">
-					<AvatarFallback>
-						{comment.user.name?.charAt(0) || comment.user.email.charAt(0)}
+			<div className="flex items-start gap-3 w-full">
+				<Avatar className="h-8 w-8 flex-shrink-0">
+					<AvatarFallback className="text-xs">
+						{(comment.user.name?.charAt(0) || comment.user.email.charAt(0)).toUpperCase()}
 					</AvatarFallback>
 				</Avatar>
-				<div className="flex-1 space-y-1.5 min-w-0">
-					<div className="flex items-center justify-between">
-						<div className="flex items-center gap-2">
-							<span className="text-sm font-medium">
+				<div className="flex-1 min-w-0">
+					<div className="flex items-start justify-between gap-2">
+						<div className="min-w-0">
+							<p className="truncate text-sm font-medium leading-tight">
 								{comment.user.name || comment.user.email}
-							</span>
-							<span className="text-xs text-muted-foreground">{timestamp}</span>
-							{typeof comment.timestamp === "number" && (
+							</p>
+							<p className="text-xs text-muted-foreground">{timestamp}</p>
+						</div>
+						{isAuthor && (
+							<DropdownMenu>
+								<DropdownMenuTrigger asChild>
+									<Button
+										variant="ghost"
+										size="icon"
+										className="h-7 w-7 flex-shrink-0 text-muted-foreground"
+										aria-label="Comment actions"
+										onClick={(e) => e.stopPropagation()}
+									>
+										<MoreHorizontal className="h-4 w-4" />
+									</Button>
+								</DropdownMenuTrigger>
+								<DropdownMenuContent align="end" className="w-48">
+									<DropdownMenuItem
+										className="text-xs"
+										onClick={(e) => {
+											e.stopPropagation()
+											toggleResolved()
+										}}
+									>
+										Mark as {comment.resolved ? "unresolved" : "resolved"}
+									</DropdownMenuItem>
+									<DropdownMenuSeparator />
+									<DropdownMenuItem
+										className="text-xs text-destructive"
+										onClick={(e) => {
+											e.stopPropagation()
+											handleDelete()
+										}}
+										disabled={isDeleting}
+									>
+										<Trash2 className="mr-2 h-3.5 w-3.5" />
+										{isDeleting ? "Deleting..." : "Delete comment"}
+									</DropdownMenuItem>
+								</DropdownMenuContent>
+							</DropdownMenu>
+						)}
+					</div>
+
+					{(hasTimestamp || comment.resolved || annotationCount > 0) && (
+						<div className="mt-2 flex flex-wrap items-center gap-1.5">
+							{hasTimestamp && (
 								<button
 									type="button"
 									onClick={(e) => {
 										e.stopPropagation()
 										onSeek?.(comment.timestamp as number)
 									}}
-									className="flex items-center gap-1 rounded bg-primary/10 px-1.5 py-0.5 text-xs text-primary hover:bg-primary/20"
-									title="Jump to this moment"
+									className="inline-flex items-center gap-1 rounded-full bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary hover:bg-primary/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+									aria-label={`Jump to ${formatVideoTime(
+										comment.timestamp as number
+									)} in the video`}
 								>
-									<Clock className="h-3 w-3" />
-									{formatVideoTime(comment.timestamp)}
+									<Clock className="h-3 w-3" aria-hidden="true" />
+									{formatVideoTime(comment.timestamp as number)}
 								</button>
 							)}
 							{comment.resolved && (
-								<span className="flex items-center gap-1 text-xs text-green-500">
-									<CheckCircle2 className="h-3 w-3" />
+								<span className="inline-flex items-center gap-1 rounded-full bg-green-500/15 px-2 py-0.5 text-xs font-medium text-green-600 dark:text-green-400">
+									<CheckCircle2 className="h-3 w-3" aria-hidden="true" />
 									Resolved
 								</span>
 							)}
 							{annotationCount > 0 && (
-								<span className="flex items-center gap-1 text-xs text-blue-500">
-									<Edit3 className="h-3 w-3" />
+								<span className="inline-flex items-center gap-1 rounded-full bg-blue-500/15 px-2 py-0.5 text-xs font-medium text-blue-600 dark:text-blue-400">
+									<Edit3 className="h-3 w-3" aria-hidden="true" />
 									{annotationCount > 1
 										? `${annotationCount} drawings`
-										: "Has drawing"}
+										: "Drawing"}
 								</span>
 							)}
 						</div>
-						<div className="flex items-center gap-1">
-							{isAuthor && (
-								<DropdownMenu>
-									<DropdownMenuTrigger asChild>
-										<Button
-											variant="ghost"
-											size="icon"
-											className="h-6 w-6 text-muted-foreground"
-										>
-											<MoreHorizontal className="h-3.5 w-3.5" />
-										</Button>
-									</DropdownMenuTrigger>
-									<DropdownMenuContent align="end" className="w-48">
-										<DropdownMenuItem
-											className="text-xs"
-											onClick={(e) => {
-												e.stopPropagation()
-												toggleResolved()
-											}}
-										>
-											Mark as {comment.resolved ? "unresolved" : "resolved"}
-										</DropdownMenuItem>
-										<DropdownMenuSeparator />
-										<DropdownMenuItem
-											className="text-xs text-destructive"
-											onClick={handleDelete}
-											disabled={isDeleting}
-										>
-											{isDeleting ? (
-												<>
-													<Trash2 className="mr-2 h-3.5 w-3.5" />
-													Deleting...
-												</>
-											) : (
-												<>
-													<Trash2 className="mr-2 h-3.5 w-3.5" />
-													Delete comment
-												</>
-											)}
-										</DropdownMenuItem>
-									</DropdownMenuContent>
-								</DropdownMenu>
-							)}
-						</div>
-					</div>
+					)}
+
 					<p
-						className="text-sm leading-relaxed break-words whitespace-pre-wrap max-w-full overflow-hidden"
+						className="mt-2 text-sm leading-relaxed break-words whitespace-pre-wrap"
 						style={{ wordBreak: "break-word", overflowWrap: "break-word" }}
 					>
 						{comment.content}
 					</p>
-					<div className="flex items-center gap-3">
+					<div className="mt-2 flex items-center gap-3">
 						<Button
 							variant="ghost"
 							size="sm"
@@ -296,27 +316,33 @@ export function CommentCard({
 								handleLike()
 							}}
 							disabled={isLiking}
+							aria-pressed={isLiked}
+							aria-label={isLiked ? "Unlike comment" : "Like comment"}
 						>
 							<ThumbsUp
 								className={cn("h-3.5 w-3.5", isLiked && "fill-primary")}
+								aria-hidden="true"
 							/>
 							{likeCount > 0 && likeCount} Like{likeCount !== 1 && "s"}
 						</Button>
-						<Button
-							variant="ghost"
-							size="sm"
-							className="h-7 gap-1.5 px-2 text-xs text-muted-foreground hover:text-foreground"
-							onClick={(e) => {
-								e.stopPropagation()
-								setIsReplying(!isReplying)
-							}}
-						>
-							<MessageSquareReply className="h-3.5 w-3.5" />
-							Reply
-						</Button>
+						{canReply && (
+							<Button
+								variant="ghost"
+								size="sm"
+								className="h-7 gap-1.5 px-2 text-xs text-muted-foreground hover:text-foreground"
+								onClick={(e) => {
+									e.stopPropagation()
+									setIsReplying(!isReplying)
+								}}
+								aria-expanded={isReplying}
+							>
+								<MessageSquareReply className="h-3.5 w-3.5" aria-hidden="true" />
+								Reply
+							</Button>
+						)}
 					</div>
 
-					{isReplying && (
+					{isReplying && canReply && (
 						<div
 							className="mt-2 flex flex-col gap-2"
 							onClick={(e) => e.stopPropagation()}
@@ -371,6 +397,7 @@ export function CommentCard({
 							onCommentUpdate={onCommentUpdate}
 							onHighlightAnnotation={onHighlightAnnotation}
 							onSeek={onSeek}
+							canReply={canReply}
 						/>
 					))}
 				</div>

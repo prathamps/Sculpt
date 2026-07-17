@@ -9,6 +9,7 @@ router.use(authenticateJWT)
 
 router.post("/", projectController.createProject)
 router.get("/", projectController.getProjects)
+router.get("/:id/my-role", projectController.getMyRole)
 router.get("/:id", projectController.getProject)
 router.put("/:id", projectController.updateProject)
 router.delete("/:id", projectController.deleteProject)

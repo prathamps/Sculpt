@@ -9,8 +9,10 @@ import { recordAudit, requestIp } from "../audit/audit.service"
 import {
 	getImageProjectId,
 	getVersionProjectId,
-	isProjectMember,
+	getMemberRole,
+	roleMeets,
 } from "../projects/access"
+import { ProjectRole } from "@prisma/client"
 
 const requireUserId = (req: Request, res: Response): string | null => {
 	const userId = (req.user as AuthenticatedUser)?.id
@@ -21,17 +23,23 @@ const requireUserId = (req: Request, res: Response): string | null => {
 	return userId
 }
 
-const denyUnlessMember = async (
+const denyUnlessRole = async (
 	res: Response,
 	projectId: string | null,
-	userId: string
+	userId: string,
+	minimum: ProjectRole
 ): Promise<boolean> => {
 	if (!projectId) {
 		res.status(404).json({ message: "Not found" })
 		return false
 	}
-	if (!(await isProjectMember(projectId, userId))) {
+	const role = await getMemberRole(projectId, userId)
+	if (!role) {
 		res.status(403).json({ message: "You are not a member of this project" })
+		return false
+	}
+	if (!roleMeets(role, minimum)) {
+		res.status(403).json({ message: "Your project role does not allow this" })
 		return false
 	}
 	return true
@@ -40,21 +48,28 @@ const denyUnlessMember = async (
 const authorizeProject = async (
 	req: Request,
 	res: Response,
-	projectId: string
+	projectId: string,
+	minimum: ProjectRole = "VIEWER"
 ): Promise<string | null> => {
 	const userId = requireUserId(req, res)
 	if (!userId) return null
-	return (await denyUnlessMember(res, projectId, userId)) ? userId : null
+	return (await denyUnlessRole(res, projectId, userId, minimum)) ? userId : null
 }
 
 const authorizeImage = async (
 	req: Request,
 	res: Response,
-	imageId: string
+	imageId: string,
+	minimum: ProjectRole = "VIEWER"
 ): Promise<string | null> => {
 	const userId = requireUserId(req, res)
 	if (!userId) return null
-	return (await denyUnlessMember(res, await getImageProjectId(imageId), userId))
+	return (await denyUnlessRole(
+		res,
+		await getImageProjectId(imageId),
+		userId,
+		minimum
+	))
 		? userId
 		: null
 }
@@ -62,14 +77,16 @@ const authorizeImage = async (
 const authorizeVersion = async (
 	req: Request,
 	res: Response,
-	versionId: string
+	versionId: string,
+	minimum: ProjectRole = "VIEWER"
 ): Promise<string | null> => {
 	const userId = requireUserId(req, res)
 	if (!userId) return null
-	return (await denyUnlessMember(
+	return (await denyUnlessRole(
 		res,
 		await getVersionProjectId(versionId),
-		userId
+		userId,
+		minimum
 	))
 		? userId
 		: null
@@ -87,7 +104,7 @@ export const uploadImage = async (
 	res: Response
 ): Promise<void> => {
 	const { projectId } = req.params
-	const userId = await authorizeProject(req, res, projectId)
+	const userId = await authorizeProject(req, res, projectId, "EDITOR")
 	if (!userId) return
 
 	const files = req.files as Express.Multer.File[]
@@ -190,7 +207,7 @@ export const uploadImageVersion = async (
 	res: Response
 ): Promise<void> => {
 	const { imageId } = req.params
-	const userId = await authorizeImage(req, res, imageId)
+	const userId = await authorizeImage(req, res, imageId, "EDITOR")
 	if (!userId) return
 
 	const file = req.file as Express.Multer.File
@@ -240,7 +257,7 @@ export const deleteImage = async (
 ): Promise<void> => {
 	try {
 		const { id } = req.params
-		const userId = await authorizeImage(req, res, id)
+		const userId = await authorizeImage(req, res, id, "EDITOR")
 		if (!userId) return
 		await imageService.deleteImage(id)
 		await recordAudit({
@@ -262,7 +279,7 @@ export const deleteImageVersion = async (
 ): Promise<void> => {
 	try {
 		const { versionId } = req.params
-		const userId = await authorizeVersion(req, res, versionId)
+		const userId = await authorizeVersion(req, res, versionId, "EDITOR")
 		if (!userId) return
 		await imageService.deleteImageVersion(versionId)
 		await recordAudit({
@@ -291,7 +308,7 @@ export const updateImage = async (
 ): Promise<void> => {
 	try {
 		const { id } = req.params
-		const userId = await authorizeImage(req, res, id)
+		const userId = await authorizeImage(req, res, id, "EDITOR")
 		if (!userId) return
 		const { name } = req.body
 		const updatedImage = await imageService.updateImage(id, { name })
@@ -315,7 +332,7 @@ export const updateImageVersion = async (
 ): Promise<void> => {
 	try {
 		const { versionId } = req.params
-		if (!(await authorizeVersion(req, res, versionId))) return
+		if (!(await authorizeVersion(req, res, versionId, "EDITOR"))) return
 		const { versionName } = req.body
 		const updatedVersion = await imageService.updateImageVersion(versionId, {
 			versionName,
@@ -332,7 +349,7 @@ export const addComment = async (
 ): Promise<void> => {
 	try {
 		const { imageVersionId } = req.params
-		const userId = await authorizeVersion(req, res, imageVersionId)
+		const userId = await authorizeVersion(req, res, imageVersionId, "MEMBER")
 		if (!userId) return
 
 		const { content, parentId, annotation, timestamp } = req.body

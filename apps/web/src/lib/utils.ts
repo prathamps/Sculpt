@@ -1,12 +1,29 @@
 import { clsx, type ClassValue } from "clsx"
 import { twMerge } from "tailwind-merge"
 import { formatDistanceToNow } from "date-fns"
+import type { ProjectRole } from "@/types"
 
 export function cn(...inputs: ClassValue[]) {
 	return twMerge(clsx(inputs))
 }
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001"
+
+const ROLE_RANK: Record<ProjectRole, number> = {
+	VIEWER: 0,
+	MEMBER: 1,
+	EDITOR: 2,
+	OWNER: 3,
+}
+
+/** True when `role` is at least `minimum` in the capability hierarchy. */
+export function roleAtLeast(
+	role: ProjectRole | null | undefined,
+	minimum: ProjectRole
+): boolean {
+	if (!role) return false
+	return ROLE_RANK[role] >= ROLE_RANK[minimum]
+}
 
 /**
  * Resolve a stored media URL: absolute URLs (e.g. S3) pass through,

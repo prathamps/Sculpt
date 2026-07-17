@@ -25,6 +25,8 @@ interface CommentSidebarProps {
 	className?: string
 	onHighlightAnnotation?: (annotation: Annotation | Annotation[]) => void
 	onSeek?: (t: number) => void
+	onCommentsChange?: (comments: Comment[]) => void
+	canReply?: boolean
 }
 
 export function CommentSidebar({
@@ -32,6 +34,8 @@ export function CommentSidebar({
 	className,
 	onHighlightAnnotation,
 	onSeek,
+	onCommentsChange,
+	canReply = true,
 }: CommentSidebarProps) {
 	const { user } = useAuth()
 	const { socket, isConnected, joinImageVersion, leaveImageVersion } =
@@ -66,6 +70,12 @@ export function CommentSidebar({
 	useEffect(() => {
 		fetchComments()
 	}, [fetchComments])
+
+	// Surface the current comment list to the parent (used to render markers on
+	// the video scrubber).
+	useEffect(() => {
+		onCommentsChange?.(comments)
+	}, [comments, onCommentsChange])
 
 	// Join image version room when component mounts or imageVersionId changes
 	useEffect(() => {
@@ -279,16 +289,18 @@ export function CommentSidebar({
 				}}
 			>
 				{comments.length > 0 ? (
-					<div className="space-y-4 w-full">
+					<div className="w-full divide-y divide-border/40">
 						{filteredComments.length > 0 ? (
 							filteredComments.map((comment) => (
-								<CommentCard
-									key={comment.id}
-									comment={comment}
-									onCommentUpdate={handleCommentUpdate}
-									onHighlightAnnotation={handleHighlightAnnotation}
-									onSeek={onSeek}
-								/>
+								<div key={comment.id} className="py-3 first:pt-0 last:pb-0">
+									<CommentCard
+										comment={comment}
+										onCommentUpdate={handleCommentUpdate}
+										onHighlightAnnotation={handleHighlightAnnotation}
+										onSeek={onSeek}
+										canReply={canReply}
+									/>
+								</div>
 							))
 						) : (
 							<div className="flex flex-col items-center justify-center py-8 text-muted-foreground">
