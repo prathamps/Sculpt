@@ -185,16 +185,6 @@ export function ProjectSidebar({
 						</div>
 					))}
 				</nav>
-
-				{/* User/Account section at bottom */}
-				<div className="mt-auto pt-4 border-t border-border/40">
-					<div className="flex items-center justify-between rounded-md p-2 text-xs text-muted-foreground">
-						<div>Free Plan</div>
-						<a href="#" className="text-sidebar-primary hover:underline">
-							Upgrade
-						</a>
-					</div>
-				</div>
 			</aside>
 
 			{/* Modals */}

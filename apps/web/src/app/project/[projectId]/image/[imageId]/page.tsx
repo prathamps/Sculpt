@@ -260,17 +260,6 @@ export default function ProjectFileViewPage() {
 				body: formData,
 			})
 
-			if (res.status === 402) {
-				const data = await res.json().catch(() => ({}))
-				toast.error(data.message || "Upgrade to PRO to add more versions.", {
-					action: {
-						label: "Upgrade",
-						onClick: () => router.push("/billing"),
-					},
-				})
-				return
-			}
-
 			if (res.ok) {
 				// The response now contains the full enriched image
 				const updatedImage = await res.json()

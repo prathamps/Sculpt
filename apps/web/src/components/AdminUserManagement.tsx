@@ -11,16 +11,14 @@ import {
 import { Button } from "@/components/ui/button"
 import { MoreHorizontal } from "lucide-react"
 
+const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001"
+
 interface User {
 	id: string
 	email: string
 	name: string | null
 	role: "USER" | "ADMIN"
 	createdAt: string
-	subscription?: {
-		plan: "FREE" | "PRO"
-		status: string
-	} | null
 }
 
 export function AdminUserManagement() {
@@ -31,7 +29,7 @@ export function AdminUserManagement() {
 	useEffect(() => {
 		const fetchUsers = async () => {
 			try {
-				const res = await fetch("http://localhost:3001/api/admin/users", {
+				const res = await fetch(`${API_URL}/api/admin/users`, {
 					credentials: "include",
 				})
 
@@ -58,7 +56,7 @@ export function AdminUserManagement() {
 	) => {
 		try {
 			const res = await fetch(
-				`http://localhost:3001/api/admin/users/${userId}/role`,
+				`${API_URL}/api/admin/users/${userId}/role`,
 				{
 					method: "PATCH",
 					credentials: "include",
@@ -105,7 +103,6 @@ export function AdminUserManagement() {
 							<th className="py-3 px-4 text-left font-medium">Name</th>
 							<th className="py-3 px-4 text-left font-medium">Email</th>
 							<th className="py-3 px-4 text-left font-medium">Role</th>
-							<th className="py-3 px-4 text-left font-medium">Plan</th>
 							<th className="py-3 px-4 text-left font-medium">Joined</th>
 							<th className="py-3 px-4 text-left font-medium">Actions</th>
 						</tr>
@@ -124,17 +121,6 @@ export function AdminUserManagement() {
 										}`}
 									>
 										{user.role}
-									</span>
-								</td>
-								<td className="py-3 px-4">
-									<span
-										className={`inline-block px-2 py-1 rounded-full text-xs ${
-											user.subscription?.plan === "PRO"
-												? "bg-green-100 text-green-800"
-												: "bg-gray-100 text-gray-800"
-										}`}
-									>
-										{user.subscription?.plan || "FREE"}
 									</span>
 								</td>
 								<td className="py-3 px-4">
