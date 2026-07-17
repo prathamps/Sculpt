@@ -201,12 +201,37 @@ export default function ProjectFileViewPage() {
 	useEffect(() => {
 		if (!isAuthenticated) return
 		const URI = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001"
-		fetch(`${URI}/api/projects/${projectId}/my-role`, {
-			credentials: "include",
-		})
-			.then((res) => (res.ok ? res.json() : null))
-			.then((data) => setRole(data?.role ?? null))
-			.catch(() => setRole(null))
+		let cancelled = false
+
+		// Only a 403 means "not a member" → view-only. Transient failures (5xx,
+		// network) are retried so a blip doesn't silently strip a member's
+		// ability to comment.
+		const load = async (attempt = 0): Promise<void> => {
+			try {
+				const res = await fetch(`${URI}/api/projects/${projectId}/my-role`, {
+					credentials: "include",
+				})
+				if (cancelled) return
+				if (res.ok) {
+					const data = await res.json()
+					setRole(data?.role ?? null)
+					return
+				}
+				if (res.status === 403) {
+					setRole(null)
+					return
+				}
+				throw new Error(`role fetch failed: ${res.status}`)
+			} catch {
+				if (cancelled || attempt >= 3) return
+				setTimeout(() => load(attempt + 1), 1000 * (attempt + 1))
+			}
+		}
+
+		load()
+		return () => {
+			cancelled = true
+		}
 	}, [isAuthenticated, projectId])
 
 	useEffect(() => {
@@ -234,9 +259,13 @@ export default function ProjectFileViewPage() {
 
 	const handleVersionSelect = (version: ImageVersion) => {
 		setSelectedVersion(version)
-		// Reset annotations when switching versions
+		// Reset per-version state when switching versions. Comments (and the
+		// scrubber markers derived from them) are cleared so a closed sidebar
+		// can't leave a prior version's markers on the new one; the sidebar
+		// refetches for the new version when it re-renders.
 		setAnnotations([])
 		setHighlightedAnnotation(null)
+		setComments([])
 		setHistory([[]])
 		setHistoryIndex(0)
 		setCurrentVideoTime(0)

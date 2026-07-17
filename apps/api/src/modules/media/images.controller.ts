@@ -9,6 +9,7 @@ import { recordAudit, requestIp } from "../audit/audit.service"
 import {
 	getImageProjectId,
 	getVersionProjectId,
+	getCommentProjectId,
 	getMemberRole,
 	roleMeets,
 } from "../projects/access"
@@ -85,6 +86,24 @@ const authorizeVersion = async (
 	return (await denyUnlessRole(
 		res,
 		await getVersionProjectId(versionId),
+		userId,
+		minimum
+	))
+		? userId
+		: null
+}
+
+const authorizeComment = async (
+	req: Request,
+	res: Response,
+	commentId: string,
+	minimum: ProjectRole = "VIEWER"
+): Promise<string | null> => {
+	const userId = requireUserId(req, res)
+	if (!userId) return null
+	return (await denyUnlessRole(
+		res,
+		await getCommentProjectId(commentId),
 		userId,
 		minimum
 	))
@@ -391,7 +410,7 @@ export const deleteComment = async (
 	res: Response
 ): Promise<void> => {
 	try {
-		const userId = requireUserId(req, res)
+		const userId = await authorizeComment(req, res, req.params.commentId, "MEMBER")
 		if (!userId) return
 
 		await CommentsService.deleteComment(req.params.commentId, userId)
@@ -410,7 +429,7 @@ export const toggleLikeComment = async (
 	res: Response
 ): Promise<void> => {
 	try {
-		const userId = requireUserId(req, res)
+		const userId = await authorizeComment(req, res, req.params.commentId, "MEMBER")
 		if (!userId) return
 
 		const result = await CommentsService.toggleLike(
@@ -428,7 +447,7 @@ export const toggleResolveComment = async (
 	res: Response
 ): Promise<void> => {
 	try {
-		const userId = requireUserId(req, res)
+		const userId = await authorizeComment(req, res, req.params.commentId, "MEMBER")
 		if (!userId) return
 
 		const result = await CommentsService.toggleResolved(

@@ -8,23 +8,23 @@ const stagingDir = path.join(uploadsDir, ".staging")
 
 fs.mkdirSync(stagingDir, { recursive: true })
 
+// Only formats a browser renders inline are accepted. The stored extension is
+// derived from the declared MIME type (never the client filename), so an upload
+// can't be served as HTML/JS from the API origin. SVG is excluded deliberately —
+// it can carry script and would be an XSS vector when served inline.
 const MIME_EXTENSIONS: Record<string, string> = {
 	"image/jpeg": ".jpg",
+	"image/jpg": ".jpg",
 	"image/png": ".png",
 	"image/gif": ".gif",
 	"image/webp": ".webp",
-	"image/svg+xml": ".png",
+	"image/avif": ".avif",
 	"video/mp4": ".mp4",
 	"video/webm": ".webm",
 	"video/quicktime": ".mov",
 }
 
-// Derive the stored extension from the declared MIME type, never the original
-// filename, so an uploaded file can't be served as HTML/JS from the API origin
-// regardless of what the client named it (image/svg is normalised away too).
-const safeExtension = (file: Express.Multer.File): string =>
-	MIME_EXTENSIONS[file.mimetype] ??
-	(file.mimetype.startsWith("video/") ? ".mp4" : ".img")
+const isAllowedMime = (mimetype: string): boolean => mimetype in MIME_EXTENSIONS
 
 const staging = multer.diskStorage({
 	destination: (_req, _file, cb) => {
@@ -32,7 +32,10 @@ const staging = multer.diskStorage({
 	},
 	filename: (_req, file, cb) => {
 		const uniqueSuffix = Date.now() + "-" + Math.round(Math.random() * 1e9)
-		cb(null, file.fieldname + "-" + uniqueSuffix + safeExtension(file))
+		cb(
+			null,
+			file.fieldname + "-" + uniqueSuffix + MIME_EXTENSIONS[file.mimetype]
+		)
 	},
 })
 
@@ -41,10 +44,14 @@ const imagesAndVideosOnly = (
 	file: Express.Multer.File,
 	cb: multer.FileFilterCallback
 ) => {
-	if (file.mimetype.startsWith("image/") || file.mimetype.startsWith("video/")) {
+	if (isAllowedMime(file.mimetype)) {
 		cb(null, true)
 	} else {
-		cb(new Error("Only image and video files are allowed"))
+		cb(
+			new Error(
+				"Unsupported file type. Allowed: JPEG, PNG, GIF, WebP, AVIF images and MP4, WebM, MOV videos."
+			)
+		)
 	}
 }
 

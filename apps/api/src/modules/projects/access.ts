@@ -46,6 +46,16 @@ export const getVersionProjectId = async (
 	return version?.image.projectId ?? null
 }
 
+export const getCommentProjectId = async (
+	commentId: string
+): Promise<string | null> => {
+	const comment = await prisma.comment.findUnique({
+		where: { id: commentId },
+		select: { imageVersion: { select: { image: { select: { projectId: true } } } } },
+	})
+	return comment?.imageVersion.image.projectId ?? null
+}
+
 export const isProjectMember = async (
 	projectId: string,
 	userId: string

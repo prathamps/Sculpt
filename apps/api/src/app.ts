@@ -7,7 +7,6 @@ import userRoutes from "./modules/auth/users.routes"
 import projectRoutes from "./modules/projects/projects.routes"
 import shareRoutes from "./modules/projects/share.routes"
 import { imageRouter } from "./modules/media/images.routes"
-import commentRoutes from "./modules/comments/comments.routes"
 import notificationRoutes from "./modules/notifications/notifications.routes"
 import exportRoutes from "./modules/export/export.routes"
 import adminRoutes from "./modules/admin/admin.routes"
@@ -62,9 +61,30 @@ export const createApp = (): express.Express => {
 	app.use("/api/images", imageRouter)
 	app.use("/api/share", shareRoutes)
 	app.use("/api/notifications", notificationRoutes)
-	app.use("/api/comments", commentRoutes)
 	app.use("/api/admin", adminRoutes)
 	app.use("/api/export", exportRoutes)
+
+	// Turn upload rejections (unsupported type, size limit) into clean 400s
+	// instead of the default 500.
+	app.use(
+		(
+			err: Error & { code?: string },
+			_req: express.Request,
+			res: express.Response,
+			next: express.NextFunction
+		) => {
+			if (res.headersSent) return next(err)
+			if (
+				err?.code === "LIMIT_FILE_SIZE" ||
+				err?.message?.startsWith("Unsupported file type")
+			) {
+				res.status(400).json({ message: err.message })
+				return
+			}
+			console.error(err)
+			res.status(500).json({ message: "Internal server error" })
+		}
+	)
 
 	return app
 }

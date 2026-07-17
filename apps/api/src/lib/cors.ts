@@ -6,11 +6,17 @@ const hostnameOf = (origin: string): string | null => {
 	}
 }
 
-const allowedHosts = (): string[] => {
-	const configured = [process.env.FRONTEND_URL, process.env.API_URL]
-		.map((url) => (url ? hostnameOf(url) : null))
-		.filter((host): host is string => !!host)
-	return [...new Set(configured)]
+// Configured hosts don't change at runtime, so resolve them once on first use.
+let cachedHosts: Set<string> | null = null
+const allowedHosts = (): Set<string> => {
+	if (!cachedHosts) {
+		cachedHosts = new Set(
+			[process.env.FRONTEND_URL, process.env.API_URL]
+				.map((url) => (url ? hostnameOf(url) : null))
+				.filter((host): host is string => !!host)
+		)
+	}
+	return cachedHosts
 }
 
 // Credentialed cross-origin access is allowed only for localhost (any port),
@@ -23,5 +29,5 @@ export const isAllowedOrigin = (origin: string | undefined): boolean => {
 	if (!host) return false
 	if (host === "localhost" || host === "127.0.0.1") return true
 	if (host === "vercel.app" || host.endsWith(".vercel.app")) return true
-	return allowedHosts().includes(host)
+	return allowedHosts().has(host)
 }

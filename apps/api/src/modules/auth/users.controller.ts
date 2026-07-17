@@ -11,6 +11,13 @@ export const updateProfile = async (
 	try {
 		const { name, avatarUrl } = req.body
 		const user = await updateUserProfile(req.user!.id, { name, avatarUrl })
+		await recordAudit({
+			action: "user.profile_updated",
+			targetType: "user",
+			targetId: req.user!.id,
+			actorId: req.user!.id,
+			ipAddress: requestIp(req),
+		})
 		res.status(200).json(user)
 	} catch (error) {
 		if (error instanceof AppError) {
