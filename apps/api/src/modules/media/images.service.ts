@@ -8,6 +8,14 @@ interface ImagePayload {
 	projectId: string
 	mediaType?: MediaType
 	duration?: number | null
+	thumbnailUrl?: string | null
+}
+
+interface VersionOptions {
+	versionName?: string
+	mediaType?: MediaType
+	duration?: number | null
+	thumbnailUrl?: string | null
 }
 
 export const addImagesToProject = async (
@@ -26,6 +34,7 @@ export const addImagesToProject = async (
 							versionNumber: 1,
 							mediaType: img.mediaType ?? MediaType.IMAGE,
 							duration: img.duration ?? null,
+							thumbnailUrl: img.thumbnailUrl ?? null,
 						},
 					},
 				},
@@ -89,9 +98,7 @@ export const getImageVersionById = async (
 export const addImageVersion = async (
 	imageId: string,
 	fileUrl: string,
-	versionName?: string,
-	mediaType: MediaType = MediaType.IMAGE,
-	duration?: number | null
+	options: VersionOptions = {}
 ): Promise<ImageVersion> => {
 	const latest = await prisma.imageVersion.findFirst({
 		where: { imageId },
@@ -103,11 +110,12 @@ export const addImageVersion = async (
 	return prisma.imageVersion.create({
 		data: {
 			url: fileUrl,
-			versionName: versionName || `Version ${nextVersionNumber}`,
+			versionName: options.versionName || `Version ${nextVersionNumber}`,
 			versionNumber: nextVersionNumber,
 			imageId,
-			mediaType,
-			duration: duration ?? null,
+			mediaType: options.mediaType ?? MediaType.IMAGE,
+			duration: options.duration ?? null,
+			thumbnailUrl: options.thumbnailUrl ?? null,
 		},
 	})
 }
@@ -122,7 +130,12 @@ export const deleteImage = async (id: string): Promise<void> => {
 
 	await prisma.image.delete({ where: { id } })
 
-	await Promise.all(image.versions.map((version) => storage.remove(version.url)))
+	await Promise.all(
+		image.versions.flatMap((version) => [
+			storage.remove(version.url),
+			...(version.thumbnailUrl ? [storage.remove(version.thumbnailUrl)] : []),
+		])
+	)
 }
 
 export const deleteImageVersion = async (versionId: string): Promise<void> => {
@@ -142,6 +155,7 @@ export const deleteImageVersion = async (versionId: string): Promise<void> => {
 
 	await prisma.imageVersion.delete({ where: { id: versionId } })
 	await storage.remove(version.url)
+	if (version.thumbnailUrl) await storage.remove(version.thumbnailUrl)
 }
 
 export const updateImage = async (

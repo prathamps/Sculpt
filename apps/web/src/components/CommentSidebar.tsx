@@ -1,5 +1,5 @@
 "use client"
-import { useState, useEffect, useCallback } from "react"
+import { useState } from "react"
 import { CommentCard } from "./CommentCard"
 import { Button } from "./ui/button"
 import { Input } from "./ui/input"
@@ -12,216 +12,41 @@ import {
 	DropdownMenuTrigger,
 } from "./ui/dropdown-menu"
 import { cn } from "@/lib/utils"
-import { useAuth } from "@/context/AuthContext"
-import { useSocket } from "@/context/SocketContext"
-import { Annotation, Comment } from "@/types"
-
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001"
+import { Comment } from "@/types"
 
 type CommentFilter = "all" | "unresolved" | "resolved"
 
 interface CommentSidebarProps {
-	imageVersionId: string
-	className?: string
-	onHighlightAnnotation?: (annotation: Annotation | Annotation[]) => void
+	comments: Comment[]
+	isLoading?: boolean
+	onRefresh?: () => void
+	selectedCommentId?: string | null
+	onSelectComment?: (comment: Comment) => void
 	onSeek?: (t: number) => void
-	onCommentsChange?: (comments: Comment[]) => void
+	onGoToPage?: (page: number) => void
+	currentPage?: number | null
+	className?: string
 	canReply?: boolean
 }
 
+// Presentational comment list. Data ownership (fetching + socket updates)
+// lives in useVersionComments at the page level so scrubber markers keep
+// working when this sidebar is closed.
 export function CommentSidebar({
-	imageVersionId,
-	className,
-	onHighlightAnnotation,
+	comments,
+	isLoading = false,
+	onRefresh,
+	selectedCommentId,
+	onSelectComment,
 	onSeek,
-	onCommentsChange,
+	onGoToPage,
+	currentPage,
+	className,
 	canReply = true,
 }: CommentSidebarProps) {
-	const { user } = useAuth()
-	const { socket, isConnected, joinImageVersion, leaveImageVersion } =
-		useSocket()
 	const [searchQuery, setSearchQuery] = useState("")
 	const [filter, setFilter] = useState<CommentFilter>("all")
-	const [comments, setComments] = useState<Comment[]>([])
-	const [isLoading, setIsLoading] = useState(false)
-
-	const fetchComments = useCallback(async () => {
-		if (!imageVersionId) return
-
-		setIsLoading(true)
-		try {
-			const res = await fetch(
-				`${API_URL}/api/images/versions/${imageVersionId}/comments`,
-				{
-					credentials: "include",
-				}
-			)
-			if (res.ok) {
-				const data = await res.json()
-				setComments(data)
-			}
-		} catch (error) {
-			console.error("Failed to fetch comments:", error)
-		} finally {
-			setIsLoading(false)
-		}
-	}, [imageVersionId])
-
-	useEffect(() => {
-		fetchComments()
-	}, [fetchComments])
-
-	// Surface the current comment list to the parent (used to render markers on
-	// the video scrubber).
-	useEffect(() => {
-		onCommentsChange?.(comments)
-	}, [comments, onCommentsChange])
-
-	// Join image version room when component mounts or imageVersionId changes
-	useEffect(() => {
-		if (socket && isConnected && imageVersionId) {
-			console.log(
-				`[CommentSidebar] Setting up socket listeners for imageVersionId: ${imageVersionId}`
-			)
-			console.log(
-				`[CommentSidebar] Socket ID: ${socket.id}, Connected: ${isConnected}`
-			)
-
-			// Use the centralized method to join the room
-			joinImageVersion(imageVersionId)
-
-			const handleNewComment = (newComment: Comment) => {
-				console.log(`[CommentSidebar] Received new-comment event:`, newComment)
-				if (newComment.imageVersionId === imageVersionId) {
-					console.log(
-						"[CommentSidebar] Comment is for current image version, updating state"
-					)
-					setComments((prev) => {
-						// Check if comment already exists to prevent duplicates
-						if (prev.some((c) => c.id === newComment.id)) {
-							console.log("[CommentSidebar] Comment already exists, skipping")
-							return prev
-						}
-						console.log("[CommentSidebar] Adding new comment to state")
-						return [newComment, ...prev]
-					})
-				} else {
-					console.log(
-						`[CommentSidebar] Comment is for different image version (${newComment.imageVersionId}), ignoring`
-					)
-				}
-			}
-
-			const handleCommentUpdated = (updatedComment: Comment) => {
-				console.log(
-					`[CommentSidebar] Received comment-updated event:`,
-					updatedComment
-				)
-				if (updatedComment.imageVersionId === imageVersionId) {
-					console.log(
-						"[CommentSidebar] Updated comment is for current image version, updating state"
-					)
-					setComments((prev) =>
-						prev.map((c) => (c.id === updatedComment.id ? updatedComment : c))
-					)
-				}
-			}
-
-			const handleCommentDeleted = ({
-				id,
-				imageVersionId: M_imageVersionId,
-			}: {
-				id: string
-				imageVersionId: string
-			}) => {
-				console.log(`[CommentSidebar] Received comment-deleted event:`, {
-					id,
-					imageVersionId: M_imageVersionId,
-				})
-				if (M_imageVersionId === imageVersionId) {
-					console.log(
-						"[CommentSidebar] Deleted comment is for current image version, updating state"
-					)
-					setComments((prev) => prev.filter((c) => c.id !== id))
-				}
-			}
-
-			const handleLikeUpdate = ({
-				id,
-				count,
-				liked,
-				userId,
-				imageVersionId: M_imageVersionId,
-			}: {
-				id: string
-				count: number
-				liked: boolean
-				userId: string
-				imageVersionId: string
-			}) => {
-				console.log(`[CommentSidebar] Received comment-like-updated event:`, {
-					id,
-					count,
-					liked,
-					userId,
-					imageVersionId: M_imageVersionId,
-				})
-				if (M_imageVersionId === imageVersionId) {
-					console.log(
-						"[CommentSidebar] Like update is for current image version, updating state"
-					)
-					setComments((prev) =>
-						prev.map((c) =>
-							c.id === id
-								? {
-										...c,
-										likeCount: count,
-										isLikedByCurrentUser:
-											user?.id === userId ? liked : c.isLikedByCurrentUser,
-								  }
-								: c
-						)
-					)
-				}
-			}
-
-			console.log("[CommentSidebar] Registering socket event handlers")
-			socket.on("new-comment", handleNewComment)
-			socket.on("comment-updated", handleCommentUpdated)
-			socket.on("comment-deleted", handleCommentDeleted)
-			socket.on("comment-like-updated", handleLikeUpdate)
-
-			// Clean up event listeners when component unmounts or imageVersionId changes
-			return () => {
-				console.log(
-					`[CommentSidebar] Cleaning up socket listeners for imageVersionId: ${imageVersionId}`
-				)
-				socket.off("new-comment", handleNewComment)
-				socket.off("comment-updated", handleCommentUpdated)
-				socket.off("comment-deleted", handleCommentDeleted)
-				socket.off("comment-like-updated", handleLikeUpdate)
-			}
-		}
-	}, [socket, isConnected, imageVersionId, user?.id, joinImageVersion])
-
-	// Leave room when component unmounts
-	useEffect(() => {
-		return () => {
-			if (imageVersionId) {
-				leaveImageVersion(imageVersionId)
-			}
-		}
-	}, [imageVersionId, leaveImageVersion])
-
-	const handleCommentUpdate = useCallback(() => {
-		fetchComments()
-	}, [fetchComments])
-
-	const handleHighlightAnnotation = (annotation: Annotation | Annotation[]) => {
-		if (onHighlightAnnotation) {
-			onHighlightAnnotation(annotation)
-		}
-	}
+	const [thisPageOnly, setThisPageOnly] = useState(false)
 
 	// Apply filters
 	const filteredComments = comments.filter((comment) => {
@@ -232,7 +57,11 @@ export function CommentSidebar({
 			filter === "all" ||
 			(filter === "resolved" && comment.resolved) ||
 			(filter === "unresolved" && !comment.resolved)
-		return matchesSearch && matchesFilter
+		const matchesPage =
+			!thisPageOnly ||
+			typeof currentPage !== "number" ||
+			comment.page === currentPage
+		return matchesSearch && matchesFilter && matchesPage
 	})
 
 	return (
@@ -246,12 +75,13 @@ export function CommentSidebar({
 				<h3 className="text-sm font-medium">Comments</h3>
 				{isLoading && <Loader2 className="h-4 w-4 animate-spin" />}
 			</div>
-			<div className="flex items-center gap-2 border-b border-border/40 p-3">
-				<div className="relative flex-1">
+			<div className="flex flex-wrap items-center gap-2 border-b border-border/40 p-3">
+				<div className="relative min-w-[8rem] flex-1">
 					<Search className="absolute left-2 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
 					<Input
 						className="h-8 pl-8"
 						placeholder="Search comments..."
+						aria-label="Search comments"
 						value={searchQuery}
 						onChange={(e) => setSearchQuery(e.target.value)}
 					/>
@@ -280,6 +110,17 @@ export function CommentSidebar({
 						</DropdownMenuRadioGroup>
 					</DropdownMenuContent>
 				</DropdownMenu>
+				{typeof currentPage === "number" && (
+					<Button
+						variant={thisPageOnly ? "default" : "outline"}
+						size="sm"
+						className="h-8 text-xs"
+						onClick={() => setThisPageOnly((v) => !v)}
+						aria-pressed={thisPageOnly}
+					>
+						{thisPageOnly ? "This page" : "All pages"}
+					</Button>
+				)}
 			</div>
 			<div
 				className="flex-1 overflow-y-auto p-3 custom-scrollbar"
@@ -295,9 +136,11 @@ export function CommentSidebar({
 								<div key={comment.id} className="py-3 first:pt-0 last:pb-0">
 									<CommentCard
 										comment={comment}
-										onCommentUpdate={handleCommentUpdate}
-										onHighlightAnnotation={handleHighlightAnnotation}
+										onCommentUpdate={onRefresh}
+										onSelectComment={onSelectComment}
+										isSelected={comment.id === selectedCommentId}
 										onSeek={onSeek}
+										onGoToPage={onGoToPage}
 										canReply={canReply}
 									/>
 								</div>

@@ -2,6 +2,7 @@
 
 import React, { useRef, useEffect, useState, useCallback } from "react"
 import { AnnotationTool } from "@/app/project/[projectId]/image/[imageId]/page"
+import { drawAnnotations } from "@/lib/annotation-drawing"
 import { Loader2 } from "lucide-react"
 
 interface Point {
@@ -15,6 +16,7 @@ interface Annotation {
 	color: string
 	points: Point[]
 	isHighlighted?: boolean
+	dimmed?: boolean
 }
 
 interface AnnotationCanvasProps {
@@ -22,9 +24,10 @@ interface AnnotationCanvasProps {
 	tool: AnnotationTool
 	color: string
 	annotations: Annotation[]
-	onAddAnnotation: (
+	onAddAnnotation?: (
 		annotation: Omit<Annotation, "id" | "points"> & { points: Point[] }
 	) => void
+	readOnly?: boolean
 }
 
 export function AnnotationCanvas({
@@ -33,6 +36,7 @@ export function AnnotationCanvas({
 	color,
 	annotations,
 	onAddAnnotation,
+	readOnly = false,
 }: AnnotationCanvasProps) {
 	const containerRef = useRef<HTMLDivElement>(null)
 	const imageCanvasRef = useRef<HTMLCanvasElement>(null)
@@ -102,54 +106,7 @@ export function AnnotationCanvas({
 		if (!drawCtx) return
 
 		drawCtx.clearRect(0, 0, canvasWidth, canvasHeight)
-		annotations.forEach((annotation) => {
-			const { type, color, points, isHighlighted } = annotation
-
-			// Set styles for drawing
-			drawCtx.strokeStyle = color
-			drawCtx.lineWidth = isHighlighted ? 4 : 2 // Make highlighted annotations thicker
-			drawCtx.lineCap = "round"
-			drawCtx.lineJoin = "round"
-
-			// Remove the glow effect but keep the thicker line width
-			drawCtx.shadowBlur = 0
-			drawCtx.shadowOffsetX = 0
-			drawCtx.shadowOffsetY = 0
-
-			drawCtx.beginPath()
-
-			if (type === "pencil") {
-				if (points.length > 0) {
-					// Convert normalized coordinates (0-1) to canvas coordinates
-					drawCtx.moveTo(points[0]?.x * canvasWidth, points[0]?.y * canvasHeight)
-					points.forEach((p) => {
-						drawCtx.lineTo(p.x * canvasWidth, p.y * canvasHeight)
-					})
-				}
-			} else if (type === "rect" && points.length >= 2) {
-				const startPoint = points[0]
-				const endPoint = points[1]
-				if (startPoint && endPoint) {
-					drawCtx.rect(
-						startPoint.x * canvasWidth,
-						startPoint.y * canvasHeight,
-						(endPoint.x - startPoint.x) * canvasWidth,
-						(endPoint.y - startPoint.y) * canvasHeight
-					)
-				}
-			} else if (type === "line" && points.length >= 2) {
-				const startPoint = points[0]
-				const endPoint = points[1]
-				if (startPoint && endPoint) {
-					drawCtx.moveTo(
-						startPoint.x * canvasWidth,
-						startPoint.y * canvasHeight
-					)
-					drawCtx.lineTo(endPoint.x * canvasWidth, endPoint.y * canvasHeight)
-				}
-			}
-			drawCtx.stroke()
-		})
+		drawAnnotations(drawCtx, annotations, canvasWidth, canvasHeight)
 	}, [image, annotations])
 
 	useEffect(() => {
@@ -206,6 +163,7 @@ export function AnnotationCanvas({
 	}
 
 	const handleMouseDown = (e: React.MouseEvent) => {
+		if (readOnly) return
 		const pos = getRelativePos(e)
 		if (!pos) return
 		setIsDrawing(true)
@@ -274,7 +232,7 @@ export function AnnotationCanvas({
 		}
 
 		if (finalPoints.length > 0) {
-			onAddAnnotation({ type: tool, color, points: finalPoints })
+			onAddAnnotation?.({ type: tool, color, points: finalPoints })
 		}
 
 		const previewCtx = previewCanvasRef.current?.getContext("2d")
@@ -348,14 +306,14 @@ export function AnnotationCanvas({
 			<canvas ref={drawingCanvasRef} className="absolute" />
 			<canvas
 				ref={previewCanvasRef}
-				onMouseDown={handleMouseDown}
-				onMouseMove={handleMouseMove}
-				onMouseUp={handleMouseUp}
-				onMouseLeave={handleMouseUp}
-				onTouchStart={handleTouchStart}
-				onTouchMove={handleTouchMove}
-				onTouchEnd={handleTouchEnd}
-				className="absolute cursor-crosshair"
+				onMouseDown={readOnly ? undefined : handleMouseDown}
+				onMouseMove={readOnly ? undefined : handleMouseMove}
+				onMouseUp={readOnly ? undefined : handleMouseUp}
+				onMouseLeave={readOnly ? undefined : handleMouseUp}
+				onTouchStart={readOnly ? undefined : handleTouchStart}
+				onTouchMove={readOnly ? undefined : handleTouchMove}
+				onTouchEnd={readOnly ? undefined : handleTouchEnd}
+				className={readOnly ? "absolute" : "absolute cursor-crosshair"}
 			/>
 		</div>
 	)

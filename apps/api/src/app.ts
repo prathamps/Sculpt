@@ -20,7 +20,8 @@ const corsOptions: cors.CorsOptions = {
 	},
 	credentials: true,
 	methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-	allowedHeaders: ["Content-Type", "Authorization", "Cookie"],
+	// Range is needed for pdf.js ranged fetches of uploaded PDFs cross-origin.
+	allowedHeaders: ["Content-Type", "Authorization", "Cookie", "Range"],
 }
 
 export const createApp = (): express.Express => {
@@ -76,6 +77,7 @@ export const createApp = (): express.Express => {
 			if (res.headersSent) return next(err)
 			if (
 				err?.code === "LIMIT_FILE_SIZE" ||
+				err?.code === "LIMIT_UNEXPECTED_FILE" ||
 				err?.message?.startsWith("Unsupported file type")
 			) {
 				res.status(400).json({ message: err.message })

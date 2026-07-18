@@ -56,6 +56,16 @@ export const getCommentProjectId = async (
 	return comment?.imageVersion.image.projectId ?? null
 }
 
+export const canViewVersion = async (
+	userId: string,
+	imageVersionId: string
+): Promise<boolean> => {
+	const projectId = await getVersionProjectId(imageVersionId)
+	if (!projectId) return false
+	const role = await getMemberRole(projectId, userId)
+	return roleMeets(role, "VIEWER")
+}
+
 export const isProjectMember = async (
 	projectId: string,
 	userId: string

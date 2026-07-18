@@ -58,6 +58,24 @@ export function formatDate(dateString: string): string {
 }
 
 /**
+ * True when a key event's target is a form control or editable region, so
+ * global keyboard shortcuts must not fire.
+ */
+export function isEditableTarget(target: EventTarget | null): boolean {
+	const el = target as HTMLElement | null
+	if (!el || !el.tagName) return false
+	const tag = el.tagName
+	return (
+		tag === "INPUT" ||
+		tag === "TEXTAREA" ||
+		tag === "SELECT" ||
+		tag === "BUTTON" ||
+		el.isContentEditable ||
+		el.getAttribute("role") === "slider"
+	)
+}
+
+/**
  * Format a number of seconds as m:ss (or m:ss.d for sub-second precision)
  */
 export function formatVideoTime(seconds: number, withDecimals = false): string {

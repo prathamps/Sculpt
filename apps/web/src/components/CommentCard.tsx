@@ -10,6 +10,8 @@ import {
 	Edit3,
 	Send,
 	Clock,
+	FileText,
+	MapPin,
 } from "lucide-react"
 import { cn, formatVideoTime } from "@/lib/utils"
 import {
@@ -19,7 +21,7 @@ import {
 	DropdownMenuSeparator,
 	DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
-import { Annotation, Comment as CommentType } from "@/types"
+import { Comment as CommentType } from "@/types"
 import { formatDistanceToNow } from "date-fns"
 import { useAuth } from "@/context/AuthContext"
 import { Textarea } from "@/components/ui/textarea"
@@ -27,16 +29,20 @@ import { Textarea } from "@/components/ui/textarea"
 interface CommentCardProps {
 	comment: CommentType
 	onCommentUpdate?: () => void
-	onHighlightAnnotation?: (annotation: Annotation | Annotation[]) => void
+	onSelectComment?: (comment: CommentType) => void
+	isSelected?: boolean
 	onSeek?: (t: number) => void
+	onGoToPage?: (page: number) => void
 	canReply?: boolean
 }
 
 export function CommentCard({
 	comment,
 	onCommentUpdate,
-	onHighlightAnnotation,
+	onSelectComment,
+	isSelected = false,
 	onSeek,
+	onGoToPage,
 	canReply = true,
 }: CommentCardProps) {
 	const { user } = useAuth()
@@ -132,6 +138,12 @@ export function CommentCard({
 	}
 
 	const hasTimestamp = typeof comment.timestamp === "number"
+	const hasRange =
+		hasTimestamp &&
+		typeof comment.timestampEnd === "number" &&
+		comment.timestampEnd > (comment.timestamp as number)
+	const hasPage = typeof comment.page === "number"
+	const hasModelPin = !!comment.modelAnchor
 
 	// Count annotations if they're stored as an array
 	const annotationCount = Array.isArray(comment.annotation)
@@ -140,12 +152,12 @@ export function CommentCard({
 		? 1
 		: 0
 
-	// Selecting a comment reveals its drawing and, for video, seeks the player
-	// to the frame the comment was left on.
-	const isSelectable = !!comment.annotation || hasTimestamp
+	// Selecting a comment pins its drawing (until deselected) and, for video,
+	// seeks the player to the start of the comment's range.
+	const isSelectable =
+		!!comment.annotation || hasTimestamp || hasPage || hasModelPin
 	const handleSelect = () => {
-		if (comment.annotation) onHighlightAnnotation?.(comment.annotation)
-		if (hasTimestamp) onSeek?.(comment.timestamp as number)
+		onSelectComment?.(comment)
 	}
 	const handleCardKeyDown = (e: React.KeyboardEvent) => {
 		if (e.key === "Enter" || e.key === " ") {
@@ -194,15 +206,25 @@ export function CommentCard({
 			className={cn(
 				"flex flex-col gap-3 w-full rounded-lg",
 				isSelectable &&
-					"cursor-pointer p-2 -m-0 transition-colors hover:bg-accent/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+					"cursor-pointer p-2 -m-0 transition-colors hover:bg-accent/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+				isSelected && "bg-accent/60"
 			)}
 			onClick={isSelectable ? handleSelect : undefined}
 			onKeyDown={isSelectable ? handleCardKeyDown : undefined}
 			role={isSelectable ? "button" : undefined}
 			tabIndex={isSelectable ? 0 : undefined}
+			aria-pressed={isSelectable ? isSelected : undefined}
 			aria-label={
 				isSelectable
-					? `Comment by ${comment.user.name || comment.user.email}. Select to view its drawing${hasTimestamp ? " and jump to its moment in the video" : ""}.`
+					? `Comment by ${comment.user.name || comment.user.email}. ${
+							isSelected
+								? "Selected — select again to hide its drawing."
+								: `Select to pin its drawing${
+										hasTimestamp ? " and jump to its moment in the video" : ""
+								  }${hasPage ? " and jump to its page" : ""}${
+										hasModelPin ? " and fly the camera to its pin" : ""
+								  }.`
+					  }`
 					: undefined
 			}
 		>
@@ -260,7 +282,11 @@ export function CommentCard({
 						)}
 					</div>
 
-					{(hasTimestamp || comment.resolved || annotationCount > 0) && (
+					{(hasTimestamp ||
+						hasPage ||
+						hasModelPin ||
+						comment.resolved ||
+						annotationCount > 0) && (
 						<div className="mt-2 flex flex-wrap items-center gap-1.5">
 							{hasTimestamp && (
 								<button
@@ -270,13 +296,45 @@ export function CommentCard({
 										onSeek?.(comment.timestamp as number)
 									}}
 									className="inline-flex items-center gap-1 rounded-full bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary hover:bg-primary/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-									aria-label={`Jump to ${formatVideoTime(
-										comment.timestamp as number
-									)} in the video`}
+									aria-label={
+										hasRange
+											? `Jump to the range from ${formatVideoTime(
+													comment.timestamp as number
+											  )} to ${formatVideoTime(
+													comment.timestampEnd as number
+											  )} in the video`
+											: `Jump to ${formatVideoTime(
+													comment.timestamp as number
+											  )} in the video`
+									}
 								>
 									<Clock className="h-3 w-3" aria-hidden="true" />
-									{formatVideoTime(comment.timestamp as number)}
+									{hasRange
+										? `${formatVideoTime(
+												comment.timestamp as number
+										  )} → ${formatVideoTime(comment.timestampEnd as number)}`
+										: formatVideoTime(comment.timestamp as number)}
 								</button>
+							)}
+							{hasPage && (
+								<button
+									type="button"
+									onClick={(e) => {
+										e.stopPropagation()
+										onGoToPage?.(comment.page as number)
+									}}
+									className="inline-flex items-center gap-1 rounded-full bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary hover:bg-primary/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+									aria-label={`Go to page ${comment.page} in the document`}
+								>
+									<FileText className="h-3 w-3" aria-hidden="true" />
+									Page {comment.page}
+								</button>
+							)}
+							{hasModelPin && (
+								<span className="inline-flex items-center gap-1 rounded-full bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary">
+									<MapPin className="h-3 w-3" aria-hidden="true" />
+									3D pin
+								</span>
 							)}
 							{comment.resolved && (
 								<span className="inline-flex items-center gap-1 rounded-full bg-green-500/15 px-2 py-0.5 text-xs font-medium text-green-600 dark:text-green-400">
@@ -395,8 +453,9 @@ export function CommentCard({
 							key={reply.id}
 							comment={reply}
 							onCommentUpdate={onCommentUpdate}
-							onHighlightAnnotation={onHighlightAnnotation}
+							onSelectComment={onSelectComment}
 							onSeek={onSeek}
+							onGoToPage={onGoToPage}
 							canReply={canReply}
 						/>
 					))}

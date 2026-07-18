@@ -7,6 +7,13 @@ vi.mock("../../lib/prisma", () => ({
 		comment: {
 			findUnique: vi.fn(),
 			update: vi.fn(),
+			create: vi.fn(),
+		},
+		imageVersion: {
+			findUnique: vi.fn(),
+		},
+		image: {
+			findUnique: vi.fn(),
 		},
 	},
 }))
@@ -16,15 +23,234 @@ vi.mock("../../realtime/socket", () => ({
 }))
 
 vi.mock("../notifications/notification.service", () => ({
-	NotificationService: {},
+	NotificationService: {
+		createNotification: vi.fn(),
+		createProjectNotification: vi.fn(),
+	},
 }))
 
 import { prisma } from "../../lib/prisma"
 import { io } from "../../realtime/socket"
 import { CommentsService } from "./comments.service"
-import { ForbiddenError, NotFoundError } from "../../lib/errors"
+import {
+	ForbiddenError,
+	NotFoundError,
+	ValidationError,
+} from "../../lib/errors"
 
 const mocked = vi.mocked(prisma, true)
+
+describe("CommentsService.createComment anchors", () => {
+	beforeEach(() => {
+		vi.clearAllMocks()
+		mocked.comment.create.mockResolvedValue({
+			id: "c1",
+			imageVersionId: "v1",
+			parentId: null,
+			user: { name: "A" },
+		} as never)
+		mocked.image.findUnique.mockResolvedValue(null)
+	})
+
+	const mockVersion = (
+		mediaType: "IMAGE" | "VIDEO" | "PDF" | "MODEL",
+		duration: number | null = null
+	) =>
+		mocked.imageVersion.findUnique.mockResolvedValue({
+			mediaType,
+			duration,
+		} as never)
+
+	const create = (anchors: {
+		timestamp?: number | null
+		timestampEnd?: number | null
+		page?: number | null
+		modelAnchor?: unknown
+	}) =>
+		CommentsService.createComment({
+			content: "hi",
+			imageVersionId: "v1",
+			userId: "u1",
+			...anchors,
+		})
+
+	it("rejects comments on unknown versions", async () => {
+		mocked.imageVersion.findUnique.mockResolvedValue(null)
+		await expect(create({})).rejects.toBeInstanceOf(NotFoundError)
+	})
+
+	it("rejects a range end before its start", async () => {
+		mockVersion("VIDEO", 60)
+		await expect(
+			create({ timestamp: 10, timestampEnd: 5 })
+		).rejects.toBeInstanceOf(ValidationError)
+	})
+
+	it("rejects a range end without a start", async () => {
+		mockVersion("VIDEO", 60)
+		await expect(create({ timestampEnd: 5 })).rejects.toBeInstanceOf(
+			ValidationError
+		)
+	})
+
+	it("rejects negative and non-finite timestamps", async () => {
+		mockVersion("VIDEO", 60)
+		await expect(create({ timestamp: -1 })).rejects.toBeInstanceOf(
+			ValidationError
+		)
+		await expect(create({ timestamp: NaN })).rejects.toBeInstanceOf(
+			ValidationError
+		)
+	})
+
+	it("clamps timestamps to the known duration", async () => {
+		mockVersion("VIDEO", 30)
+		await create({ timestamp: 25, timestampEnd: 45 })
+		expect(mocked.comment.create).toHaveBeenCalledWith(
+			expect.objectContaining({
+				data: expect.objectContaining({ timestamp: 25, timestampEnd: 30 }),
+			})
+		)
+	})
+
+	it("accepts a range when duration is unknown", async () => {
+		mockVersion("VIDEO", null)
+		await create({ timestamp: 5, timestampEnd: 12 })
+		expect(mocked.comment.create).toHaveBeenCalledWith(
+			expect.objectContaining({
+				data: expect.objectContaining({ timestamp: 5, timestampEnd: 12 }),
+			})
+		)
+	})
+
+	it("nulls timestamps on image versions and page on video versions", async () => {
+		mockVersion("IMAGE")
+		await create({ timestamp: 5, timestampEnd: 10, page: 2 })
+		expect(mocked.comment.create).toHaveBeenCalledWith(
+			expect.objectContaining({
+				data: expect.objectContaining({
+					timestamp: null,
+					timestampEnd: null,
+					page: null,
+				}),
+			})
+		)
+
+		mockVersion("VIDEO", 60)
+		await create({ timestamp: 5, page: 2 })
+		expect(mocked.comment.create).toHaveBeenLastCalledWith(
+			expect.objectContaining({
+				data: expect.objectContaining({ timestamp: 5, page: null }),
+			})
+		)
+	})
+
+	it("persists page for PDF versions and rejects invalid pages", async () => {
+		mockVersion("PDF")
+		await create({ page: 3 })
+		expect(mocked.comment.create).toHaveBeenCalledWith(
+			expect.objectContaining({
+				data: expect.objectContaining({ page: 3 }),
+			})
+		)
+		await expect(create({ page: 0 })).rejects.toBeInstanceOf(ValidationError)
+		await expect(create({ page: 1.5 })).rejects.toBeInstanceOf(
+			ValidationError
+		)
+	})
+
+	it("persists a valid model anchor for MODEL versions and strips unknown keys", async () => {
+		mockVersion("MODEL")
+		await create({
+			modelAnchor: {
+				position: [1, 2, 3],
+				normal: [0, 1, 0],
+				camera: { position: [4, 5, 6], target: [0, 0, 0] },
+				extra: "dropped",
+			},
+		})
+		expect(mocked.comment.create).toHaveBeenCalledWith(
+			expect.objectContaining({
+				data: expect.objectContaining({
+					modelAnchor: {
+						position: [1, 2, 3],
+						normal: [0, 1, 0],
+						camera: { position: [4, 5, 6], target: [0, 0, 0] },
+					},
+				}),
+			})
+		)
+	})
+
+	it("accepts a model anchor with only a position", async () => {
+		mockVersion("MODEL")
+		await create({ modelAnchor: { position: [0.5, -1, 2] } })
+		expect(mocked.comment.create).toHaveBeenCalledWith(
+			expect.objectContaining({
+				data: expect.objectContaining({
+					modelAnchor: { position: [0.5, -1, 2] },
+				}),
+			})
+		)
+	})
+
+	it("rejects malformed model anchors", async () => {
+		mockVersion("MODEL")
+		await expect(create({ modelAnchor: "pin" })).rejects.toBeInstanceOf(
+			ValidationError
+		)
+		await expect(create({ modelAnchor: {} })).rejects.toBeInstanceOf(
+			ValidationError
+		)
+		await expect(
+			create({ modelAnchor: { position: [1, 2] } })
+		).rejects.toBeInstanceOf(ValidationError)
+		await expect(
+			create({ modelAnchor: { position: [1, 2, NaN] } })
+		).rejects.toBeInstanceOf(ValidationError)
+		await expect(
+			create({ modelAnchor: { position: [1, 2, 3], normal: [1, "a", 0] } })
+		).rejects.toBeInstanceOf(ValidationError)
+		await expect(
+			create({
+				modelAnchor: { position: [1, 2, 3], camera: { position: [1, 2, 3] } },
+			})
+		).rejects.toBeInstanceOf(ValidationError)
+	})
+
+	it("drops model anchors on non-MODEL versions and other anchors on MODEL versions", async () => {
+		mockVersion("IMAGE")
+		await create({ modelAnchor: { position: [1, 2, 3] } })
+		expect(mocked.comment.create).toHaveBeenCalledWith(
+			expect.objectContaining({
+				data: expect.objectContaining({ modelAnchor: undefined }),
+			})
+		)
+
+		mockVersion("MODEL")
+		await create({ timestamp: 5, timestampEnd: 10, page: 2 })
+		expect(mocked.comment.create).toHaveBeenLastCalledWith(
+			expect.objectContaining({
+				data: expect.objectContaining({
+					timestamp: null,
+					timestampEnd: null,
+					page: null,
+					modelAnchor: undefined,
+				}),
+			})
+		)
+	})
+
+	it("emits the new comment to the version room", async () => {
+		mockVersion("VIDEO", 60)
+		await create({ timestamp: 5, timestampEnd: 9 })
+		expect(io.to).toHaveBeenCalledWith("imageVersion:v1")
+		expect(emitMock).toHaveBeenCalledWith(
+			"new-comment",
+			expect.objectContaining({ id: "c1" })
+		)
+	})
+})
 
 describe("CommentsService.toggleResolved", () => {
 	beforeEach(() => vi.clearAllMocks())

@@ -2,7 +2,10 @@
 
 import React, { useRef, useEffect, useState, useCallback } from "react"
 import { AnnotationTool } from "@/app/project/[projectId]/image/[imageId]/page"
-import { formatVideoTime } from "@/lib/utils"
+import { formatVideoTime, isEditableTarget } from "@/lib/utils"
+import { drawAnnotations } from "@/lib/annotation-drawing"
+import { isAnnotationVisibleAt } from "@/lib/annotation-visibility"
+import { Scrubber, ScrubberMarker, ScrubberPeer } from "./Scrubber"
 import {
 	Loader2,
 	Play,
@@ -24,18 +27,14 @@ interface VideoAnnotation {
 	color: string
 	points: Point[]
 	t?: number
+	tEnd?: number
 	isHighlighted?: boolean
+	dimmed?: boolean
 }
 
 interface SeekRequest {
 	time: number
 	nonce: number
-}
-
-export interface TimelineMarker {
-	t: number
-	label: string
-	initial: string
 }
 
 interface VideoAnnotationCanvasProps {
@@ -47,15 +46,22 @@ interface VideoAnnotationCanvasProps {
 		annotation: Omit<VideoAnnotation, "id" | "points"> & { points: Point[] }
 	) => void
 	onTimeChange?: (time: number, duration: number) => void
+	onPlayStateChange?: (isPlaying: boolean) => void
 	seekRequest?: SeekRequest | null
 	frameRate?: number
-	markers?: TimelineMarker[]
+	markers?: ScrubberMarker[]
+	peers?: ScrubberPeer[]
+	composingRange?: { start: number; end: number } | null
+	onSelectComment?: (commentId: string) => void
+	initialDuration?: number | null
 	canDraw?: boolean
+	enableShortcuts?: boolean
 }
 
-// Frame-by-frame video annotation: an HTML5 <video> with overlaid drawing
-// canvases. Each annotation is anchored to the video frame it was drawn on and
-// only shown when the playhead is on that frame.
+// Video annotation surface: an HTML5 <video> with overlaid drawing canvases
+// and a custom scrubber. Annotations render while the playhead is inside
+// their [t, tEnd] range (instant drawings get a short default window), and
+// always while highlighted via comment selection.
 export function VideoAnnotationCanvas({
 	videoUrl,
 	tool,
@@ -63,10 +69,16 @@ export function VideoAnnotationCanvas({
 	annotations,
 	onAddAnnotation,
 	onTimeChange,
+	onPlayStateChange,
 	seekRequest,
 	frameRate = 30,
 	markers = [],
+	peers = [],
+	composingRange = null,
+	onSelectComment,
+	initialDuration = null,
 	canDraw = true,
+	enableShortcuts = true,
 }: VideoAnnotationCanvasProps) {
 	const containerRef = useRef<HTMLDivElement>(null)
 	const videoRef = useRef<HTMLVideoElement>(null)
@@ -77,22 +89,27 @@ export function VideoAnnotationCanvas({
 	const [error, setError] = useState<string | null>(null)
 	const [isPlaying, setIsPlaying] = useState(false)
 	const [currentTime, setCurrentTime] = useState(0)
-	const [duration, setDuration] = useState(0)
+	const [duration, setDuration] = useState(initialDuration ?? 0)
+	const [buffered, setBuffered] = useState<{ start: number; end: number }[]>(
+		[]
+	)
 	const [dims, setDims] = useState({ width: 0, height: 0 })
 
 	const isDrawingRef = useRef(false)
 	const startPosRef = useRef<Point | null>(null)
 	const currentPathRef = useRef<Point[]>([])
+	// The playhead the canvas paints against. A ref (not the currentTime
+	// state) so drawAll keeps a stable identity across frames and never paints
+	// with a stale pre-seek time.
+	const playheadRef = useRef(0)
 	const frameStep = 1 / frameRate
 
-	// Annotations belong to a specific frame; show only those on the current
-	// frame (plus any explicitly highlighted ones from comment clicks).
-	const sameFrame = useCallback(
-		(t: number | undefined) => {
-			if (t === undefined || t === null) return true
-			return Math.floor(t * frameRate) === Math.floor(currentTime * frameRate)
+	const setPlaying = useCallback(
+		(playing: boolean) => {
+			setIsPlaying(playing)
+			onPlayStateChange?.(playing)
 		},
-		[currentTime, frameRate]
+		[onPlayStateChange]
 	)
 
 	const drawAll = useCallback(() => {
@@ -100,38 +117,12 @@ export function VideoAnnotationCanvas({
 		if (!canvas) return
 		const ctx = canvas.getContext("2d")
 		if (!ctx) return
-		const { width, height } = canvas
-		ctx.clearRect(0, 0, width, height)
-
-		const visible = annotations.filter((a) => a.isHighlighted || sameFrame(a.t))
-
-		visible.forEach((annotation) => {
-			const { type, color: c, points, isHighlighted } = annotation
-			if (!points || points.length === 0) return
-			ctx.strokeStyle = c
-			ctx.lineWidth = isHighlighted ? 4 : 2
-			ctx.lineCap = "round"
-			ctx.lineJoin = "round"
-			ctx.beginPath()
-			if (type === "pencil") {
-				ctx.moveTo(points[0].x * width, points[0].y * height)
-				points.forEach((p) => ctx.lineTo(p.x * width, p.y * height))
-			} else if (type === "rect" && points.length >= 2) {
-				const s = points[0]
-				const e = points[1]
-				ctx.rect(
-					s.x * width,
-					s.y * height,
-					(e.x - s.x) * width,
-					(e.y - s.y) * height
-				)
-			} else if (type === "line" && points.length >= 2) {
-				ctx.moveTo(points[0].x * width, points[0].y * height)
-				ctx.lineTo(points[1].x * width, points[1].y * height)
-			}
-			ctx.stroke()
-		})
-	}, [annotations, sameFrame])
+		ctx.clearRect(0, 0, canvas.width, canvas.height)
+		const visible = annotations.filter((a) =>
+			isAnnotationVisibleAt(a, playheadRef.current)
+		)
+		drawAnnotations(ctx, visible, canvas.width, canvas.height)
+	}, [annotations])
 
 	// Fit the video + canvases into the container preserving aspect ratio.
 	const resize = useCallback(() => {
@@ -171,17 +162,38 @@ export function VideoAnnotationCanvas({
 	useEffect(() => {
 		setIsLoading(true)
 		setError(null)
+		setBuffered([])
 	}, [videoUrl])
 
 	useEffect(() => {
 		drawAll()
 	}, [drawAll, dims])
 
+	// timeupdate only fires ~4x/sec; while playing, track the playhead every
+	// animation frame so annotation windows appear and disappear on time.
+	useEffect(() => {
+		if (!isPlaying) return
+		let raf = 0
+		const tick = () => {
+			const video = videoRef.current
+			if (video) {
+				playheadRef.current = video.currentTime
+				setCurrentTime(video.currentTime)
+				drawAll()
+			}
+			raf = requestAnimationFrame(tick)
+		}
+		raf = requestAnimationFrame(tick)
+		return () => cancelAnimationFrame(raf)
+	}, [isPlaying, drawAll])
+
 	// React to external seek requests (e.g. clicking a comment timestamp).
 	useEffect(() => {
 		if (seekRequest && videoRef.current) {
 			videoRef.current.pause()
 			videoRef.current.currentTime = Math.max(0, seekRequest.time)
+			playheadRef.current = Math.max(0, seekRequest.time)
+			setCurrentTime(playheadRef.current)
 			// Abandon any in-progress drawing and clear the preview overlay.
 			isDrawingRef.current = false
 			startPosRef.current = null
@@ -208,43 +220,99 @@ export function VideoAnnotationCanvas({
 	const handleTimeUpdate = () => {
 		const video = videoRef.current
 		if (!video) return
+		playheadRef.current = video.currentTime
 		setCurrentTime(video.currentTime)
 		onTimeChange?.(video.currentTime, video.duration || 0)
 	}
 
-	const togglePlay = () => {
+	const handleProgress = () => {
+		const video = videoRef.current
+		if (!video) return
+		const ranges: { start: number; end: number }[] = []
+		for (let i = 0; i < video.buffered.length; i++) {
+			ranges.push({ start: video.buffered.start(i), end: video.buffered.end(i) })
+		}
+		setBuffered(ranges)
+	}
+
+	const togglePlay = useCallback(() => {
 		const video = videoRef.current
 		if (!video) return
 		if (video.paused) {
 			video.play()
-			setIsPlaying(true)
+			setPlaying(true)
 		} else {
 			video.pause()
-			setIsPlaying(false)
+			setPlaying(false)
 		}
-	}
+	}, [setPlaying])
 
-	const stepFrame = (dir: 1 | -1) => {
-		const video = videoRef.current
-		if (!video) return
-		video.pause()
-		setIsPlaying(false)
-		video.currentTime = Math.min(
-			Math.max(0, video.currentTime + dir * frameStep),
-			video.duration || 0
-		)
-	}
+	const seekTo = useCallback(
+		(t: number) => {
+			const video = videoRef.current
+			if (!video) return
+			video.currentTime = Math.max(0, Math.min(t, video.duration || t))
+			playheadRef.current = video.currentTime
+			setCurrentTime(video.currentTime)
+			onTimeChange?.(video.currentTime, video.duration || 0)
+			drawAll()
+		},
+		[onTimeChange, drawAll]
+	)
 
-	const seekTo = (t: number) => {
-		const video = videoRef.current
-		if (!video) return
-		video.currentTime = Math.max(0, Math.min(t, video.duration || t))
-		setCurrentTime(video.currentTime)
-	}
+	const stepFrame = useCallback(
+		(dir: 1 | -1) => {
+			const video = videoRef.current
+			if (!video) return
+			video.pause()
+			setPlaying(false)
+			seekTo(video.currentTime + dir * frameStep)
+		},
+		[frameStep, seekTo, setPlaying]
+	)
 
-	const handleScrub = (e: React.ChangeEvent<HTMLInputElement>) => {
-		seekTo(Number(e.target.value))
-	}
+	// Playback keyboard shortcuts. Dead while typing in inputs/textareas and
+	// while the scrubber or a button has focus (they handle their own keys).
+	useEffect(() => {
+		if (!enableShortcuts) return
+		const onKeyDown = (e: KeyboardEvent) => {
+			if (isEditableTarget(e.target)) return
+			const video = videoRef.current
+			if (!video) return
+			switch (e.key) {
+				case " ":
+					e.preventDefault()
+					togglePlay()
+					break
+				case "ArrowLeft":
+					e.preventDefault()
+					if (e.shiftKey) stepFrame(-1)
+					else seekTo(video.currentTime - 5)
+					break
+				case "ArrowRight":
+					e.preventDefault()
+					if (e.shiftKey) stepFrame(1)
+					else seekTo(video.currentTime + 5)
+					break
+				case ",":
+					stepFrame(-1)
+					break
+				case ".":
+					stepFrame(1)
+					break
+				case "Home":
+					e.preventDefault()
+					seekTo(0)
+					break
+				case "End":
+					e.preventDefault()
+					seekTo(video.duration || 0)
+					break
+			}
+		}
+		window.addEventListener("keydown", onKeyDown)
+		return () => window.removeEventListener("keydown", onKeyDown)
+	}, [enableShortcuts, seekTo, stepFrame, togglePlay])
 
 	// --- Drawing -------------------------------------------------------------
 	const getRelativePos = (e: React.MouseEvent): Point | null => {
@@ -262,7 +330,7 @@ export function VideoAnnotationCanvas({
 		if (!pos) return
 		// Pause so the drawing stays anchored to a single frame.
 		videoRef.current?.pause()
-		setIsPlaying(false)
+		setPlaying(false)
 		isDrawingRef.current = true
 		startPosRef.current = pos
 		currentPathRef.current = [pos]
@@ -284,8 +352,13 @@ export function VideoAnnotationCanvas({
 		ctx.beginPath()
 		if (tool === "pencil") {
 			currentPathRef.current.push(pos)
-			ctx.moveTo(currentPathRef.current[0].x * width, currentPathRef.current[0].y * height)
-			currentPathRef.current.forEach((p) => ctx.lineTo(p.x * width, p.y * height))
+			ctx.moveTo(
+				currentPathRef.current[0].x * width,
+				currentPathRef.current[0].y * height
+			)
+			currentPathRef.current.forEach((p) =>
+				ctx.lineTo(p.x * width, p.y * height)
+			)
 		} else {
 			const s = startPosRef.current
 			if (!s) return
@@ -384,12 +457,13 @@ export function VideoAnnotationCanvas({
 							playsInline
 							onLoadedMetadata={handleLoadedMetadata}
 							onTimeUpdate={handleTimeUpdate}
+							onProgress={handleProgress}
 							onSeeked={() => {
 								handleTimeUpdate()
 								drawAll()
 							}}
-							onPlay={() => setIsPlaying(true)}
-							onPause={() => setIsPlaying(false)}
+							onPlay={() => setPlaying(true)}
+							onPause={() => setPlaying(false)}
 							onError={() => {
 								setIsLoading(false)
 								setError("Failed to load video")
@@ -417,7 +491,7 @@ export function VideoAnnotationCanvas({
 			</div>
 
 			{/* Playback controls */}
-			<div className="flex items-center gap-2 border-t border-border/40 bg-card px-3 py-2">
+			<div className="flex items-end gap-2 border-t border-border/40 bg-card px-3 py-2">
 				<Button
 					size="icon"
 					variant="ghost"
@@ -449,38 +523,21 @@ export function VideoAnnotationCanvas({
 				>
 					<ChevronRight className="h-4 w-4" aria-hidden="true" />
 				</Button>
-				<span className="font-mono text-xs tabular-nums text-muted-foreground">
+				<span className="pb-1 font-mono text-xs tabular-nums text-muted-foreground">
 					{formatVideoTime(currentTime, true)}
 				</span>
-				<div className="relative flex-1 py-2">
-					{duration > 0 &&
-						markers.map((marker, i) => (
-							<button
-								key={`${marker.t}-${i}`}
-								type="button"
-								onClick={() => seekTo(marker.t)}
-								className="absolute top-1/2 z-10 flex h-4 w-4 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border border-background bg-primary text-[8px] font-semibold leading-none text-primary-foreground shadow-sm transition-transform hover:scale-125 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-								style={{ left: `${(marker.t / duration) * 100}%` }}
-								title={`${marker.label} · ${formatVideoTime(marker.t)}`}
-								aria-label={`Comment by ${marker.label} at ${formatVideoTime(
-									marker.t
-								)}`}
-							>
-								{marker.initial}
-							</button>
-						))}
-					<input
-						type="range"
-						min={0}
-						max={duration || 0}
-						step={0.01}
-						value={currentTime}
-						onChange={handleScrub}
-						className="relative z-0 h-1 w-full cursor-pointer accent-primary"
-						aria-label="Video scrubber"
-					/>
-				</div>
-				<span className="font-mono text-xs tabular-nums text-muted-foreground">
+				<Scrubber
+					currentTime={currentTime}
+					duration={duration}
+					buffered={buffered}
+					markers={markers}
+					peers={peers}
+					composingRange={composingRange}
+					frameStep={frameStep}
+					onSeek={seekTo}
+					onSelectComment={onSelectComment}
+				/>
+				<span className="pb-1 font-mono text-xs tabular-nums text-muted-foreground">
 					{formatVideoTime(duration)}
 				</span>
 				<Button

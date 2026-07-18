@@ -4,7 +4,15 @@ import { useState } from "react"
 import Image from "next/image"
 import Link from "next/link"
 import { Button } from "@/components/ui/button"
-import { ChevronRight, Menu, X, Globe, Users, Zap } from "lucide-react"
+import {
+	ChevronRight,
+	Menu,
+	X,
+	Globe,
+	Users,
+	Zap,
+	LucideIcon,
+} from "lucide-react"
 
 const Header = () => {
 	const [menuOpen, setMenuOpen] = useState(false)
@@ -113,7 +121,7 @@ const FeatureCard = ({
 	title,
 	description,
 }: {
-	icon: React.ElementType
+	icon: LucideIcon
 	title: string
 	description: string
 }) => (

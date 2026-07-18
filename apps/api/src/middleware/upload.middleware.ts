@@ -8,10 +8,11 @@ const stagingDir = path.join(uploadsDir, ".staging")
 
 fs.mkdirSync(stagingDir, { recursive: true })
 
-// Only formats a browser renders inline are accepted. The stored extension is
-// derived from the declared MIME type (never the client filename), so an upload
-// can't be served as HTML/JS from the API origin. SVG is excluded deliberately —
-// it can carry script and would be an XSS vector when served inline.
+// Only formats a browser renders inline (or inert binaries like GLB) are
+// accepted. The stored extension is derived from the declared MIME type (never
+// the client filename), so an upload can't be served as HTML/JS from the API
+// origin. SVG is excluded deliberately — it can carry script and would be an
+// XSS vector when served inline.
 const MIME_EXTENSIONS: Record<string, string> = {
 	"image/jpeg": ".jpg",
 	"image/jpg": ".jpg",
@@ -22,9 +23,12 @@ const MIME_EXTENSIONS: Record<string, string> = {
 	"video/mp4": ".mp4",
 	"video/webm": ".webm",
 	"video/quicktime": ".mov",
+	"application/pdf": ".pdf",
+	"model/gltf-binary": ".glb",
 }
 
-const isAllowedMime = (mimetype: string): boolean => mimetype in MIME_EXTENSIONS
+export const isAllowedMime = (mimetype: string): boolean =>
+	mimetype in MIME_EXTENSIONS
 
 const staging = multer.diskStorage({
 	destination: (_req, _file, cb) => {
@@ -39,7 +43,7 @@ const staging = multer.diskStorage({
 	},
 })
 
-const imagesAndVideosOnly = (
+const allowedMediaOnly = (
 	_req: Request,
 	file: Express.Multer.File,
 	cb: multer.FileFilterCallback
@@ -49,7 +53,7 @@ const imagesAndVideosOnly = (
 	} else {
 		cb(
 			new Error(
-				"Unsupported file type. Allowed: JPEG, PNG, GIF, WebP, AVIF images and MP4, WebM, MOV videos."
+				"Unsupported file type. Allowed: JPEG, PNG, GIF, WebP, AVIF images, MP4, WebM, MOV videos, PDF documents and GLB 3D models."
 			)
 		)
 	}
@@ -59,9 +63,17 @@ const MAX_FILE_SIZE_MB = Number(process.env.MAX_UPLOAD_MB || 200)
 
 export const upload = multer({
 	storage: staging,
-	fileFilter: imagesAndVideosOnly,
+	fileFilter: allowedMediaOnly,
 	limits: { fileSize: MAX_FILE_SIZE_MB * 1024 * 1024 },
 })
 
-export const detectMediaType = (mimetype: string): "IMAGE" | "VIDEO" =>
-	mimetype.startsWith("video/") ? "VIDEO" : "IMAGE"
+export const detectMediaType = (
+	mimetype: string
+): "IMAGE" | "VIDEO" | "PDF" | "MODEL" =>
+	mimetype === "application/pdf"
+		? "PDF"
+		: mimetype === "model/gltf-binary"
+			? "MODEL"
+			: mimetype.startsWith("video/")
+				? "VIDEO"
+				: "IMAGE"
