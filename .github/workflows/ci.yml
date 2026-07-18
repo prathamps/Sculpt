@@ -11,7 +11,7 @@ on:
 # validation so broken code never reaches the deploy branches.
 jobs:
   api:
-    name: API · typecheck + build + prisma validate
+    name: API · typecheck + build + test + prisma validate
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -35,6 +35,8 @@ jobs:
         run: npx prisma validate
       - name: Type-check & build
         run: npm run build
+      - name: Test
+        run: npm test
 
   web:
     name: Web · lint + build

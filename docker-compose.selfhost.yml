@@ -1,0 +1,67 @@
+# Full self-hosted Sculpt: database, cache, API and web UI in one command.
+#
+#   JWT_SECRET=$(openssl rand -hex 32) docker compose -f docker-compose.selfhost.yml up -d --build
+#
+# The web UI is served on http://localhost:3000 and the API on
+# http://localhost:3001. Uploads persist in the `sculpt_uploads` volume.
+# For OAuth, SMTP or S3 storage, add the variables from apps/api/.env.example
+# to the api service environment.
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: sculpt
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-sculpt}
+      POSTGRES_DB: sculpt
+    volumes:
+      - sculpt_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U sculpt"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  api:
+    build: ./apps/api
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://sculpt:${POSTGRES_PASSWORD:-sculpt}@postgres:5432/sculpt
+      DIRECT_URL: postgresql://sculpt:${POSTGRES_PASSWORD:-sculpt}@postgres:5432/sculpt
+      REDIS_URL: redis://redis:6379
+      JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET to a long random string}
+      FRONTEND_URL: ${FRONTEND_URL:-http://localhost:3000}
+      API_URL: ${API_URL:-http://localhost:3001}
+      TRUST_PROXY: ${TRUST_PROXY:-}
+      NODE_ENV: production
+    volumes:
+      - sculpt_uploads:/app/uploads
+    ports:
+      - "3001:3001"
+
+  web:
+    build:
+      context: ./apps/web
+      args:
+        NEXT_PUBLIC_API_URL: ${API_URL:-http://localhost:3001}
+        NEXT_PUBLIC_SOCKET_URL: ${API_URL:-http://localhost:3001}
+    depends_on:
+      - api
+    ports:
+      - "3000:3000"
+
+volumes:
+  sculpt_pgdata:
+  sculpt_uploads:

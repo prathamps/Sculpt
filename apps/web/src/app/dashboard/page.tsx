@@ -1,10 +1,8 @@
 "use client"
 
 import { useAuth } from "@/context/AuthContext"
-import { useSubscription } from "@/context/SubscriptionContext"
 import { useRouter } from "next/navigation"
 import { useEffect, useState, useCallback } from "react"
-import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import { CreateProjectModal } from "@/components/CreateProjectModal"
 import { ProjectCard } from "@/components/ProjectCard"
@@ -16,20 +14,7 @@ import { PlusIcon, Loader2Icon, FolderPlusIcon } from "lucide-react"
 
 export default function DashboardPage() {
 	const { loading, isAuthenticated } = useAuth()
-	const { refresh: refreshSubscription } = useSubscription()
 	const router = useRouter()
-
-	// Celebrate a successful PRO checkout and re-sync the subscription (the
-	// Stripe webhook may land a beat after the redirect).
-	useEffect(() => {
-		if (typeof window === "undefined") return
-		const params = new URLSearchParams(window.location.search)
-		if (params.get("checkout") === "success") {
-			toast.success("Welcome to PRO! Your subscription is now active. 🎉")
-			setTimeout(() => refreshSubscription(), 1500)
-			window.history.replaceState({}, "", "/dashboard")
-		}
-	}, [refreshSubscription])
 	const [projects, setProjects] = useState<Project[]>([])
 	const [isCreateModalOpen, setCreateModalOpen] = useState(false)
 	const [projectToEdit, setProjectToEdit] = useState<Project | null>(null)

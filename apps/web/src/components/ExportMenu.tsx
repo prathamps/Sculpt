@@ -13,6 +13,7 @@ import {
 } from "@/components/ui/dropdown-menu"
 import { toast } from "sonner"
 import { Image as ImageType, ImageVersion, Annotation } from "@/types"
+import { mediaUrl } from "@/lib/utils"
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001"
 
@@ -52,18 +53,6 @@ function drawAnnotations(
 }
 
 const handleGateResponse = async (res: Response): Promise<boolean> => {
-	if (res.status === 402) {
-		const data = await res.json().catch(() => ({}))
-		toast.error(data.message || "This export is a PRO feature.", {
-			action: {
-				label: "Upgrade",
-				onClick: () => {
-					window.location.href = "/billing"
-				},
-			},
-		})
-		return true
-	}
 	if (res.status === 403) {
 		toast.error("You don't have access to export this project.")
 		return true
@@ -86,7 +75,7 @@ export function ExportMenu({
 		try {
 			const img = new window.Image()
 			img.crossOrigin = "anonymous"
-			img.src = `${API_URL}/${selectedVersion.url}`
+			img.src = mediaUrl(selectedVersion.url)
 			await new Promise<void>((resolve, reject) => {
 				img.onload = () => resolve()
 				img.onerror = () => reject(new Error("Failed to load image"))
@@ -192,15 +181,15 @@ export function ExportMenu({
 				<DropdownMenuSeparator />
 				<DropdownMenuItem className="text-xs" onClick={() => downloadReport("csv")}>
 					<FileText className="mr-2 h-3.5 w-3.5" />
-					Report (CSV) · PRO
+					Report (CSV)
 				</DropdownMenuItem>
 				<DropdownMenuItem className="text-xs" onClick={() => downloadReport("json")}>
 					<FileJson className="mr-2 h-3.5 w-3.5" />
-					Report (JSON) · PRO
+					Report (JSON)
 				</DropdownMenuItem>
 				<DropdownMenuItem className="text-xs" onClick={printReport}>
 					<Printer className="mr-2 h-3.5 w-3.5" />
-					Print report (PDF) · PRO
+					Print report (PDF)
 				</DropdownMenuItem>
 			</DropdownMenuContent>
 		</DropdownMenu>

@@ -3,13 +3,6 @@
 import Link from "next/link"
 import { ChevronLeft, MessageSquare, X } from "lucide-react"
 import { Button } from "@/components/ui/button"
-import {
-	
-	
-	
-	
-	
-} from "@/components/ui/dropdown-menu"
 import { cn } from "@/lib/utils"
 import { useMediaQuery } from "@/hooks/useMediaQuery"
 import { ReactNode } from "react"
@@ -58,45 +51,31 @@ export function TopHeader({
 						isSidebarOpen && "bg-primary/10 text-primary border-primary/20"
 					)}
 					onClick={onToggleSidebar}
-					title={isSidebarOpen ? "Close Comments" : "Show Comments"}
+					aria-label={isSidebarOpen ? "Close comments" : "Show comments"}
+					aria-pressed={isSidebarOpen}
 				>
 					{isSmallScreen ? (
 						isSidebarOpen ? (
-							<X className="h-3.5 w-3.5" />
+							<X className="h-3.5 w-3.5" aria-hidden="true" />
 						) : (
-							<MessageSquare className="h-3.5 w-3.5" />
+							<MessageSquare className="h-3.5 w-3.5" aria-hidden="true" />
 						)
 					) : (
 						<>
 							{isSidebarOpen ? (
 								<>
-									<X className="h-3.5 w-3.5" />
+									<X className="h-3.5 w-3.5" aria-hidden="true" />
 									Close Comments
 								</>
 							) : (
 								<>
-									<MessageSquare className="h-3.5 w-3.5" />
+									<MessageSquare className="h-3.5 w-3.5" aria-hidden="true" />
 									Comments
 								</>
 							)}
 						</>
 					)}
 				</Button>
-				{/* <DropdownMenu>
-					<DropdownMenuTrigger asChild>
-						<Button size="icon" variant="ghost" className="h-8 w-8">
-							<MoreHorizontal className="h-4 w-4" />
-						</Button>
-					</DropdownMenuTrigger>
-					<DropdownMenuContent align="end">
-						<DropdownMenuItem>Download Image</DropdownMenuItem>
-						<DropdownMenuItem>Export Annotations</DropdownMenuItem>
-						<DropdownMenuSeparator />
-						<DropdownMenuItem className="text-destructive">
-							Delete Image
-						</DropdownMenuItem>
-					</DropdownMenuContent>
-				</DropdownMenu> */}
 			</div>
 		</header>
 	)

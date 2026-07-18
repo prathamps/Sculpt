@@ -100,6 +100,7 @@ export function ProjectSidebar({
 					<Input
 						type="search"
 						placeholder="Search projects..."
+						aria-label="Search projects"
 						className="w-full rounded-md border-border/40 bg-muted pl-8 text-sm"
 						value={searchQuery}
 						onChange={(e) => setSearchQuery(e.target.value)}
@@ -113,10 +114,10 @@ export function ProjectSidebar({
 					</h2>
 					<button
 						onClick={onCreateNew}
-						className="flex h-5 w-5 items-center justify-center rounded-sm hover:bg-secondary text-muted-foreground"
-						title="Create new project"
+						className="flex h-5 w-5 items-center justify-center rounded-sm hover:bg-secondary text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+						aria-label="Create new project"
 					>
-						<Plus className="h-3.5 w-3.5" />
+						<Plus className="h-3.5 w-3.5" aria-hidden="true" />
 					</button>
 				</div>
 
@@ -160,8 +161,12 @@ export function ProjectSidebar({
 							</a>
 							<DropdownMenu>
 								<DropdownMenuTrigger asChild>
-									<button className="invisible flex h-6 w-6 items-center justify-center rounded-sm text-muted-foreground hover:bg-secondary group-hover:visible">
-										<MoreHorizontal className="h-4 w-4" />
+									<button
+										className="flex h-6 w-6 items-center justify-center rounded-sm text-muted-foreground opacity-0 hover:bg-secondary focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring group-hover:opacity-100"
+										aria-label={`Actions for ${project.name}`}
+										onClick={() => onSelectProject(project)}
+									>
+										<MoreHorizontal className="h-4 w-4" aria-hidden="true" />
 									</button>
 								</DropdownMenuTrigger>
 								<DropdownMenuContent align="end" className="w-52">
@@ -185,16 +190,6 @@ export function ProjectSidebar({
 						</div>
 					))}
 				</nav>
-
-				{/* User/Account section at bottom */}
-				<div className="mt-auto pt-4 border-t border-border/40">
-					<div className="flex items-center justify-between rounded-md p-2 text-xs text-muted-foreground">
-						<div>Free Plan</div>
-						<a href="#" className="text-sidebar-primary hover:underline">
-							Upgrade
-						</a>
-					</div>
-				</div>
 			</aside>
 
 			{/* Modals */}

@@ -20,7 +20,8 @@ import {
 	DropdownMenuTrigger,
 	DropdownMenuSeparator,
 } from "@/components/ui/dropdown-menu"
-import { Image, ImageVersion } from "@/types"
+import { Image, ImageVersion, Comment, ProjectRole } from "@/types"
+import { mediaUrl, roleAtLeast } from "@/lib/utils"
 import {
 	Dialog,
 	DialogContent,
@@ -88,6 +89,9 @@ export default function ProjectFileViewPage() {
 	const { isAuthenticated, loading } = useAuth()
 	const { socket } = useSocket()
 	const router = useRouter()
+	const [role, setRole] = useState<ProjectRole | null>(null)
+	const [comments, setComments] = useState<Comment[]>([])
+	const [loadError, setLoadError] = useState(false)
 	const [image, setImage] = useState<Image | null>(null)
 	const [selectedVersion, setSelectedVersion] = useState<ImageVersion | null>(
 		null
@@ -135,7 +139,8 @@ export default function ProjectFileViewPage() {
 	const projectId = params.projectId as string
 
 	const handleAddAnnotation = (newAnnotation: Omit<Annotation, "id">) => {
-		const annotationWithId = { ...newAnnotation, id: annotations.length }
+		const annotationWithId = { ...newAnnotation, id: Date.now() }
+		setHighlightedAnnotation(null)
 		setCurrentAnnotation(annotationWithId)
 
 		setAnnotations((prev) => {
@@ -167,6 +172,7 @@ export default function ProjectFileViewPage() {
 	const fetchImage = useCallback(async () => {
 		if (isAuthenticated) {
 			setIsImageLoading(true)
+			setLoadError(false)
 			const URI = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001"
 			try {
 				const res = await fetch(`${URI}/api/images/${imageId}`, {
@@ -174,25 +180,59 @@ export default function ProjectFileViewPage() {
 				})
 				if (res.ok) {
 					const data = await res.json()
-					console.log("Fetched image data:", data)
 					setImage(data)
-
-					// Select the latest version by default
 					if (data.latestVersion) {
-						// Use latestVersion if available (should be the first in versions array)
 						setSelectedVersion(data.latestVersion)
 					} else if (data.versions && data.versions.length > 0) {
-						// Fallback to first version in array
 						setSelectedVersion(data.versions[0])
 					}
+				} else {
+					setLoadError(true)
 				}
 			} catch (error) {
 				console.error("Failed to fetch image:", error)
+				setLoadError(true)
 			} finally {
 				setIsImageLoading(false)
 			}
 		}
 	}, [isAuthenticated, imageId])
+
+	useEffect(() => {
+		if (!isAuthenticated) return
+		const URI = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001"
+		let cancelled = false
+
+		// Only a 403 means "not a member" → view-only. Transient failures (5xx,
+		// network) are retried so a blip doesn't silently strip a member's
+		// ability to comment.
+		const load = async (attempt = 0): Promise<void> => {
+			try {
+				const res = await fetch(`${URI}/api/projects/${projectId}/my-role`, {
+					credentials: "include",
+				})
+				if (cancelled) return
+				if (res.ok) {
+					const data = await res.json()
+					setRole(data?.role ?? null)
+					return
+				}
+				if (res.status === 403) {
+					setRole(null)
+					return
+				}
+				throw new Error(`role fetch failed: ${res.status}`)
+			} catch {
+				if (cancelled || attempt >= 3) return
+				setTimeout(() => load(attempt + 1), 1000 * (attempt + 1))
+			}
+		}
+
+		load()
+		return () => {
+			cancelled = true
+		}
+	}, [isAuthenticated, projectId])
 
 	useEffect(() => {
 		if (!loading && !isAuthenticated) {
@@ -219,13 +259,33 @@ export default function ProjectFileViewPage() {
 
 	const handleVersionSelect = (version: ImageVersion) => {
 		setSelectedVersion(version)
-		// Reset annotations when switching versions
+		// Reset per-version state when switching versions. Comments (and the
+		// scrubber markers derived from them) are cleared so a closed sidebar
+		// can't leave a prior version's markers on the new one; the sidebar
+		// refetches for the new version when it re-renders.
 		setAnnotations([])
+		setHighlightedAnnotation(null)
+		setComments([])
 		setHistory([[]])
 		setHistoryIndex(0)
 		setCurrentVideoTime(0)
 		setSeekRequest(null)
 	}
+
+	// Comments that carry a video timestamp become avatar markers on the scrubber.
+	const timelineMarkers = comments
+		.filter((c) => typeof c.timestamp === "number")
+		.map((c) => {
+			const name = c.user.name || c.user.email
+			return {
+				t: c.timestamp as number,
+				label: name,
+				initial: name.charAt(0).toUpperCase(),
+			}
+		})
+
+	const canComment = roleAtLeast(role, "MEMBER")
+	const canEditMedia = roleAtLeast(role, "EDITOR")
 
 	const handleSeekToTimestamp = (t: number) => {
 		setSeekRequest((prev) => ({ time: t, nonce: (prev?.nonce ?? 0) + 1 }))
@@ -259,17 +319,6 @@ export default function ProjectFileViewPage() {
 				credentials: "include",
 				body: formData,
 			})
-
-			if (res.status === 402) {
-				const data = await res.json().catch(() => ({}))
-				toast.error(data.message || "Upgrade to PRO to add more versions.", {
-					action: {
-						label: "Upgrade",
-						onClick: () => router.push("/billing"),
-					},
-				})
-				return
-			}
 
 			if (res.ok) {
 				// The response now contains the full enriched image
@@ -346,26 +395,21 @@ export default function ProjectFileViewPage() {
 	) => {
 		if (!annotation) return
 
-		// Convert the stored JSON annotation to the format our component expects
-		// If it's an array of annotations, process each one
-		const annotations = Array.isArray(annotation) ? annotation : [annotation]
+		const list = Array.isArray(annotation) ? annotation : [annotation]
 
-		// Map each annotation to add the highlighted flag
-		const highlightedAnnotations = annotations.map((ann) => ({
+		// Keep the frame anchor (t) so a highlighted video drawing lines up with
+		// the frame we seek to; the highlight persists until the next selection,
+		// a new drawing, or a version switch (no jarring timed flash).
+		const highlightedAnnotations = list.map((ann) => ({
 			id: ann.id || 0,
 			type: ann.type || "pencil",
 			color: ann.color || "#4783E8",
 			points: ann.points || [],
+			t: ann.t,
 			isHighlighted: true,
 		}))
 
-		// Set the highlighted annotation(s)
 		setHighlightedAnnotation(highlightedAnnotations)
-
-		// Clear the highlight after 2 seconds
-		setTimeout(() => {
-			setHighlightedAnnotation(null)
-		}, 2000)
 	}
 
 	// Handle comment added
@@ -401,6 +445,25 @@ export default function ProjectFileViewPage() {
 		)
 	}
 
+	if (loadError) {
+		return (
+			<div className="flex h-screen w-full flex-col items-center justify-center gap-4 bg-background px-4 text-center">
+				<p className="text-lg font-medium">This file couldn&apos;t be loaded</p>
+				<p className="max-w-sm text-sm text-muted-foreground">
+					It may have been deleted, or you may not have access to its project.
+				</p>
+				<div className="flex gap-2">
+					<Button variant="outline" onClick={() => fetchImage()}>
+						Try again
+					</Button>
+					<Button onClick={() => router.push(`/project/${projectId}`)}>
+						Back to project
+					</Button>
+				</div>
+			</div>
+		)
+	}
+
 	return (
 		<div className="flex h-screen w-full flex-col bg-background text-foreground">
 			<TopHeader
@@ -430,7 +493,7 @@ export default function ProjectFileViewPage() {
 									>
 										<div className="flex w-full justify-between items-center">
 											<span>{version.versionName}</span>
-											{image.versions.length > 1 && (
+											{image.versions.length > 1 && canEditMedia && (
 												<Button
 													variant="ghost"
 													size="icon"
@@ -439,18 +502,23 @@ export default function ProjectFileViewPage() {
 														e.stopPropagation()
 														handleDeleteVersion(version.id)
 													}}
+													aria-label={`Delete ${version.versionName}`}
 												>
-													<Trash2 className="h-3.5 w-3.5" />
+													<Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
 												</Button>
 											)}
 										</div>
 									</DropdownMenuItem>
 								))}
-								<DropdownMenuSeparator />
-								<DropdownMenuItem onClick={() => setIsUploadModalOpen(true)}>
-									<Upload className="mr-2 h-4 w-4" />
-									Upload new version
-								</DropdownMenuItem>
+								{canEditMedia && (
+									<>
+										<DropdownMenuSeparator />
+										<DropdownMenuItem onClick={() => setIsUploadModalOpen(true)}>
+											<Upload className="mr-2 h-4 w-4" />
+											Upload new version
+										</DropdownMenuItem>
+									</>
+								)}
 							</DropdownMenuContent>
 						</DropdownMenu>
 					</div>
@@ -482,9 +550,11 @@ export default function ProjectFileViewPage() {
 						) : selectedVersion ? (
 							isVideo ? (
 								<VideoAnnotationCanvas
-									videoUrl={`${URI}/${selectedVersion.url}`}
+									videoUrl={mediaUrl(selectedVersion.url)}
 									tool={tool}
 									color={color}
+									canDraw={canComment}
+									markers={timelineMarkers}
 									onAddAnnotation={handleAddAnnotation}
 									onTimeChange={(t) => setCurrentVideoTime(t)}
 									seekRequest={seekRequest}
@@ -504,7 +574,7 @@ export default function ProjectFileViewPage() {
 								/>
 							) : (
 								<AnnotationCanvas
-									imageUrl={`${URI}/${selectedVersion.url}`}
+									imageUrl={mediaUrl(selectedVersion.url)}
 									tool={tool}
 									color={color}
 									onAddAnnotation={handleAddAnnotation}
@@ -530,24 +600,32 @@ export default function ProjectFileViewPage() {
 						)}
 					</div>
 					{/* Footer/Toolbar Section */}
-					<div className="border-t border-border">
-						<AnnotationFooter
-							tool={tool}
-							setTool={setTool}
-							color={color}
-							setColor={setColor}
-							onUndo={handleUndo}
-							onRedo={handleRedo}
-							onClear={handleClear}
-							canUndo={historyIndex > 0}
-							canRedo={historyIndex < history.length - 1}
-							currentAnnotation={currentAnnotation}
-							annotations={annotations}
-							imageVersionId={selectedVersion?.id || ""}
-							onCommentAdded={handleCommentAdded}
-							timestamp={videoTimestamp}
-						/>
-					</div>
+					{canComment ? (
+						<div className="border-t border-border">
+							<AnnotationFooter
+								tool={tool}
+								setTool={setTool}
+								color={color}
+								setColor={setColor}
+								onUndo={handleUndo}
+								onRedo={handleRedo}
+								onClear={handleClear}
+								canUndo={historyIndex > 0}
+								canRedo={historyIndex < history.length - 1}
+								currentAnnotation={currentAnnotation}
+								annotations={annotations}
+								imageVersionId={selectedVersion?.id || ""}
+								onCommentAdded={handleCommentAdded}
+								timestamp={videoTimestamp}
+							/>
+						</div>
+					) : (
+						role && (
+							<div className="border-t border-border bg-card px-4 py-3 text-center text-xs text-muted-foreground">
+								You have view-only access to this project.
+							</div>
+						)
+					)}
 				</main>
 				{isSidebarOpen && selectedVersion && (
 					<CommentSidebar
@@ -559,6 +637,8 @@ export default function ProjectFileViewPage() {
 						}
 						onHighlightAnnotation={handleHighlightAnnotation}
 						onSeek={isVideo ? handleSeekToTimestamp : undefined}
+						onCommentsChange={setComments}
+						canReply={canComment}
 					/>
 				)}
 			</div>

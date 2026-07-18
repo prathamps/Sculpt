@@ -32,6 +32,12 @@ interface SeekRequest {
 	nonce: number
 }
 
+export interface TimelineMarker {
+	t: number
+	label: string
+	initial: string
+}
+
 interface VideoAnnotationCanvasProps {
 	videoUrl: string
 	tool: AnnotationTool
@@ -43,6 +49,8 @@ interface VideoAnnotationCanvasProps {
 	onTimeChange?: (time: number, duration: number) => void
 	seekRequest?: SeekRequest | null
 	frameRate?: number
+	markers?: TimelineMarker[]
+	canDraw?: boolean
 }
 
 // Frame-by-frame video annotation: an HTML5 <video> with overlaid drawing
@@ -57,6 +65,8 @@ export function VideoAnnotationCanvas({
 	onTimeChange,
 	seekRequest,
 	frameRate = 30,
+	markers = [],
+	canDraw = true,
 }: VideoAnnotationCanvasProps) {
 	const containerRef = useRef<HTMLDivElement>(null)
 	const videoRef = useRef<HTMLVideoElement>(null)
@@ -225,12 +235,15 @@ export function VideoAnnotationCanvas({
 		)
 	}
 
-	const handleScrub = (e: React.ChangeEvent<HTMLInputElement>) => {
+	const seekTo = (t: number) => {
 		const video = videoRef.current
 		if (!video) return
-		const t = Number(e.target.value)
-		video.currentTime = t
-		setCurrentTime(t)
+		video.currentTime = Math.max(0, Math.min(t, video.duration || t))
+		setCurrentTime(video.currentTime)
+	}
+
+	const handleScrub = (e: React.ChangeEvent<HTMLInputElement>) => {
+		seekTo(Number(e.target.value))
 	}
 
 	// --- Drawing -------------------------------------------------------------
@@ -389,11 +402,15 @@ export function VideoAnnotationCanvas({
 						/>
 						<canvas
 							ref={previewCanvasRef}
-							onMouseDown={handleMouseDown}
-							onMouseMove={handleMouseMove}
-							onMouseUp={handleMouseUp}
-							onMouseLeave={handleMouseUp}
-							className="absolute left-0 top-0 cursor-crosshair"
+							onMouseDown={canDraw ? handleMouseDown : undefined}
+							onMouseMove={canDraw ? handleMouseMove : undefined}
+							onMouseUp={canDraw ? handleMouseUp : undefined}
+							onMouseLeave={canDraw ? handleMouseUp : undefined}
+							className={
+								canDraw
+									? "absolute left-0 top-0 cursor-crosshair"
+									: "pointer-events-none absolute left-0 top-0"
+							}
 						/>
 					</div>
 				)}
@@ -406,12 +423,12 @@ export function VideoAnnotationCanvas({
 					variant="ghost"
 					className="h-8 w-8"
 					onClick={togglePlay}
-					title={isPlaying ? "Pause" : "Play"}
+					aria-label={isPlaying ? "Pause" : "Play"}
 				>
 					{isPlaying ? (
-						<Pause className="h-4 w-4" />
+						<Pause className="h-4 w-4" aria-hidden="true" />
 					) : (
-						<Play className="h-4 w-4" />
+						<Play className="h-4 w-4" aria-hidden="true" />
 					)}
 				</Button>
 				<Button
@@ -419,31 +436,50 @@ export function VideoAnnotationCanvas({
 					variant="ghost"
 					className="h-8 w-8"
 					onClick={() => stepFrame(-1)}
-					title="Previous frame"
+					aria-label="Previous frame"
 				>
-					<ChevronLeft className="h-4 w-4" />
+					<ChevronLeft className="h-4 w-4" aria-hidden="true" />
 				</Button>
 				<Button
 					size="icon"
 					variant="ghost"
 					className="h-8 w-8"
 					onClick={() => stepFrame(1)}
-					title="Next frame"
+					aria-label="Next frame"
 				>
-					<ChevronRight className="h-4 w-4" />
+					<ChevronRight className="h-4 w-4" aria-hidden="true" />
 				</Button>
 				<span className="font-mono text-xs tabular-nums text-muted-foreground">
 					{formatVideoTime(currentTime, true)}
 				</span>
-				<input
-					type="range"
-					min={0}
-					max={duration || 0}
-					step={0.01}
-					value={currentTime}
-					onChange={handleScrub}
-					className="h-1 flex-1 cursor-pointer accent-primary"
-				/>
+				<div className="relative flex-1 py-2">
+					{duration > 0 &&
+						markers.map((marker, i) => (
+							<button
+								key={`${marker.t}-${i}`}
+								type="button"
+								onClick={() => seekTo(marker.t)}
+								className="absolute top-1/2 z-10 flex h-4 w-4 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border border-background bg-primary text-[8px] font-semibold leading-none text-primary-foreground shadow-sm transition-transform hover:scale-125 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+								style={{ left: `${(marker.t / duration) * 100}%` }}
+								title={`${marker.label} · ${formatVideoTime(marker.t)}`}
+								aria-label={`Comment by ${marker.label} at ${formatVideoTime(
+									marker.t
+								)}`}
+							>
+								{marker.initial}
+							</button>
+						))}
+					<input
+						type="range"
+						min={0}
+						max={duration || 0}
+						step={0.01}
+						value={currentTime}
+						onChange={handleScrub}
+						className="relative z-0 h-1 w-full cursor-pointer accent-primary"
+						aria-label="Video scrubber"
+					/>
+				</div>
 				<span className="font-mono text-xs tabular-nums text-muted-foreground">
 					{formatVideoTime(duration)}
 				</span>
@@ -452,9 +488,9 @@ export function VideoAnnotationCanvas({
 					variant="ghost"
 					className="h-8 w-8"
 					onClick={downloadFrame}
-					title="Download annotated frame (PNG)"
+					aria-label="Download annotated frame as PNG"
 				>
-					<Camera className="h-4 w-4" />
+					<Camera className="h-4 w-4" aria-hidden="true" />
 				</Button>
 			</div>
 		</div>

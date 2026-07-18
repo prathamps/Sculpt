@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react"
 import { useParams, useRouter } from "next/navigation"
 import { useAuth } from "@/context/AuthContext"
+import { Loader2 } from "lucide-react"
 
 export default function JoinPage() {
 	const router = useRouter()
@@ -48,8 +49,11 @@ export default function JoinPage() {
 	}, [token, isAuthenticated, loading, router])
 
 	return (
-		<div className="flex h-screen w-full items-center justify-center bg-black text-white">
-			<p>{message}</p>
+		<div className="flex h-screen w-full flex-col items-center justify-center gap-3 bg-background px-4 text-center text-foreground">
+			<Loader2 className="h-6 w-6 animate-spin text-primary" aria-hidden="true" />
+			<p className="text-sm text-muted-foreground" role="status" aria-live="polite">
+				{message}
+			</p>
 		</div>
 	)
 }

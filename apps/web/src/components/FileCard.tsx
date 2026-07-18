@@ -24,7 +24,7 @@ import {
 import { Image as File } from "@/types"
 import { useState } from "react"
 import { RenameFileModal } from "./RenameFileModal"
-import { cn } from "@/lib/utils"
+import { cn, mediaUrl } from "@/lib/utils"
 import { formatDistanceToNow } from "date-fns"
 import { Card, CardContent } from "./ui/card"
 import { MoreVertical } from "lucide-react"
@@ -54,31 +54,12 @@ export function FileCard({
 	const formattedDate = formatDistanceToNow(fileCreatedAt, { addSuffix: true })
 	const [imageError, setImageError] = useState(false)
 	const URI = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001"
-	// Get the URL from the latest version or fallback
 	const getImageUrl = () => {
-		console.log("FileCard: Generating URL for file:", file)
-
-		// Try to get the URL from latestVersion (used in project view)
-		if (file.latestVersion?.url) {
-			const url = `${URI}/${file.latestVersion.url}`
-			console.log("FileCard: Using latestVersion URL:", url)
-			return url
-		}
-		// Try to get the URL from the first version in the versions array
-		if (file.versions && file.versions.length > 0 && file.versions[0]?.url) {
-			const url = `${URI}/${file.versions[0].url}`
-			console.log("FileCard: Using versions[0] URL:", url)
-			return url
-		}
-		// Fallback for backward compatibility with legacy images
-		if ("url" in file && file.url) {
-			const url = `${URI}/${file.url}`
-			console.log("FileCard: Using legacy URL:", url)
-			return url
-		}
-		// No image URL available - return a placeholder image instead of null
-		console.log("FileCard: No valid URL found, using placeholder")
-		return "/placeholder-image.svg"
+		const url =
+			file.latestVersion?.url ??
+			file.versions?.[0]?.url ??
+			(file as unknown as { url?: string }).url
+		return url ? mediaUrl(url) : "/placeholder-image.svg"
 	}
 
 	const imageUrl = getImageUrl()
@@ -153,8 +134,8 @@ export function FileCard({
 							size="icon"
 							className="h-8 w-8 text-muted-foreground hover:text-primary"
 						>
-							<Link href={`/project/${projectId}/image/${file.id}`}>
-								<ExternalLink className="h-4 w-4" />
+							<Link href={`/project/${projectId}/image/${file.id}`} aria-label={`Open ${file.name}`}>
+								<ExternalLink className="h-4 w-4" aria-hidden="true" />
 							</Link>
 						</Button>
 						<DropdownMenu>
@@ -163,8 +144,9 @@ export function FileCard({
 									variant="ghost"
 									size="icon"
 									className="h-8 w-8 text-muted-foreground hover:text-primary"
+									aria-label={`Actions for ${file.name}`}
 								>
-									<MoreHorizontal className="h-4 w-4" />
+									<MoreHorizontal className="h-4 w-4" aria-hidden="true" />
 								</Button>
 							</DropdownMenuTrigger>
 							<DropdownMenuContent align="end" className="w-52">
@@ -261,8 +243,9 @@ export function FileCard({
 									variant="ghost"
 									size="icon"
 									className="h-8 w-8 text-muted-foreground hover:text-foreground"
+									aria-label={`Actions for ${file.name}`}
 								>
-									<MoreVertical className="h-4 w-4" />
+									<MoreVertical className="h-4 w-4" aria-hidden="true" />
 								</Button>
 							</DropdownMenuTrigger>
 							<DropdownMenuContent align="end">

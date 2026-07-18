@@ -4,9 +4,11 @@ export interface User {
 	email: string
 }
 
+export type ProjectRole = "OWNER" | "EDITOR" | "MEMBER" | "VIEWER"
+
 export interface ProjectMember {
 	user: User
-	role: "OWNER" | "MEMBER"
+	role: ProjectRole
 }
 
 export interface Point {
