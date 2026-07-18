@@ -16,7 +16,10 @@ router.delete("/:id", imageController.deleteImage)
 router.get("/versions/:versionId", imageController.getImageVersion)
 router.post(
 	"/:imageId/versions",
-	upload.single("image"),
+	upload.fields([
+		{ name: "image", maxCount: 1 },
+		{ name: "thumbnail", maxCount: 1 },
+	]),
 	imageController.uploadImageVersion
 )
 router.put("/versions/:versionId", imageController.updateImageVersion)
@@ -40,7 +43,10 @@ projectImagesRouter.use(authenticateJWT)
 
 projectImagesRouter.post(
 	"/",
-	upload.array("images", 10),
+	upload.fields([
+		{ name: "images", maxCount: 10 },
+		{ name: "thumbnails", maxCount: 10 },
+	]),
 	imageController.uploadImage
 )
 projectImagesRouter.get("/", imageController.getProjectImages)

@@ -1,8 +1,10 @@
 import { AuthenticatedUser } from "../../types"
 import { Request, Response } from "express"
+import fs from "fs"
 import * as imageService from "./images.service"
 import { CommentsService } from "../comments/comments.service"
 import { detectMediaType } from "../../middleware/upload.middleware"
+import { parseFilesMeta } from "./upload-meta"
 import { storage } from "../../storage"
 import { AppError } from "../../lib/errors"
 import { recordAudit, requestIp } from "../audit/audit.service"
@@ -118,6 +120,16 @@ const withLatestVersion = (
 	latestVersion: image.versions[0] ?? null,
 })
 
+type UploadFields = Record<string, Express.Multer.File[] | undefined>
+
+const discardStagedFiles = async (
+	files: Express.Multer.File[]
+): Promise<void> => {
+	await Promise.all(
+		files.map((file) => fs.promises.unlink(file.path).catch(() => undefined))
+	)
+}
+
 export const uploadImage = async (
 	req: Request,
 	res: Response
@@ -126,28 +138,62 @@ export const uploadImage = async (
 	const userId = await authorizeProject(req, res, projectId, "EDITOR")
 	if (!userId) return
 
-	const files = req.files as Express.Multer.File[]
-	if (!files || files.length === 0) {
+	const fields = (req.files ?? {}) as UploadFields
+	const files = fields.images ?? []
+	const thumbnails = fields.thumbnails ?? []
+	if (files.length === 0) {
+		await discardStagedFiles(thumbnails)
 		res.status(400).send("No files uploaded.")
 		return
+	}
+
+	let metas
+	try {
+		metas = parseFilesMeta(
+			req.body.filesMeta,
+			files.length,
+			thumbnails.length,
+			req.body.duration ? Number(req.body.duration) : null
+		)
+	} catch (error) {
+		await discardStagedFiles([...files, ...thumbnails])
+		if (error instanceof AppError) {
+			res.status(error.statusCode).json({ message: error.message })
+			return
+		}
+		throw error
 	}
 
 	const storedUrls: string[] = []
 	try {
 		const imagePayloads = []
-		for (const file of files) {
+		let thumbnailIndex = 0
+		for (const [index, file] of files.entries()) {
 			const url = await storage.store({
 				path: file.path,
 				originalName: file.originalname,
 				mimeType: file.mimetype,
 			})
 			storedUrls.push(url)
+
+			let thumbnailUrl: string | null = null
+			if (metas[index].hasThumbnail) {
+				const thumbnail = thumbnails[thumbnailIndex++]
+				thumbnailUrl = await storage.store({
+					path: thumbnail.path,
+					originalName: thumbnail.originalname,
+					mimeType: thumbnail.mimetype,
+				})
+				storedUrls.push(thumbnailUrl)
+			}
+
 			imagePayloads.push({
 				url,
 				name: file.originalname,
 				projectId,
 				mediaType: detectMediaType(file.mimetype),
-				duration: req.body.duration ? Number(req.body.duration) : null,
+				duration: metas[index].duration,
+				thumbnailUrl,
 			})
 		}
 
@@ -229,26 +275,40 @@ export const uploadImageVersion = async (
 	const userId = await authorizeImage(req, res, imageId, "EDITOR")
 	if (!userId) return
 
-	const file = req.file as Express.Multer.File
+	const fields = (req.files ?? {}) as UploadFields
+	const file = fields.image?.[0]
+	const thumbnail = fields.thumbnail?.[0]
 	if (!file) {
+		if (thumbnail) await discardStagedFiles([thumbnail])
 		res.status(400).send("No file uploaded.")
 		return
 	}
 
+	const storedUrls: string[] = []
 	try {
 		const url = await storage.store({
 			path: file.path,
 			originalName: file.originalname,
 			mimeType: file.mimetype,
 		})
+		storedUrls.push(url)
 
-		await imageService.addImageVersion(
-			imageId,
-			url,
-			req.body.versionName,
-			detectMediaType(file.mimetype),
-			req.body.duration ? Number(req.body.duration) : null
-		)
+		let thumbnailUrl: string | null = null
+		if (thumbnail) {
+			thumbnailUrl = await storage.store({
+				path: thumbnail.path,
+				originalName: thumbnail.originalname,
+				mimeType: thumbnail.mimetype,
+			})
+			storedUrls.push(thumbnailUrl)
+		}
+
+		await imageService.addImageVersion(imageId, url, {
+			versionName: req.body.versionName,
+			mediaType: detectMediaType(file.mimetype),
+			duration: req.body.duration ? Number(req.body.duration) : null,
+			thumbnailUrl,
+		})
 
 		await recordAudit({
 			action: "media.version_uploaded",
@@ -266,6 +326,7 @@ export const uploadImageVersion = async (
 		}
 		res.status(201).json(withLatestVersion(image))
 	} catch (error) {
+		await Promise.all(storedUrls.map((url) => storage.remove(url)))
 		res.status(500).json({ message: "Error uploading image version", error })
 	}
 }
@@ -371,7 +432,15 @@ export const addComment = async (
 		const userId = await authorizeVersion(req, res, imageVersionId, "MEMBER")
 		if (!userId) return
 
-		const { content, parentId, annotation, timestamp } = req.body
+		const {
+			content,
+			parentId,
+			annotation,
+			timestamp,
+			timestampEnd,
+			page,
+			modelAnchor,
+		} = req.body
 
 		const comment = await CommentsService.createComment({
 			content,
@@ -380,10 +449,17 @@ export const addComment = async (
 			parentId: parentId || null,
 			annotation: annotation || null,
 			timestamp: typeof timestamp === "number" ? timestamp : null,
+			timestampEnd: typeof timestampEnd === "number" ? timestampEnd : null,
+			page: typeof page === "number" ? page : null,
+			modelAnchor: modelAnchor ?? null,
 		})
 		res.status(201).json(comment)
 	} catch (error) {
-		res.status(500).json({ message: "Error adding comment", error })
+		if (error instanceof AppError) {
+			res.status(error.statusCode).json({ message: error.message })
+		} else {
+			res.status(500).json({ message: "Error adding comment", error })
+		}
 	}
 }
 

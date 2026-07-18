@@ -19,6 +19,21 @@ import {
 	AlertCircle,
 } from "lucide-react"
 import { Progress } from "@/components/ui/progress"
+import {
+	captureThumbnail,
+	getVideoDuration,
+	prepareUploadFile,
+} from "@/lib/media-capture"
+
+const ACCEPTED_TYPES =
+	"image/*,video/mp4,video/webm,video/quicktime,application/pdf,.glb,model/gltf-binary"
+
+const isAcceptedFile = (file: File) =>
+	file.type.startsWith("image/") ||
+	["video/mp4", "video/webm", "video/quicktime", "application/pdf"].includes(
+		file.type
+	) ||
+	file.name.toLowerCase().endsWith(".glb")
 
 interface ImageUploadModalProps {
 	projectId: string | null
@@ -43,13 +58,12 @@ export function ImageUploadModal({
 	const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
 		if (e.target.files) {
 			const selectedFiles = Array.from(e.target.files)
-			// Check file types
-			const validFiles = selectedFiles.filter(
-				(file) => file.type.startsWith("image/") || file.type === "video/mp4"
-			)
+			const validFiles = selectedFiles.filter(isAcceptedFile)
 
 			if (validFiles.length !== selectedFiles.length) {
-				setError("Only image and MP4 video files are allowed.")
+				setError(
+					"Only image, video (MP4, WebM, MOV), PDF and GLB 3D model files are allowed."
+				)
 			} else {
 				setError("")
 			}
@@ -105,8 +119,16 @@ export function ImageUploadModal({
 			// If imageId is provided, we're uploading a new version
 			if (imageId && files.length > 0) {
 				// Make sure we have a file to upload
-				const fileToUpload = files[0]
+				const fileToUpload = prepareUploadFile(files[0])
 				formData.append("image", fileToUpload)
+				if (fileToUpload.type.startsWith("video/")) {
+					const duration = await getVideoDuration(fileToUpload)
+					if (duration != null) formData.append("duration", String(duration))
+				}
+				const thumbnail = await captureThumbnail(fileToUpload)
+				if (thumbnail) {
+					formData.append("thumbnail", thumbnail, "thumbnail.jpg")
+				}
 
 				res = await fetch(`${URI}/api/images/${imageId}/versions`, {
 					method: "POST",
@@ -114,10 +136,24 @@ export function ImageUploadModal({
 					credentials: "include",
 				})
 			} else {
-				// Otherwise, we're uploading new images
-				files.forEach((file) => {
+				// Otherwise, we're uploading new images. Each entry in filesMeta
+				// mirrors the images order; flagged entries consume the thumbnails
+				// field in order (see the API's parseFilesMeta).
+				const filesMeta: { duration: number | null; hasThumbnail: boolean }[] =
+					[]
+				for (const selected of files) {
+					const file = prepareUploadFile(selected)
 					formData.append("images", file)
-				})
+					const duration = file.type.startsWith("video/")
+						? await getVideoDuration(file)
+						: null
+					const thumbnail = await captureThumbnail(file)
+					if (thumbnail) {
+						formData.append("thumbnails", thumbnail, "thumbnail.jpg")
+					}
+					filesMeta.push({ duration, hasThumbnail: !!thumbnail })
+				}
+				formData.append("filesMeta", JSON.stringify(filesMeta))
 
 				res = await fetch(`${URI}/api/projects/${projectId}/images`, {
 					method: "POST",
@@ -149,7 +185,7 @@ export function ImageUploadModal({
 	const title = isVersionUpload ? "Upload New Version" : "Upload Files"
 	const description = isVersionUpload
 		? "Add a new version to your image."
-		: "Add images or videos to your project."
+		: "Add images, videos, PDFs or 3D models to your project."
 
 	return (
 		<Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
@@ -190,7 +226,8 @@ export function ImageUploadModal({
 										drag and drop
 									</p>
 									<p className="text-xs text-muted-foreground">
-										Images (JPG, PNG, SVG)
+										Images (JPG, PNG, WebP), videos (MP4, WebM, MOV), PDFs or
+										3D models (GLB)
 									</p>
 									{isVersionUpload && (
 										<p className="text-xs text-muted-foreground mt-1">
@@ -204,7 +241,7 @@ export function ImageUploadModal({
 									multiple={!isVersionUpload}
 									className="hidden"
 									onChange={handleFileChange}
-									accept="image/*,video/mp4"
+									accept={ACCEPTED_TYPES}
 								/>
 							</label>
 						</div>

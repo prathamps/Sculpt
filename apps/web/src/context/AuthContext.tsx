@@ -41,11 +41,6 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 			try {
 				const res = await fetch(`${URI}/api/users/profile`, {
 					credentials: "include",
-
-					headers: {
-						"Content-Type": "application/json",
-						"Access-Control-Allow-Origin": "*",
-					},
 				})
 				if (res.ok) {
 					const data = await res.json()

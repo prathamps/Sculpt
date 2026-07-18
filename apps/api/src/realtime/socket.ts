@@ -2,6 +2,14 @@ import http from "http"
 import { Server, Socket } from "socket.io"
 import { markOnline, markOffline } from "../lib/presence"
 import { isAllowedOrigin } from "../lib/cors"
+import { socketAuth, SocketUser } from "./socketAuth"
+import {
+	addViewer,
+	updateViewer,
+	removeViewer,
+	getViewers,
+} from "./viewerPresence"
+import { canViewVersion } from "../modules/projects/access"
 
 export const io = new Server({
 	cors: {
@@ -20,17 +28,48 @@ export const io = new Server({
 	allowEIO3: true,
 })
 
+const socketUser = (socket: Socket): SocketUser | null =>
+	(socket.data.user as SocketUser | null) ?? null
+
+const presenceUser = (user: SocketUser) => ({
+	id: user.id,
+	name: user.name,
+	avatarUrl: user.avatarUrl,
+})
+
+const joinedVersions = (socket: Socket): Set<string> => {
+	if (!socket.data.joinedVersions) socket.data.joinedVersions = new Set()
+	return socket.data.joinedVersions as Set<string>
+}
+
+const leaveVersionRoom = (socket: Socket, imageVersionId: string): void => {
+	socket.leave(`imageVersion:${imageVersionId}`)
+	joinedVersions(socket).delete(imageVersionId)
+	removeViewer(imageVersionId, socket.id)
+	// io.to, not socket.to: a broadcast from an already-disconnected socket is
+	// dropped, which would leave ghost presence avatars on other viewers.
+	// The leaver is out of the room by now, so it never echoes back.
+	io.to(`imageVersion:${imageVersionId}`).emit("presence:leave", {
+		socketId: socket.id,
+		imageVersionId,
+	})
+}
+
 const registerHandlers = (socket: Socket) => {
 	socket.on("join", (userId: string) => {
-		if (!userId) return
-		socket.join(`user:${userId}`)
-		socket.data.userId = userId
-		markOnline(userId, socket.id).catch((e) =>
+		// A verified identity (from the JWT cookie, see socketAuth) always wins
+		// over the client-sent id; the raw id is only honored for legacy
+		// unauthenticated sockets, which never gain presence or room access.
+		const id = socketUser(socket)?.id ?? userId
+		if (!id) return
+		socket.join(`user:${id}`)
+		socket.data.userId = id
+		markOnline(id, socket.id).catch((e) =>
 			console.error("presence markOnline error", e)
 		)
 		socket.emit("connection_confirmed", {
 			message: "Successfully connected to notification service",
-			userId,
+			userId: id,
 		})
 	})
 
@@ -43,17 +82,62 @@ const registerHandlers = (socket: Socket) => {
 		})
 	})
 
-	socket.on("joinImageVersion", (imageVersionId: string) => {
-		if (!imageVersionId) return
+	socket.on("joinImageVersion", async (imageVersionId: string) => {
+		if (!imageVersionId || typeof imageVersionId !== "string") return
+		const user = socketUser(socket)
+		// Version rooms carry comment and playhead data, so joining requires the
+		// same project membership the HTTP API enforces for reading the version.
+		if (!user || !(await canViewVersion(user.id, imageVersionId))) {
+			socket.emit("image_version_join_denied", { imageVersionId })
+			return
+		}
 		socket.join(`imageVersion:${imageVersionId}`)
+		joinedVersions(socket).add(imageVersionId)
+		addViewer(imageVersionId, socket.id, presenceUser(user))
 		socket.emit("image_version_joined", {
 			imageVersionId,
 			message: `Successfully joined image version room ${imageVersionId}`,
 		})
+		socket.emit("presence:state", {
+			imageVersionId,
+			peers: getViewers(imageVersionId),
+		})
+		socket.to(`imageVersion:${imageVersionId}`).emit("presence:peer", {
+			socketId: socket.id,
+			imageVersionId,
+			user: presenceUser(user),
+			time: 0,
+		})
 	})
 
+	socket.on(
+		"presence:update",
+		(payload: { imageVersionId?: unknown; time?: unknown }) => {
+			const user = socketUser(socket)
+			const imageVersionId = payload?.imageVersionId
+			const time = payload?.time
+			if (
+				!user ||
+				typeof imageVersionId !== "string" ||
+				typeof time !== "number" ||
+				!Number.isFinite(time) ||
+				time < 0
+			) {
+				return
+			}
+			if (!socket.rooms.has(`imageVersion:${imageVersionId}`)) return
+			updateViewer(imageVersionId, socket.id, time)
+			socket.volatile.to(`imageVersion:${imageVersionId}`).emit("presence:peer", {
+				socketId: socket.id,
+				imageVersionId,
+				user: presenceUser(user),
+				time,
+			})
+		}
+	)
+
 	socket.on("leaveImageVersion", (imageVersionId: string) => {
-		if (imageVersionId) socket.leave(`imageVersion:${imageVersionId}`)
+		if (imageVersionId) leaveVersionRoom(socket, imageVersionId)
 	})
 
 	socket.on("error", (error) => {
@@ -61,6 +145,9 @@ const registerHandlers = (socket: Socket) => {
 	})
 
 	socket.on("disconnect", () => {
+		for (const imageVersionId of Array.from(joinedVersions(socket))) {
+			leaveVersionRoom(socket, imageVersionId)
+		}
 		const userId = socket.data.userId as string | undefined
 		if (userId) {
 			markOffline(userId, socket.id).catch((e) =>
@@ -71,6 +158,7 @@ const registerHandlers = (socket: Socket) => {
 }
 
 export const attachRealtime = (server: http.Server): void => {
+	io.use(socketAuth)
 	io.on("connection", registerHandlers)
 	io.attach(server)
 }

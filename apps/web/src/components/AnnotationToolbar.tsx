@@ -1,6 +1,6 @@
 "use client"
 
-import { Pencil, Minus, Square } from "lucide-react"
+import { Pencil, Minus, Square, LucideIcon } from "lucide-react"
 import { cn } from "@/lib/utils"
 import {
 	DropdownMenu,
@@ -31,7 +31,7 @@ export function AnnotationToolbar({
 }: AnnotationToolbarProps) {
 	const tools: {
 		name: AnnotationTool
-		icon: React.ElementType
+		icon: LucideIcon
 		label: string
 	}[] = [
 		{ name: "pencil", icon: Pencil, label: "Pencil Tool" },

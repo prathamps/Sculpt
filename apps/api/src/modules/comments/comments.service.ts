@@ -4,7 +4,7 @@ import { Comment, CommentLike, User } from "@prisma/client"
 
 import { io } from "../../realtime/socket"
 import { NotificationService } from "../notifications/notification.service"
-import { ForbiddenError, NotFoundError } from "../../lib/errors"
+import { ForbiddenError, NotFoundError, ValidationError } from "../../lib/errors"
 
 type CommentWithLikesAndUser = Comment & {
 	likes: CommentLike[]
@@ -14,7 +14,132 @@ type CommentWithLikesAndUser = Comment & {
 	replies?: CommentWithLikesAndUser[]
 }
 
+type Vec3 = [number, number, number]
+
+type ModelAnchor = {
+	position: Vec3
+	normal?: Vec3
+	camera?: { position: Vec3; target: Vec3 }
+}
+
+const asVec3 = (value: unknown): Vec3 | null =>
+	Array.isArray(value) &&
+	value.length === 3 &&
+	value.every((n) => typeof n === "number" && Number.isFinite(n))
+		? (value as Vec3)
+		: null
+
 export class CommentsService {
+	// Rebuilt from validated fields so unvalidated client JSON never reaches
+	// the database.
+	private static parseModelAnchor(value: unknown): ModelAnchor {
+		if (typeof value !== "object" || value === null || Array.isArray(value)) {
+			throw new ValidationError("modelAnchor must be an object")
+		}
+		const raw = value as Record<string, unknown>
+		const position = asVec3(raw.position)
+		if (!position) {
+			throw new ValidationError(
+				"modelAnchor.position must be an [x, y, z] array of finite numbers"
+			)
+		}
+		const anchor: ModelAnchor = { position }
+		if (raw.normal !== undefined && raw.normal !== null) {
+			const normal = asVec3(raw.normal)
+			if (!normal) {
+				throw new ValidationError(
+					"modelAnchor.normal must be an [x, y, z] array of finite numbers"
+				)
+			}
+			anchor.normal = normal
+		}
+		if (raw.camera !== undefined && raw.camera !== null) {
+			const camera = raw.camera as Record<string, unknown>
+			const cameraPosition = asVec3(camera?.position)
+			const target = asVec3(camera?.target)
+			if (!cameraPosition || !target) {
+				throw new ValidationError(
+					"modelAnchor.camera must have position and target [x, y, z] arrays"
+				)
+			}
+			anchor.camera = { position: cameraPosition, target }
+		}
+		return anchor
+	}
+
+	// Anchors are media-type dependent: timestamps only make sense on videos,
+	// page only on PDFs, modelAnchor only on 3D models. Out-of-range timestamps
+	// are clamped rather than rejected because client-measured playhead floats
+	// can exceed the stored duration by rounding, and duration is nullable.
+	private static async validateAnchors(
+		imageVersionId: string,
+		timestamp: number | null,
+		timestampEnd: number | null,
+		page: number | null,
+		modelAnchor: unknown
+	): Promise<{
+		timestamp: number | null
+		timestampEnd: number | null
+		page: number | null
+		modelAnchor: ModelAnchor | null
+	}> {
+		const version = await prisma.imageVersion.findUnique({
+			where: { id: imageVersionId },
+			select: { mediaType: true, duration: true },
+		})
+		if (!version) throw new NotFoundError("Image version not found")
+
+		if (version.mediaType !== "VIDEO") {
+			timestamp = null
+			timestampEnd = null
+		}
+		if (version.mediaType !== "PDF") {
+			page = null
+		}
+		if (version.mediaType !== "MODEL") {
+			modelAnchor = null
+		}
+
+		if (timestamp !== null && (!Number.isFinite(timestamp) || timestamp < 0)) {
+			throw new ValidationError("timestamp must be a non-negative number")
+		}
+		if (timestampEnd !== null) {
+			if (!Number.isFinite(timestampEnd) || timestampEnd < 0) {
+				throw new ValidationError(
+					"timestampEnd must be a non-negative number"
+				)
+			}
+			if (timestamp === null) {
+				throw new ValidationError("timestampEnd requires a timestamp")
+			}
+			if (timestampEnd < timestamp) {
+				throw new ValidationError(
+					"timestampEnd must not be before timestamp"
+				)
+			}
+		}
+		if (version.duration !== null) {
+			if (timestamp !== null) timestamp = Math.min(timestamp, version.duration)
+			if (timestampEnd !== null) {
+				timestampEnd = Math.min(timestampEnd, version.duration)
+			}
+		}
+
+		if (page !== null && (!Number.isInteger(page) || page < 1)) {
+			throw new ValidationError("page must be a positive integer")
+		}
+
+		return {
+			timestamp,
+			timestampEnd,
+			page,
+			modelAnchor:
+				modelAnchor === null || modelAnchor === undefined
+					? null
+					: this.parseModelAnchor(modelAnchor),
+		}
+	}
+
 	// Create a new comment
 	static async createComment(data: {
 		content: string
@@ -23,74 +148,54 @@ export class CommentsService {
 		parentId?: string | null
 		annotation?: JsonValue | null
 		timestamp?: number | null
+		timestampEnd?: number | null
+		page?: number | null
+		modelAnchor?: unknown
 	}): Promise<Comment> {
-		try {
-			console.log("=== COMMENT CREATION STARTED ===")
-			console.log("Data received:", {
+		const anchors = await this.validateAnchors(
+			data.imageVersionId,
+			data.timestamp ?? null,
+			data.timestampEnd ?? null,
+			data.page ?? null,
+			data.modelAnchor ?? null
+		)
+
+		const comment = await prisma.comment.create({
+			data: {
 				content: data.content,
 				imageVersionId: data.imageVersionId,
 				userId: data.userId,
-				parentId: data.parentId,
-				hasAnnotation: !!data.annotation,
-			})
+				parentId: data.parentId || null,
+				annotation: data.annotation,
+				timestamp: anchors.timestamp,
+				timestampEnd: anchors.timestampEnd,
+				page: anchors.page,
+				modelAnchor: anchors.modelAnchor ?? undefined,
+			},
+			include: {
+				user: true,
+				likes: true,
+			},
+		})
 
-			const comment = await prisma.comment.create({
-				data: {
-					content: data.content,
-					imageVersionId: data.imageVersionId,
-					userId: data.userId,
-					parentId: data.parentId || null,
-					annotation: data.annotation,
-					timestamp: data.timestamp ?? null,
-				},
-				include: {
-					user: true,
-					likes: true,
-				},
-			})
-
-			console.log(
-				`Created new comment: ${comment.id} for image version: ${data.imageVersionId}`
-			)
-
-			// Prepare comment data for real-time updates with like info
-			const commentWithExtras = {
-				...comment,
-				likeCount: 0,
-				isLikedByCurrentUser: false,
-			}
-
-			// Send real-time update via Socket.io
-			try {
-				console.log(
-					`Emitting new-comment event to imageVersion:${data.imageVersionId}`
-				)
-				console.log("Active rooms:", io.sockets.adapter.rooms)
-				console.log("Target room:", `imageVersion:${data.imageVersionId}`)
-				console.log(
-					"Comment data being sent:",
-					JSON.stringify(commentWithExtras, null, 2)
-				)
-
-				io.to(`imageVersion:${data.imageVersionId}`).emit(
-					"new-comment",
-					commentWithExtras
-				)
-
-				console.log("Event emitted successfully")
-			} catch (socketError) {
-				console.error(`Socket error when emitting new comment: ${socketError}`)
-			}
-
-			// Create notifications for relevant users
-			await this.handleCommentNotifications(comment, data.userId)
-
-			console.log("=== COMMENT CREATION COMPLETED ===")
-			return comment
-		} catch (error) {
-			console.error("Error creating comment:", error)
-			throw error
+		const commentWithExtras = {
+			...comment,
+			likeCount: 0,
+			isLikedByCurrentUser: false,
 		}
+
+		try {
+			io.to(`imageVersion:${data.imageVersionId}`).emit(
+				"new-comment",
+				commentWithExtras
+			)
+		} catch (socketError) {
+			console.error(`Socket error when emitting new comment: ${socketError}`)
+		}
+
+		await this.handleCommentNotifications(comment, data.userId)
+
+		return comment
 	}
 
 	// Get comments for an image version

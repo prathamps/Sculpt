@@ -2,17 +2,16 @@
 
 import Link from "next/link"
 import {
-	
 	PencilIcon,
-	
 	Trash2Icon,
 	MoreHorizontal,
 	ImageIcon,
 	PlayIcon,
-	
 	Clock,
 	ExternalLink,
 	FileIcon,
+	FileTextIcon,
+	BoxIcon,
 } from "lucide-react"
 import {
 	DropdownMenu,
@@ -21,7 +20,7 @@ import {
 	DropdownMenuSeparator,
 	DropdownMenuTrigger,
 } from "./ui/dropdown-menu"
-import { Image as File } from "@/types"
+import { Image as File, MediaType } from "@/types"
 import { useState } from "react"
 import { RenameFileModal } from "./RenameFileModal"
 import { cn, mediaUrl } from "@/lib/utils"
@@ -36,8 +35,116 @@ interface FileCardProps {
 	projectId: string
 	onProjectChanged: () => void
 	viewMode?: "grid" | "list"
+	linkTabIndex?: number
 	onRename?: (file: File) => void
 	onDelete?: (file: File) => void
+}
+
+interface ThumbnailProps {
+	file: File
+	mediaType: MediaType
+	iconSize: string
+	overlayIconSize: string
+	zoomOnHover?: boolean
+}
+
+function CardThumbnail({
+	file,
+	mediaType,
+	iconSize,
+	overlayIconSize,
+	zoomOnHover = false,
+}: ThumbnailProps) {
+	const [imageError, setImageError] = useState(false)
+	const fileUrl =
+		file.latestVersion?.url ??
+		file.versions?.[0]?.url ??
+		(file as unknown as { url?: string }).url
+	const thumbnailUrl = file.latestVersion?.thumbnailUrl
+
+	if (!fileUrl) {
+		return (
+			<div className="flex h-full w-full items-center justify-center">
+				<FileIcon className={cn(iconSize, "text-muted-foreground")} aria-hidden="true" />
+			</div>
+		)
+	}
+
+	if (mediaType === "VIDEO") {
+		return (
+			<div className="relative h-full w-full">
+				{thumbnailUrl && !imageError ? (
+					<img
+						src={mediaUrl(thumbnailUrl)}
+						alt={file.name}
+						className="h-full w-full object-cover"
+						onError={() => setImageError(true)}
+					/>
+				) : (
+					// Legacy videos have no stored poster; let the browser paint the
+					// first frame from metadata instead.
+					<video
+						src={mediaUrl(fileUrl)}
+						preload="metadata"
+						muted
+						playsInline
+						aria-hidden="true"
+						tabIndex={-1}
+						className="pointer-events-none h-full w-full object-cover"
+					/>
+				)}
+				<div className="absolute inset-0 flex items-center justify-center bg-black/40">
+					<PlayIcon className={cn(overlayIconSize, "text-white")} aria-hidden="true" />
+				</div>
+			</div>
+		)
+	}
+
+	if (mediaType === "MODEL") {
+		return (
+			<div className="flex h-full w-full flex-col items-center justify-center gap-1">
+				<BoxIcon className={cn(iconSize, "text-muted-foreground")} aria-hidden="true" />
+				<span className="text-[10px] font-medium text-muted-foreground">3D</span>
+			</div>
+		)
+	}
+
+	if (mediaType === "PDF") {
+		if (thumbnailUrl && !imageError) {
+			return (
+				<div className="relative h-full w-full">
+					<img
+						src={mediaUrl(thumbnailUrl)}
+						alt={file.name}
+						className="h-full w-full object-cover"
+						onError={() => setImageError(true)}
+					/>
+					<span className="absolute bottom-1.5 right-1.5 flex items-center gap-1 rounded bg-black/60 px-1.5 py-0.5 text-[10px] font-medium text-white">
+						<FileTextIcon className="h-3 w-3" aria-hidden="true" />
+						PDF
+					</span>
+				</div>
+			)
+		}
+		return (
+			<div className="flex h-full w-full flex-col items-center justify-center gap-1">
+				<FileTextIcon className={cn(iconSize, "text-muted-foreground")} aria-hidden="true" />
+				<span className="text-[10px] font-medium text-muted-foreground">PDF</span>
+			</div>
+		)
+	}
+
+	return (
+		<img
+			src={imageError ? "/placeholder-image.svg" : mediaUrl(fileUrl)}
+			alt={file.name}
+			className={cn(
+				"h-full w-full object-cover",
+				zoomOnHover && "transition-transform duration-200 group-hover:scale-105"
+			)}
+			onError={() => setImageError(true)}
+		/>
+	)
 }
 
 export function FileCard({
@@ -45,25 +152,14 @@ export function FileCard({
 	projectId,
 	onProjectChanged,
 	viewMode = "grid",
-	
-	
+	linkTabIndex,
 }: FileCardProps) {
 	const [isRenameModalOpen, setRenameModalOpen] = useState(false)
-	const isVideo = file.name.toLowerCase().endsWith(".mp4")
+	const mediaType: MediaType = file.latestVersion?.mediaType ?? "IMAGE"
 	const fileCreatedAt = new Date(file.createdAt)
 	const formattedDate = formatDistanceToNow(fileCreatedAt, { addSuffix: true })
-	const [imageError, setImageError] = useState(false)
 	const URI = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001"
-	const getImageUrl = () => {
-		const url =
-			file.latestVersion?.url ??
-			file.versions?.[0]?.url ??
-			(file as unknown as { url?: string }).url
-		return url ? mediaUrl(url) : "/placeholder-image.svg"
-	}
 
-	const imageUrl = getImageUrl()
-	const placeholderUrl = "/placeholder-image.svg"
 	const handleDelete = async () => {
 		try {
 			const res = await fetch(`${URI}/api/images/${file.id}`, {
@@ -86,32 +182,12 @@ export function FileCard({
 				<div className="group flex items-center justify-between rounded-md border border-border/40 bg-card p-3 hover:border-primary/40 transition-all">
 					<div className="flex items-center gap-3 flex-1 min-w-0">
 						<div className="relative h-12 w-12 shrink-0 overflow-hidden rounded-md bg-muted/50">
-							{imageUrl ? (
-								isVideo ? (
-									<div className="relative h-full w-full">
-										<img
-											src={imageError ? placeholderUrl : imageUrl}
-											alt={file.name}
-											className="h-full w-full object-cover"
-											onError={() => setImageError(true)}
-										/>
-										<div className="absolute inset-0 flex items-center justify-center bg-black/40">
-											<PlayIcon className="h-4 w-4 text-white" />
-										</div>
-									</div>
-								) : (
-									<img
-										src={imageError ? placeholderUrl : imageUrl}
-										alt={file.name}
-										className="h-full w-full object-cover"
-										onError={() => setImageError(true)}
-									/>
-								)
-							) : (
-								<div className="flex h-full w-full items-center justify-center">
-									<FileIcon className="h-6 w-6 text-muted-foreground" />
-								</div>
-							)}
+							<CardThumbnail
+								file={file}
+								mediaType={mediaType}
+								iconSize="h-6 w-6"
+								overlayIconSize="h-4 w-4"
+							/>
 						</div>
 						<div className="flex flex-col min-w-0">
 							<h3 className="font-medium truncate pr-2" title={file.name}>
@@ -134,7 +210,11 @@ export function FileCard({
 							size="icon"
 							className="h-8 w-8 text-muted-foreground hover:text-primary"
 						>
-							<Link href={`/project/${projectId}/image/${file.id}`} aria-label={`Open ${file.name}`}>
+							<Link
+								href={`/project/${projectId}/image/${file.id}`}
+								aria-label={`Open ${file.name}`}
+								tabIndex={linkTabIndex}
+							>
 								<ExternalLink className="h-4 w-4" aria-hidden="true" />
 							</Link>
 						</Button>
@@ -188,45 +268,29 @@ export function FileCard({
 	return (
 		<>
 			<Card className="group overflow-hidden bg-card hover:shadow-md">
-				<Link href={`/project/${projectId}/image/${file.id}`}>
-					<div
-						className={cn(
-							"relative overflow-hidden bg-muted",
-							isVideo ? "aspect-video" : "aspect-square"
-						)}
-					>
-						{imageUrl ? (
-							isVideo ? (
-								<div className="relative h-full w-full">
-									<img
-										src={imageError ? placeholderUrl : imageUrl}
-										alt={file.name}
-										className="h-full w-full object-cover"
-										onError={() => setImageError(true)}
-									/>
-									<div className="absolute inset-0 flex items-center justify-center bg-black/40">
-										<PlayIcon className="h-8 w-8 text-white" />
-									</div>
-								</div>
-							) : (
-								<img
-									src={imageError ? placeholderUrl : imageUrl}
-									alt={file.name}
-									className="h-full w-full object-cover transition-transform duration-200 group-hover:scale-105"
-									onError={() => setImageError(true)}
-								/>
-							)
-						) : (
-							<div className="flex h-full w-full items-center justify-center">
-								<FileIcon className="h-10 w-10 text-muted-foreground" />
-							</div>
-						)}
+				<Link
+					href={`/project/${projectId}/image/${file.id}`}
+					tabIndex={linkTabIndex}
+				>
+					{/* One shared aspect ratio keeps the grid rows even across mixed
+					    media; object-cover crops the source to fit. */}
+					<div className="relative aspect-video overflow-hidden bg-muted">
+						<CardThumbnail
+							file={file}
+							mediaType={mediaType}
+							iconSize="h-10 w-10"
+							overlayIconSize="h-8 w-8"
+							zoomOnHover={mediaType === "IMAGE"}
+						/>
 					</div>
 				</Link>
 				<CardContent className="p-4">
 					<div className="flex items-center justify-between">
 						<div className="truncate">
-							<Link href={`/project/${projectId}/image/${file.id}`}>
+							<Link
+								href={`/project/${projectId}/image/${file.id}`}
+								tabIndex={linkTabIndex}
+							>
 								<h3 className="truncate font-medium group-hover:text-primary">
 									{file.name}
 								</h3>
@@ -274,6 +338,3 @@ export function FileCard({
 		</>
 	)
 }
-
-// Button component for list view
-// We're now importing Button from ui components

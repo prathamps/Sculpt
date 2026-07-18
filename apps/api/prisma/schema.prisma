@@ -25,6 +25,8 @@ enum ProjectRole {
 enum MediaType {
   IMAGE
   VIDEO
+  PDF
+  MODEL
 }
 
 model User {
@@ -103,6 +105,7 @@ model ImageVersion {
   versionNumber Int     @default(1)
   mediaType   MediaType @default(IMAGE)
   duration    Float? // video duration in seconds (null for images)
+  thumbnailUrl String? // poster frame for videos, first-page render for PDFs
   imageId     String
   image       Image     @relation(fields: [imageId], references: [id], onDelete: Cascade)
   annotations Json[]
@@ -124,6 +127,9 @@ model Comment {
   likes          CommentLike[]
   annotation     Json?         // Store annotation data as JSON
   timestamp      Float?        // seconds into a video this comment is anchored to (null for images)
+  timestampEnd   Float?        // range end for video comments; null = instant comment
+  page           Int?          // 1-based PDF page this comment is anchored to (null otherwise)
+  modelAnchor    Json?         // 3D pin for MODEL versions: { position, normal?, camera? } (null otherwise)
   resolved       Boolean       @default(false)
   createdAt      DateTime      @default(now())
   updatedAt      DateTime      @updatedAt

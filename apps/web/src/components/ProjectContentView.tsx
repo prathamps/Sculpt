@@ -3,7 +3,9 @@
 import { Button } from "./ui/button"
 import { FileCard } from "./FileCard"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
-import { Project } from "@/types"
+import { Project, Image, MediaType } from "@/types"
+import { useRouter } from "next/navigation"
+import { useRovingGrid } from "@/hooks/useRovingGrid"
 import {
 	PlusIcon,
 	FolderIcon,
@@ -39,14 +41,31 @@ interface ProjectContentViewProps {
 	onProjectChanged: () => void
 }
 
-type FileType = "image" | "video" | "all"
+type FileType = "image" | "video" | "pdf" | "all"
 type SortOption = "newest" | "oldest" | "a-z" | "z-a"
+
+const fileMediaType = (file: Image): MediaType =>
+	file.latestVersion?.mediaType ?? file.versions?.[0]?.mediaType ?? "IMAGE"
+
+const FILE_TYPE_LABELS: Record<FileType, string> = {
+	all: "All files",
+	image: "Images only",
+	video: "Videos only",
+	pdf: "PDFs only",
+}
+
+const MEDIA_FOR_FILTER: Record<Exclude<FileType, "all">, MediaType> = {
+	image: "IMAGE",
+	video: "VIDEO",
+	pdf: "PDF",
+}
 
 export function ProjectContentView({
 	project,
 	onUploadClick,
 	onProjectChanged,
 }: ProjectContentViewProps) {
+	const router = useRouter()
 	const [viewMode, setViewMode] = useState<"grid" | "list">("grid")
 	const [fileType, setFileType] = useState<FileType>("all")
 	const [sortBy, setSortBy] = useState<SortOption>("newest")
@@ -57,33 +76,15 @@ export function ProjectContentView({
 	const filteredAndSortedFiles = useMemo(() => {
 		if (!project) return []
 
-		// First filter by type
 		const filtered = project.images.filter((file) => {
-			// Filter by search query
 			if (
 				searchQuery &&
 				!file.name.toLowerCase().includes(searchQuery.toLowerCase())
 			) {
 				return false
 			}
-
-			// Filter by file type
 			if (fileType === "all") return true
-
-			// Get the file extension from the name or latestVersion
-			const fileUrl =
-				file.latestVersion?.url ||
-				(file.versions && file.versions.length > 0 && file.versions[0]?.url
-					? file.versions[0].url
-					: "")
-			const isVideoFile =
-				fileUrl.toLowerCase().endsWith(".mp4") ||
-				file.name.toLowerCase().endsWith(".mp4")
-
-			if (fileType === "image") return !isVideoFile
-			if (fileType === "video") return isVideoFile
-
-			return true
+			return fileMediaType(file) === MEDIA_FOR_FILTER[fileType]
 		})
 
 		// Then sort
@@ -108,38 +109,27 @@ export function ProjectContentView({
 	}, [project, fileType, sortBy, searchQuery])
 
 	const fileTypeCount = useMemo(() => {
-		if (!project) return { total: 0, images: 0, videos: 0 }
-
-		const images = project.images.filter((file) => {
-			const fileUrl =
-				file.latestVersion?.url ||
-				(file.versions && file.versions.length > 0 && file.versions[0]?.url
-					? file.versions[0].url
-					: "")
-			return (
-				!fileUrl.toLowerCase().endsWith(".mp4") &&
-				!file.name.toLowerCase().endsWith(".mp4")
-			)
-		}).length
-
-		const videos = project.images.filter((file) => {
-			const fileUrl =
-				file.latestVersion?.url ||
-				(file.versions && file.versions.length > 0 && file.versions[0]?.url
-					? file.versions[0].url
-					: "")
-			return (
-				fileUrl.toLowerCase().endsWith(".mp4") ||
-				file.name.toLowerCase().endsWith(".mp4")
-			)
-		}).length
-
-		return {
-			total: project.images.length,
-			images,
-			videos,
-		}
+		const counts = { total: 0, images: 0, videos: 0, pdfs: 0 }
+		if (!project) return counts
+		return project.images.reduce((acc, file) => {
+			acc.total++
+			const media = fileMediaType(file)
+			if (media === "VIDEO") acc.videos++
+			else if (media === "PDF") acc.pdfs++
+			else acc.images++
+			return acc
+		}, counts)
 	}, [project])
+
+	const { getItemProps } = useRovingGrid<HTMLDivElement>({
+		itemCount: filteredAndSortedFiles.length,
+		onActivate: (index) => {
+			const file = filteredAndSortedFiles[index]
+			if (file && project) {
+				router.push(`/project/${project.id}/image/${file.id}`)
+			}
+		},
+	})
 
 	if (!project) {
 		return (
@@ -279,13 +269,7 @@ export function ProjectContentView({
 									className="h-8 gap-1.5 px-3 hover:text-primary"
 								>
 									<FileImageIcon className="h-3.5 w-3.5" />
-									<span className="text-xs">
-										{fileType === "all"
-											? "All files"
-											: fileType === "image"
-											? "Images only"
-											: "Videos only"}
-									</span>
+									<span className="text-xs">{FILE_TYPE_LABELS[fileType]}</span>
 								</Button>
 							</DropdownMenuTrigger>
 							<DropdownMenuContent align="end" className="w-40">
@@ -313,6 +297,13 @@ export function ProjectContentView({
 									className="text-xs"
 								>
 									Videos only ({fileTypeCount.videos})
+								</DropdownMenuCheckboxItem>
+								<DropdownMenuCheckboxItem
+									checked={fileType === "pdf"}
+									onCheckedChange={() => setFileType("pdf")}
+									className="text-xs"
+								>
+									PDFs only ({fileTypeCount.pdfs})
 								</DropdownMenuCheckboxItem>
 							</DropdownMenuContent>
 						</DropdownMenu>
@@ -405,6 +396,8 @@ export function ProjectContentView({
 				<>
 					{filteredAndSortedFiles.length > 0 ? (
 						<div
+							role="list"
+							aria-label="Project files"
 							className={cn(
 								"grid gap-4",
 								viewMode === "grid"
@@ -412,14 +405,22 @@ export function ProjectContentView({
 									: "grid-cols-1"
 							)}
 						>
-							{filteredAndSortedFiles.map((image) => (
-								<FileCard
+							{filteredAndSortedFiles.map((image, index) => (
+								<div
 									key={image.id}
-									file={image}
-									projectId={project.id}
-									onProjectChanged={onProjectChanged}
-									viewMode={viewMode}
-								/>
+									role="listitem"
+									aria-label={image.name}
+									className="rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+									{...getItemProps(index)}
+								>
+									<FileCard
+										file={image}
+										projectId={project.id}
+										onProjectChanged={onProjectChanged}
+										viewMode={viewMode}
+										linkTabIndex={-1}
+									/>
+								</div>
 							))}
 						</div>
 					) : (
