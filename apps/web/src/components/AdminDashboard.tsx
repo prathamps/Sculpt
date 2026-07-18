@@ -70,7 +70,6 @@ export function AdminDashboard() {
 		return <div className="p-6">No data available</div>
 	}
 
-	// Format data for charts
 	const userChartData = stats.usersByDay.map((day) => ({
 		date: new Date(day.date).toLocaleDateString(),
 		users: day.count,

@@ -11,7 +11,7 @@ apps/api/src/
 ├── modules/
 │   ├── auth/            # register/login/logout, OAuth (passport), user profile routes
 │   ├── projects/        # projects, membership, share links
-│   ├── media/           # images/videos, versions, upload endpoints
+│   ├── media/           # images/videos/PDFs/3D models, versions, uploads, video pipeline
 │   ├── comments/        # threaded comments, likes, resolution
 │   ├── notifications/   # in-app notifications + email fallback for offline users
 │   ├── export/          # JSON/CSV report generation
@@ -34,6 +34,10 @@ Interfaces exist only at seams where implementations genuinely swap:
 - **Storage** (`src/storage/storage.ts`): `store(file)` / `remove(url)`. `LocalStorage` keeps files under `apps/api/uploads` (served at `/uploads`); `S3Storage` targets any S3-compatible store and returns absolute URLs. Selected at boot by the `S3_BUCKET` env var. Uploads are staged to disk by multer, then handed to the adapter.
 - **Email** (`modules/notifications/email.service.ts`): no-ops cleanly when SMTP is unconfigured.
 - **Presence** (`lib/presence.ts`): in-memory map is authoritative per instance, mirrored to Redis when available.
+
+### Video proxy pipeline
+
+Uploaded videos are transcoded in the background to a web-friendly H.264/AAC MP4 capped at 1080p (`modules/media/video-pipeline.ts`, ffmpeg via `ffmpeg-static`). The upload request copies the staged file aside, stores the original, marks the version `proxyStatus: PENDING` and returns immediately; an in-process queue transcodes, probes the real duration with ffprobe, generates a poster frame when the client didn't supply one, stores the results through the storage port and marks the version `READY` (or `FAILED` — the player falls back to the original file). Completion is pushed to viewers over the version's socket room as `version-updated`. Jobs left `PENDING` by a crashed process are marked `FAILED` at boot.
 
 ### Real-time
 
@@ -61,4 +65,6 @@ PostgreSQL via Prisma (`apps/api/prisma/schema.prisma`): `User` → `ProjectMemb
 
 ## Testing
 
-Vitest (`apps/api`, `npm test`). Tests target behavior that can actually regress: authorization rules (owner-only mutations, comment resolve ownership), storage adapters (URL derivation, delete guards), audit resilience and pagination, and CSV report escaping. Prisma and the socket server are mocked at module boundaries; the local storage adapter is tested against a real temp filesystem.
+Vitest (`apps/api` and `apps/web`, `npm test`). Tests target behavior that can actually regress: authorization rules (owner-only mutations, comment resolve ownership), comment anchor validation, the video pipeline's status transitions, storage adapters (URL derivation, delete guards), audit resilience and pagination, and CSV report escaping. Prisma, ffmpeg and the socket server are mocked at module boundaries; the local storage adapter is tested against a real temp filesystem.
+
+A browser smoke suite lives in `e2e/` (`npm run smoke` with both dev servers up): it logs in through the real UI, uploads every supported media type, opens each viewer, comments, places a 3D pin and waits for the video proxy to transcode — failing on unexpected console errors.

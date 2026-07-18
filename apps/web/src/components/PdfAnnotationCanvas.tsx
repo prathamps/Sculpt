@@ -44,10 +44,6 @@ interface PdfAnnotationCanvasProps {
 const MIN_ZOOM = 0.5
 const MAX_ZOOM = 3
 
-// PDF viewing surface with the same three-canvas structure as
-// AnnotationCanvas: rendered page, committed drawings, live preview. Drawing
-// coordinates are normalized 0-1 against the page box, so they are
-// zoom-independent and match the image/video annotation format.
 export function PdfAnnotationCanvas({
 	pdfUrl,
 	pageNumber,
@@ -79,7 +75,6 @@ export function PdfAnnotationCanvas({
 
 	useEffect(() => setPageInput(String(pageNumber)), [pageNumber])
 
-	// Load the document once per URL.
 	useEffect(() => {
 		let cancelled = false
 		let loadingTask: PDFDocumentLoadingTask | null = null
@@ -119,7 +114,6 @@ export function PdfAnnotationCanvas({
 		drawAnnotations(ctx, annotations, canvas.width, canvas.height)
 	}, [annotations])
 
-	// Render the current page whenever page/zoom/container size changes.
 	useEffect(() => {
 		if (!pdfDocument) return
 		let cancelled = false
@@ -203,8 +197,7 @@ export function PdfAnnotationCanvas({
 		else setPageInput(String(pageNumber))
 	}
 
-	// --- Drawing (normalized 0-1 coordinates) ---------------------------------
-	const getRelativePos = (clientX: number, clientY: number): Point | null => {
+	const getNormalizedPos = (clientX: number, clientY: number): Point | null => {
 		const canvas = previewCanvasRef.current
 		if (!canvas) return null
 		const rect = canvas.getBoundingClientRect()
@@ -215,7 +208,7 @@ export function PdfAnnotationCanvas({
 	}
 
 	const startDrawing = (clientX: number, clientY: number) => {
-		const pos = getRelativePos(clientX, clientY)
+		const pos = getNormalizedPos(clientX, clientY)
 		if (!pos) return
 		isDrawingRef.current = true
 		startPosRef.current = pos
@@ -224,7 +217,7 @@ export function PdfAnnotationCanvas({
 
 	const continueDrawing = (clientX: number, clientY: number) => {
 		if (!isDrawingRef.current) return
-		const pos = getRelativePos(clientX, clientY)
+		const pos = getNormalizedPos(clientX, clientY)
 		if (!pos) return
 		const canvas = previewCanvasRef.current
 		const ctx = canvas?.getContext("2d")
@@ -266,7 +259,7 @@ export function PdfAnnotationCanvas({
 	const finishDrawing = (clientX: number, clientY: number) => {
 		if (!isDrawingRef.current) return
 		isDrawingRef.current = false
-		const pos = getRelativePos(clientX, clientY)
+		const pos = getNormalizedPos(clientX, clientY)
 		const start = startPosRef.current
 		if (!pos || !start) return
 		const finalPoints =

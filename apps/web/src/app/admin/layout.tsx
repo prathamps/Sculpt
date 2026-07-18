@@ -29,7 +29,7 @@ export default function AdminLayout({
 	}
 
 	if (!isAdminAuthenticated) {
-		return null // Will be redirected by the useEffect
+		return null
 	}
 
 	return children

@@ -43,14 +43,12 @@ export const SocketProvider = ({ children }: SocketProviderProps) => {
 	const [isConnected, setIsConnected] = useState(false)
 	const currentImageVersionRef = useRef<string | null>(null)
 
-	// Create socket connection when user is authenticated
 	useEffect(() => {
 		let socketInstance: Socket | null = null
 
 		if (isAuthenticated && user && !socketRef.current) {
 			console.log("Creating new socket connection...")
 
-			// Create socket instance
 			socketInstance = io(SOCKET_URL, {
 				withCredentials: true,
 				reconnectionAttempts: 10,
@@ -60,25 +58,21 @@ export const SocketProvider = ({ children }: SocketProviderProps) => {
 				transports: ["websocket"],
 			})
 
-			// Set up event handlers
 			socketInstance.on("connect", () => {
 				console.log("Socket connected:", socketInstance?.id)
 				setIsConnected(true)
 
-				// Join user-specific room
 				socketInstance?.emit("join", user.id)
 				console.log(`Joined user room: ${user.id}`)
 
-				// Fetch projects and join project-specific rooms
 				if (socketInstance) {
 					fetchProjectsAndJoinRooms(socketInstance)
 				}
 			})
 
 			socketInstance.on("disconnect", (reason: string) => {
-				console.log("Socket disconnected:", reason)
+				console.log("Socket disconnected, keeping instance for auto-reconnect:", reason)
 				setIsConnected(false)
-				// Do NOT set socketRef.current to null here
 			})
 
 			socketInstance.on("connect_error", (error: Error) => {
@@ -86,11 +80,9 @@ export const SocketProvider = ({ children }: SocketProviderProps) => {
 				setIsConnected(false)
 			})
 
-			// Store socket in ref
 			socketRef.current = socketInstance
 		}
 
-		// Cleanup on unmount or when auth state changes
 		return () => {
 			if (socketRef.current) {
 				console.log("Cleaning up socket connection")
@@ -101,7 +93,6 @@ export const SocketProvider = ({ children }: SocketProviderProps) => {
 		}
 	}, [isAuthenticated, user])
 
-	// Fetch projects and join their rooms
 	const fetchProjectsAndJoinRooms = async (socketInstance: Socket) => {
 		try {
 			const response = await fetch(`${API_URL}/api/projects`, {
@@ -125,13 +116,10 @@ export const SocketProvider = ({ children }: SocketProviderProps) => {
 		}
 	}
 
-	// Function to join an image version room
 	const joinImageVersion = (imageVersionId: string) => {
 		if (!socketRef.current || !isConnected || !imageVersionId) return
 
-		// Only join if we're not already in this room
 		if (currentImageVersionRef.current !== imageVersionId) {
-			// Leave previous room if any
 			if (currentImageVersionRef.current) {
 				console.log(
 					`Leaving previous image version room: ${currentImageVersionRef.current}`
@@ -142,14 +130,12 @@ export const SocketProvider = ({ children }: SocketProviderProps) => {
 				)
 			}
 
-			// Join new room
 			console.log(`Joining image version room: ${imageVersionId}`)
 			socketRef.current.emit("joinImageVersion", imageVersionId)
 			currentImageVersionRef.current = imageVersionId
 		}
 	}
 
-	// Function to leave an image version room
 	const leaveImageVersion = (imageVersionId: string) => {
 		if (!socketRef.current || !isConnected) return
 
@@ -160,7 +146,6 @@ export const SocketProvider = ({ children }: SocketProviderProps) => {
 		}
 	}
 
-	// Create stable context value with useMemo
 	const contextValue = useMemo(
 		() => ({
 			socket: socketRef.current,

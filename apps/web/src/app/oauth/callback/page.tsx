@@ -6,23 +6,19 @@ import { Loader2 } from "lucide-react"
 import { useAuth } from "@/context/AuthContext"
 import { authToasts } from "@/lib/auth-toasts"
 
-// Landing page after a successful OAuth redirect. The API has already set the
-// auth cookie (failures are redirected straight to /login by the API), so we
-// refresh the user profile via login() — which redirects to the dashboard — and
-// keep a safety fallback in case session hydration stalls.
+const SESSION_HYDRATION_FALLBACK_MS = 2500
+
 export default function OAuthCallbackPage() {
-	const { login } = useAuth()
+	const { login: refreshProfileAndRedirectToDashboard } = useAuth()
 	const router = useRouter()
 
 	useEffect(() => {
 		authToasts.showLoginSuccess()
-		login() // fetches the profile and redirects to /dashboard on success
-		const fallback = setTimeout(() => {
-			// If login() couldn't establish a session, the dashboard guard sends
-			// the user back to /login; otherwise this is a no-op.
+		refreshProfileAndRedirectToDashboard()
+		const fallbackIfSessionHydrationStalls = setTimeout(() => {
 			router.replace("/dashboard")
-		}, 2500)
-		return () => clearTimeout(fallback)
+		}, SESSION_HYDRATION_FALLBACK_MS)
+		return () => clearTimeout(fallbackIfSessionHydrationStalls)
 		// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, [])
 

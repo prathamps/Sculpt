@@ -22,6 +22,10 @@ interface RenameFileModalProps {
 	onFileRenamed: () => void
 }
 
+function renameInPlaceToPreserveListPosition(file: File, newName: string) {
+	file.name = newName
+}
+
 export function RenameFileModal({
 	isOpen,
 	onClose,
@@ -49,7 +53,6 @@ export function RenameFileModal({
 			return
 		}
 
-		// Check if file name has changed
 		if (name === file.name) {
 			onClose()
 			return
@@ -71,14 +74,10 @@ export function RenameFileModal({
 				throw new Error(errorData?.message || "Failed to rename file.")
 			}
 
-			// Get updated file data
 			const updatedFile = await res.json()
 
-			// Update the file object in-place rather than refreshing the whole list
-			// This ensures the file stays in the same position in the list
-			file.name = updatedFile.name || name
+			renameInPlaceToPreserveListPosition(file, updatedFile.name || name)
 
-			// Call the callback for UI updates but with minimal impact
 			onFileRenamed()
 			onClose()
 		} catch (error) {

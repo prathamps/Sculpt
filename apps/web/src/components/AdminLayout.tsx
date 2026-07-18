@@ -107,7 +107,6 @@ export function AdminLayout({ children }: AdminLayoutProps) {
 			</header>
 
 			<div className="relative flex flex-1 overflow-hidden">
-				{/* Mobile backdrop */}
 				{isSidebarOpen && (
 					<div
 						className="absolute inset-0 z-20 bg-black/60 md:hidden"
@@ -115,7 +114,6 @@ export function AdminLayout({ children }: AdminLayoutProps) {
 						aria-hidden="true"
 					/>
 				)}
-				{/* Sidebar */}
 				<div
 					className={cn(
 						"z-30 bg-muted/40 border-r transition-all duration-300 ease-in-out",
@@ -167,7 +165,6 @@ export function AdminLayout({ children }: AdminLayoutProps) {
 					</nav>
 				</div>
 
-				{/* Main content */}
 				<div className="flex-1 overflow-auto">{children}</div>
 			</div>
 		</div>

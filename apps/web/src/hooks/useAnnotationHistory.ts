@@ -3,7 +3,6 @@
 import { useState, useCallback } from "react"
 import { Annotation } from "@/types"
 
-// Working (unsent) drawings with linear undo/redo history.
 export function useAnnotationHistory() {
 	const [annotations, setAnnotations] = useState<Annotation[]>([])
 	const [currentAnnotation, setCurrentAnnotation] =

@@ -34,21 +34,17 @@ export default function RegisterPage() {
 				authToasts.showSignupSuccess()
 				router.push("/login")
 			} else {
-				// Parse error response for better error handling
 				let errorData
 				try {
 					errorData = await res.json()
 				} catch {
-					// If response is not JSON, use default error handling
 					errorData = { message: "Registration failed" }
 				}
 
-				// Determine error type based on status code and response
 				const errorType = errorUtils.getSignupErrorType(res.status, errorData)
 				authToasts.showSignupError(errorType)
 			}
 		} catch (error) {
-			// Handle network errors and other fetch failures
 			if (errorUtils.isNetworkError(error)) {
 				authToasts.showSignupError("network_error")
 			} else {

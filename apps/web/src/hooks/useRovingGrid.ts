@@ -7,10 +7,6 @@ interface UseRovingGridOptions {
 	onActivate: (index: number) => void
 }
 
-// Roving-tabindex keyboard navigation for a responsive card grid: one tab stop
-// for the whole grid, arrow keys move between cards. The column count is read
-// from element geometry on each vertical move, so it stays correct across
-// breakpoints and in single-column list view.
 export function useRovingGrid<T extends HTMLElement>({
 	itemCount,
 	onActivate,
@@ -25,7 +21,7 @@ export function useRovingGrid<T extends HTMLElement>({
 		}
 	}, [itemCount, activeIndex])
 
-	const columnCount = useCallback((): number => {
+	const measureColumnCountFromLayout = useCallback((): number => {
 		const items = itemRefs.current.filter(Boolean) as T[]
 		if (items.length === 0) return 1
 		const firstTop = items[0].offsetTop
@@ -60,10 +56,10 @@ export function useRovingGrid<T extends HTMLElement>({
 					next = index - 1
 					break
 				case "ArrowDown":
-					next = index + columnCount()
+					next = index + measureColumnCountFromLayout()
 					break
 				case "ArrowUp":
-					next = index - columnCount()
+					next = index - measureColumnCountFromLayout()
 					break
 				case "Home":
 					next = 0
@@ -82,7 +78,7 @@ export function useRovingGrid<T extends HTMLElement>({
 			event.preventDefault()
 			if (next !== null && next >= 0 && next < itemCount) focusIndex(next)
 		},
-		[columnCount, focusIndex, itemCount, onActivate]
+		[measureColumnCountFromLayout, focusIndex, itemCount, onActivate]
 	)
 
 	const getItemProps = useCallback(

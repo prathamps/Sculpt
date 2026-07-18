@@ -54,15 +54,12 @@ export function CommentCard({
 	const [replyContent, setReplyContent] = useState("")
 	const [isSubmittingReply, setIsSubmittingReply] = useState(false)
 
-	// Format timestamp
 	const timestamp = formatDistanceToNow(new Date(comment.createdAt), {
 		addSuffix: true,
 	})
 
-	// Check if current user is the author of the comment
 	const isAuthor = user?.id === comment.userId
 	const URI = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001"
-	// Handle resolve/unresolve
 	const toggleResolved = async () => {
 		try {
 			const res = await fetch(
@@ -77,7 +74,6 @@ export function CommentCard({
 			)
 
 			if (res.ok) {
-				// Notify parent component to refresh comments
 				if (onCommentUpdate) {
 					onCommentUpdate()
 				}
@@ -87,7 +83,6 @@ export function CommentCard({
 		}
 	}
 
-	// Handle like
 	const handleLike = async () => {
 		if (isLiking) return
 
@@ -113,7 +108,6 @@ export function CommentCard({
 		}
 	}
 
-	// Handle delete
 	const handleDelete = async () => {
 		if (!isAuthor || isDeleting) return
 
@@ -125,7 +119,6 @@ export function CommentCard({
 			})
 
 			if (res.ok) {
-				// Notify parent component to refresh comments
 				if (onCommentUpdate) {
 					onCommentUpdate()
 				}
@@ -145,15 +138,12 @@ export function CommentCard({
 	const hasPage = typeof comment.page === "number"
 	const hasModelPin = !!comment.modelAnchor
 
-	// Count annotations if they're stored as an array
 	const annotationCount = Array.isArray(comment.annotation)
 		? comment.annotation.length
 		: comment.annotation
 		? 1
 		: 0
 
-	// Selecting a comment pins its drawing (until deselected) and, for video,
-	// seeks the player to the start of the comment's range.
 	const isSelectable =
 		!!comment.annotation || hasTimestamp || hasPage || hasModelPin
 	const handleSelect = () => {
@@ -166,7 +156,6 @@ export function CommentCard({
 		}
 	}
 
-	// Handle reply submission
 	const submitReply = async () => {
 		if (!replyContent.trim() || isSubmittingReply) return
 

@@ -29,10 +29,8 @@ function GoogleIcon({ className }: { className?: string }) {
 	)
 }
 
-// Shows "Continue with ..." buttons for whichever OAuth providers the API
-// reports as configured. Hidden entirely if none are enabled.
 export function OAuthButtons() {
-	const [providers, setProviders] = useState<{
+	const [enabledProviders, setEnabledProviders] = useState<{
 		google: boolean
 		github: boolean
 	}>({ google: false, github: false })
@@ -40,11 +38,11 @@ export function OAuthButtons() {
 	useEffect(() => {
 		fetch(`${API_URL}/api/auth/providers`)
 			.then((res) => (res.ok ? res.json() : null))
-			.then((data) => data && setProviders(data))
+			.then((data) => data && setEnabledProviders(data))
 			.catch(() => {})
 	}, [])
 
-	const anyEnabled = providers.google || providers.github
+	const anyEnabled = enabledProviders.google || enabledProviders.github
 	if (!anyEnabled) return null
 
 	const go = (provider: "google" | "github") => {
@@ -64,7 +62,7 @@ export function OAuthButtons() {
 				</div>
 			</div>
 			<div className="grid gap-2">
-				{providers.google && (
+				{enabledProviders.google && (
 					<Button
 						type="button"
 						variant="outline"
@@ -75,7 +73,7 @@ export function OAuthButtons() {
 						Google
 					</Button>
 				)}
-				{providers.github && (
+				{enabledProviders.github && (
 					<Button
 						type="button"
 						variant="outline"

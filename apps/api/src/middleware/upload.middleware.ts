@@ -8,12 +8,7 @@ const stagingDir = path.join(uploadsDir, ".staging")
 
 fs.mkdirSync(stagingDir, { recursive: true })
 
-// Only formats a browser renders inline (or inert binaries like GLB) are
-// accepted. The stored extension is derived from the declared MIME type (never
-// the client filename), so an upload can't be served as HTML/JS from the API
-// origin. SVG is excluded deliberately — it can carry script and would be an
-// XSS vector when served inline.
-const MIME_EXTENSIONS: Record<string, string> = {
+const INLINE_SAFE_MIME_EXTENSIONS: Record<string, string> = {
 	"image/jpeg": ".jpg",
 	"image/jpg": ".jpg",
 	"image/png": ".png",
@@ -28,7 +23,10 @@ const MIME_EXTENSIONS: Record<string, string> = {
 }
 
 export const isAllowedMime = (mimetype: string): boolean =>
-	mimetype in MIME_EXTENSIONS
+	mimetype in INLINE_SAFE_MIME_EXTENSIONS
+
+const extensionFromDeclaredMime = (mimetype: string): string =>
+	INLINE_SAFE_MIME_EXTENSIONS[mimetype]
 
 const staging = multer.diskStorage({
 	destination: (_req, _file, cb) => {
@@ -38,7 +36,7 @@ const staging = multer.diskStorage({
 		const uniqueSuffix = Date.now() + "-" + Math.round(Math.random() * 1e9)
 		cb(
 			null,
-			file.fieldname + "-" + uniqueSuffix + MIME_EXTENSIONS[file.mimetype]
+			file.fieldname + "-" + uniqueSuffix + extensionFromDeclaredMime(file.mimetype)
 		)
 	},
 })

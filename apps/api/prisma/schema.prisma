@@ -29,6 +29,12 @@ enum MediaType {
   MODEL
 }
 
+enum ProxyStatus {
+  PENDING
+  READY
+  FAILED
+}
+
 model User {
   id            String          @id @default(cuid())
   email         String          @unique
@@ -106,6 +112,8 @@ model ImageVersion {
   mediaType   MediaType @default(IMAGE)
   duration    Float? // video duration in seconds (null for images)
   thumbnailUrl String? // poster frame for videos, first-page render for PDFs
+  proxyUrl    String? // web-optimized H.264 rendition for VIDEO versions
+  proxyStatus ProxyStatus?
   imageId     String
   image       Image     @relation(fields: [imageId], references: [id], onDelete: Cascade)
   annotations Json[]

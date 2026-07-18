@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest"
 import {
 	isAnnotationVisibleAt,
-	DEFAULT_VISIBILITY_WINDOW,
-	WINDOW_EPSILON,
+	INSTANT_ANNOTATION_VISIBILITY_SECONDS,
+	PLAYHEAD_SAMPLING_EPSILON_SECONDS,
 } from "./annotation-visibility"
 
 describe("isAnnotationVisibleAt", () => {
@@ -10,17 +10,26 @@ describe("isAnnotationVisibleAt", () => {
 		const a = { t: 10 }
 		expect(isAnnotationVisibleAt(a, 9)).toBe(false)
 		expect(isAnnotationVisibleAt(a, 10)).toBe(true)
-		expect(isAnnotationVisibleAt(a, 10 + DEFAULT_VISIBILITY_WINDOW)).toBe(true)
 		expect(
-			isAnnotationVisibleAt(a, 10 + DEFAULT_VISIBILITY_WINDOW + 0.5)
+			isAnnotationVisibleAt(a, 10 + INSTANT_ANNOTATION_VISIBILITY_SECONDS)
+		).toBe(true)
+		expect(
+			isAnnotationVisibleAt(a, 10 + INSTANT_ANNOTATION_VISIBILITY_SECONDS + 0.5)
 		).toBe(false)
 	})
 
 	it("tolerates playhead sampling at the exact window edges", () => {
 		const a = { t: 10 }
-		expect(isAnnotationVisibleAt(a, 10 - WINDOW_EPSILON)).toBe(true)
 		expect(
-			isAnnotationVisibleAt(a, 10 + DEFAULT_VISIBILITY_WINDOW + WINDOW_EPSILON)
+			isAnnotationVisibleAt(a, 10 - PLAYHEAD_SAMPLING_EPSILON_SECONDS)
+		).toBe(true)
+		expect(
+			isAnnotationVisibleAt(
+				a,
+				10 +
+					INSTANT_ANNOTATION_VISIBILITY_SECONDS +
+					PLAYHEAD_SAMPLING_EPSILON_SECONDS
+			)
 		).toBe(true)
 	})
 
@@ -52,9 +61,7 @@ describe("isAnnotationVisibleAt", () => {
 		expect(isAnnotationVisibleAt({ t: null }, 42)).toBe(true)
 	})
 
-	it("is stable exactly at t for a paused playhead", () => {
-		// Drawing pauses the video at t, so the freshly posted comment must be
-		// visible at that exact position.
+	it("keeps a freshly posted comment visible when drawing paused the video exactly at t", () => {
 		expect(isAnnotationVisibleAt({ t: 7.32 }, 7.32)).toBe(true)
 		expect(isAnnotationVisibleAt({ t: 7.32, tEnd: 9 }, 7.32)).toBe(true)
 	})

@@ -40,7 +40,6 @@ export const AdminAuthProvider = ({ children }: { children: ReactNode }) => {
 	useEffect(() => {
 		const fetchAdminUser = async () => {
 			try {
-				// We use a different endpoint for admin profile
 				const res = await fetch(`${URI}/api/admin/profile`, {
 					credentials: "include",
 					headers: {
@@ -81,7 +80,6 @@ export const AdminAuthProvider = ({ children }: { children: ReactNode }) => {
 			})
 
 			if (res.ok) {
-				// Fetch admin profile after successful login
 				const profileRes = await fetch(`${URI}/api/admin/profile`, {
 					credentials: "include",
 				})

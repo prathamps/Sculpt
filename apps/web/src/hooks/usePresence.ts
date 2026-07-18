@@ -10,12 +10,9 @@ export interface PresencePeer {
 	time: number
 }
 
-const UPDATE_INTERVAL_MS = 1000
-const IMMEDIATE_JUMP_SECONDS = 3
+const BROADCAST_THROTTLE_MS = 1000
+const SEND_IMMEDIATELY_ON_SEEK_SECONDS = 3
 
-// Live viewer presence for an image version room: tracks other viewers'
-// playheads (keyed by socketId, so multiple tabs are distinct) and broadcasts
-// our own, throttled to 1/s with an immediate send on seeks.
 export function usePresence(
 	imageVersionId: string | null,
 	currentTime: number
@@ -83,9 +80,10 @@ export function usePresence(
 	useEffect(() => {
 		if (!socket || !isConnected || !imageVersionId) return
 		const now = Date.now()
-		const jumped =
-			Math.abs(currentTime - lastSentTimeRef.current) > IMMEDIATE_JUMP_SECONDS
-		if (!jumped && now - lastSentAtRef.current < UPDATE_INTERVAL_MS) return
+		const seeked =
+			Math.abs(currentTime - lastSentTimeRef.current) >
+			SEND_IMMEDIATELY_ON_SEEK_SECONDS
+		if (!seeked && now - lastSentAtRef.current < BROADCAST_THROTTLE_MS) return
 		lastSentAtRef.current = now
 		lastSentTimeRef.current = currentTime
 		socket.emit("presence:update", { imageVersionId, time: currentTime })

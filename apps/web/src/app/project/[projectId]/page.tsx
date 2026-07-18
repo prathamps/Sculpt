@@ -40,7 +40,6 @@ export default function ProjectPage() {
 				if (currentProject) {
 					setSelectedProject(currentProject)
 				} else if (data.length > 0 && data[0]?.id) {
-					// if current project not found, redirect to the first project
 					const firstProjectId = data[0]?.id
 					if (firstProjectId) {
 						router.replace(`/project/${firstProjectId}`)

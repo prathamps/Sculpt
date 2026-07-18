@@ -34,11 +34,8 @@ interface ScrubberProps {
 
 const MAX_LANES = 3
 const LANE_HEIGHT = 18
+const MIN_MARKER_SPAN_FRACTION = 0.03
 
-// Custom scrubber: the playhead, comment markers, presence avatars and range
-// bars are all positioned as percentages of the same track box, unlike the
-// old native <input type="range"> whose thumb track is inset by half the
-// thumb width and drifted away from overlaid markers.
 export function Scrubber({
 	currentTime,
 	duration,
@@ -100,18 +97,16 @@ export function Scrubber({
 		onSeek(Math.min(duration, Math.max(0, next)))
 	}
 
-	// Instant markers get a minimum visual width so overlapping dots stack
-	// into lanes instead of piling on top of each other.
 	const laneLayout = useMemo(() => {
 		if (!duration || markers.length === 0) {
 			return { lanes: {} as Record<string, number>, overflow: [], count: 0 }
 		}
-		const minWidth = duration * 0.03
+		const minSpanSoOverlapsStackIntoLanes = duration * MIN_MARKER_SPAN_FRACTION
 		const assignment = assignLanes(
 			markers.map((m) => ({
 				id: m.commentId,
 				start: m.t,
-				end: Math.max(m.tEnd ?? m.t, m.t) + minWidth,
+				end: Math.max(m.tEnd ?? m.t, m.t) + minSpanSoOverlapsStackIntoLanes,
 			})),
 			MAX_LANES
 		)

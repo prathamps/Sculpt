@@ -43,6 +43,8 @@ export interface ModelAnchor {
 	}
 }
 
+export type ProxyStatus = "PENDING" | "READY" | "FAILED"
+
 export interface ImageVersion {
 	id: string
 	url: string
@@ -52,6 +54,8 @@ export interface ImageVersion {
 	mediaType?: MediaType
 	duration?: number | null
 	thumbnailUrl?: string | null
+	proxyUrl?: string | null
+	proxyStatus?: ProxyStatus | null
 	createdAt: string
 	updatedAt: string
 }

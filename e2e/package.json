@@ -1,0 +1,11 @@
+{
+	"name": "sculpt-e2e",
+	"private": true,
+	"type": "module",
+	"scripts": {
+		"smoke": "node smoke.mjs"
+	},
+	"devDependencies": {
+		"playwright-core": "^1.61.1"
+	}
+}

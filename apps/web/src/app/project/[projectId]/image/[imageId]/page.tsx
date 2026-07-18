@@ -63,6 +63,10 @@ import { useVersionComments } from "@/hooks/useVersionComments"
 import { useAnnotationHistory } from "@/hooks/useAnnotationHistory"
 import { usePresence } from "@/hooks/usePresence"
 import {
+	useVersionProcessingUpdates,
+	VersionProcessingUpdate,
+} from "@/hooks/useVersionProcessing"
+import {
 	Dialog,
 	DialogContent,
 	DialogHeader,
@@ -188,6 +192,16 @@ function ProjectFileViewPageInner() {
 		selectedVersion?.id ?? null,
 		isVideo ? currentVideoTime : 0
 	)
+
+	const applyVersionUpdate = useCallback((update: VersionProcessingUpdate) => {
+		const patch = (version: ImageVersion) =>
+			version.id === update.id ? { ...version, ...update } : version
+		setImage((prev) =>
+			prev ? { ...prev, versions: prev.versions.map(patch) } : prev
+		)
+		setSelectedVersion((prev) => (prev ? patch(prev) : prev))
+	}, [])
+	useVersionProcessingUpdates(selectedVersion?.id ?? null, applyVersionUpdate)
 
 	const isSmallScreen = useMediaQuery("(max-width: 768px)")
 	const [isMounted, setIsMounted] = useState(false)
@@ -727,6 +741,12 @@ function ProjectFileViewPageInner() {
 						)}
 					</div>
 				)}
+				{isVideo && selectedVersion?.proxyStatus === "PENDING" && (
+					<span className="flex items-center gap-1 text-xs text-muted-foreground">
+						<Loader2 className="h-3 w-3 animate-spin" aria-hidden="true" />
+						Optimizing video…
+					</span>
+				)}
 				{image && image.versions && image.versions.length >= 2 && (
 					<Button
 						variant={isCompareMode ? "default" : "outline"}
@@ -849,7 +869,9 @@ function ProjectFileViewPageInner() {
 							) : selectedVersion ? (
 								isVideo ? (
 									<VideoAnnotationCanvas
-										videoUrl={mediaUrl(selectedVersion.url)}
+										videoUrl={mediaUrl(
+											selectedVersion.proxyUrl || selectedVersion.url
+										)}
 										tool={tool}
 										color={color}
 										canDraw={canComment}

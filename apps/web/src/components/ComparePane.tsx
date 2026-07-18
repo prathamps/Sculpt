@@ -119,7 +119,7 @@ export function ComparePane({
 		if (version.mediaType === "VIDEO") {
 			return (
 				<VideoAnnotationCanvas
-					videoUrl={mediaUrl(version.url)}
+					videoUrl={mediaUrl(version.proxyUrl || version.url)}
 					tool="pencil"
 					color="#4783E8"
 					canDraw={false}
