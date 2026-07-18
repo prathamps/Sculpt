@@ -1,6 +1,3 @@
-// Pure math for the custom video scrubber. Everything maps through the same
-// track box, so the playhead, comment markers and presence avatars can't
-// drift apart the way they did over a native <input type="range">.
 
 export const timeToPercent = (t: number, duration: number): number => {
 	if (!duration || !isFinite(duration)) return 0
@@ -39,9 +36,6 @@ export interface LaneAssignment {
 	overflow: string[]
 }
 
-// Greedy interval packing: each marker takes the lowest lane that is free at
-// its start. Markers that would need more than maxLanes collapse into an
-// overflow group ("+N").
 export const assignLanes = (
 	intervals: LaneInterval[],
 	maxLanes: number

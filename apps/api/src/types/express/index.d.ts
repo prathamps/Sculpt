@@ -1,4 +1,3 @@
-// src/types/express/index.d.ts
 import { AuthenticatedUser } from "..";
 
 declare global {

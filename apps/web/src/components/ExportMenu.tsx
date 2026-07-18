@@ -23,7 +23,6 @@ interface ExportMenuProps {
 	annotations: Annotation[]
 }
 
-// Draw normalized annotations onto a full-resolution canvas context.
 function drawAnnotations(
 	ctx: CanvasRenderingContext2D,
 	annotations: Annotation[],
@@ -68,7 +67,6 @@ export function ExportMenu({
 	const [busy, setBusy] = useState(false)
 	const isImage = (selectedVersion?.mediaType ?? "IMAGE") === "IMAGE"
 
-	// Client-side annotated PNG (images only — video frames export from the player).
 	const downloadAnnotatedPng = async () => {
 		if (!selectedVersion) return
 		setBusy(true)
@@ -203,7 +201,6 @@ function escapeHtml(s: unknown): string {
 		.replace(/>/g, "&gt;")
 }
 
-// Shape of the report JSON returned by /api/export/image/:id/report.json
 interface ReportComment {
 	author?: string
 	content?: string
@@ -227,7 +224,6 @@ interface ImageReport {
 	versions?: ReportVersion[]
 }
 
-// Build a self-contained printable HTML document from the report JSON.
 function buildPrintableHtml(report: ImageReport): string {
 	const rows = (report.versions || [])
 		.flatMap((v: ReportVersion) =>

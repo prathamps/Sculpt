@@ -103,7 +103,6 @@ export function PdfAnnotationCanvas({
 			cancelled = true
 			loadingTask?.destroy().catch((): void => undefined)
 		}
-		// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, [pdfUrl])
 
 	const redrawAnnotations = useCallback(() => {

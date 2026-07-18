@@ -21,8 +21,6 @@ const FRONTEND_URL =
 	process.env.NEXT_PUBLIC_APP_URL ||
 	"http://localhost:3000"
 
-// Guard so an unconfigured provider returns a clear error instead of crashing
-// with "Unknown authentication strategy".
 const requireProvider =
 	(provider: "google" | "github") =>
 	(_req: Request, res: Response, next: NextFunction) => {
@@ -34,7 +32,6 @@ const requireProvider =
 		next()
 	}
 
-// --- Google ---
 router.get(
 	"/google",
 	requireProvider("google"),
@@ -50,7 +47,6 @@ router.get(
 	oauthCallback
 )
 
-// --- GitHub ---
 router.get(
 	"/github",
 	requireProvider("github"),

@@ -10,9 +10,6 @@ export interface ViewerEntry {
 	time: number
 }
 
-// Per-process viewer map: versionId -> socketId -> entry. Playhead presence is
-// ephemeral, so process memory is enough for a single-instance deploy; a
-// multi-instance setup would need the Redis mirror pattern from lib/presence.ts.
 const viewersByVersion = new Map<string, Map<string, ViewerEntry>>()
 
 export const addViewer = (

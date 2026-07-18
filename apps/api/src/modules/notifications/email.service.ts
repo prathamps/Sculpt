@@ -8,15 +8,13 @@ const FRONTEND_URL =
 
 const FROM = process.env.SMTP_FROM || "Sculpt <no-reply@sculpt.app>"
 
-// Email is optional. When SMTP isn't configured we no-op (and log) so the app
-// runs fine locally / in the FREE tier without an email provider.
 let transporter: Transporter | null = null
 
 if (process.env.SMTP_HOST) {
 	transporter = nodemailer.createTransport({
 		host: process.env.SMTP_HOST,
 		port: Number(process.env.SMTP_PORT || 587),
-		secure: process.env.SMTP_SECURE === "true", // true for 465, false for 587
+		secure: process.env.SMTP_SECURE === "true",
 		auth: process.env.SMTP_USER
 			? { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS }
 			: undefined,
@@ -50,13 +48,10 @@ export const sendEmail = async (input: SendEmailInput): Promise<void> => {
 		})
 		console.log(`[email] sent to ${input.to}: "${input.subject}"`)
 	} catch (error) {
-		// Never let email failures break the request flow.
 		console.error("[email] send failed:", error)
 	}
 }
 
-// Build a deep link from notification metadata so the email points at the
-// relevant project/image when possible.
 const buildLink = (metadata?: JsonValue): string => {
 	if (metadata && typeof metadata === "object" && !Array.isArray(metadata)) {
 		const m = metadata as Record<string, unknown>

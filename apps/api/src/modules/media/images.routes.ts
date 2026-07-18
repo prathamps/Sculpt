@@ -7,12 +7,10 @@ const router = Router()
 
 router.use(authenticateJWT)
 
-// These routes are scoped under /api/images
 router.get("/:id", imageController.getImage)
 router.put("/:id", imageController.updateImage)
 router.delete("/:id", imageController.deleteImage)
 
-// Version routes
 router.get("/versions/:versionId", imageController.getImageVersion)
 router.post(
 	"/:imageId/versions",
@@ -25,7 +23,6 @@ router.post(
 router.put("/versions/:versionId", imageController.updateImageVersion)
 router.delete("/versions/:versionId", imageController.deleteImageVersion)
 
-// Comment routes
 router.get("/versions/:imageVersionId/comments", imageController.getComments)
 router.post("/versions/:imageVersionId/comments", imageController.addComment)
 router.delete("/comments/:commentId", imageController.deleteComment)
@@ -35,8 +32,6 @@ router.post(
 	imageController.toggleResolveComment
 )
 
-// The following routes were originally in projects.routes.ts
-// They are now moved here and will be mounted under /api/projects
 const projectImagesRouter = Router({ mergeParams: true })
 
 projectImagesRouter.use(authenticateJWT)

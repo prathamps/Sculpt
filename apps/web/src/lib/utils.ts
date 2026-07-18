@@ -16,7 +16,6 @@ const ROLE_RANK: Record<ProjectRole, number> = {
 	OWNER: 3,
 }
 
-/** True when `role` is at least `minimum` in the capability hierarchy. */
 export function roleAtLeast(
 	role: ProjectRole | null | undefined,
 	minimum: ProjectRole
@@ -25,18 +24,11 @@ export function roleAtLeast(
 	return ROLE_RANK[role] >= ROLE_RANK[minimum]
 }
 
-/**
- * Resolve a stored media URL: absolute URLs (e.g. S3) pass through,
- * relative ones are served by the API.
- */
 export function mediaUrl(url: string): string {
 	if (url.startsWith("http://") || url.startsWith("https://")) return url
 	return `${API_URL}/${url}`
 }
 
-/**
- * Format bytes to a human-readable format
- */
 export function formatBytes(bytes: number, decimals = 2): string {
 	if (bytes === 0) return "0 Bytes"
 
@@ -49,18 +41,11 @@ export function formatBytes(bytes: number, decimals = 2): string {
 	return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + " " + sizes[i]
 }
 
-/**
- * Format a date to a relative time string
- */
 export function formatDate(dateString: string): string {
 	const date = new Date(dateString)
 	return formatDistanceToNow(date, { addSuffix: true })
 }
 
-/**
- * True when a key event's target is a form control or editable region, so
- * global keyboard shortcuts must not fire.
- */
 export function isEditableTarget(target: EventTarget | null): boolean {
 	const el = target as HTMLElement | null
 	if (!el || !el.tagName) return false
@@ -75,9 +60,6 @@ export function isEditableTarget(target: EventTarget | null): boolean {
 	)
 }
 
-/**
- * Format a number of seconds as m:ss (or m:ss.d for sub-second precision)
- */
 export function formatVideoTime(seconds: number, withDecimals = false): string {
 	if (!isFinite(seconds) || seconds < 0) seconds = 0
 	const mins = Math.floor(seconds / 60)

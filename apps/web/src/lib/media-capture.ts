@@ -3,7 +3,6 @@ import { loadPdfjs } from "./pdf"
 const THUMBNAIL_MAX_WIDTH = 640
 const CAPTURE_TIMEOUT_MS = 10000
 
-// Read a video file's duration (seconds) client-side, or null if unavailable.
 export function getVideoDuration(file: File): Promise<number | null> {
 	return new Promise((resolve) => {
 		const video = document.createElement("video")
@@ -36,8 +35,6 @@ const drawScaled = (
 	return canvas
 }
 
-// Captures a poster frame from a video file in the browser. Resolves null on
-// any failure — thumbnails are always optional and must never block an upload.
 export function captureVideoThumbnail(file: File): Promise<Blob | null> {
 	return new Promise((resolve) => {
 		const video = document.createElement("video")
@@ -70,7 +67,6 @@ export function captureVideoThumbnail(file: File): Promise<Blob | null> {
 	})
 }
 
-// Renders page 1 of a PDF file to a thumbnail. Resolves null on any failure.
 export async function capturePdfThumbnail(file: File): Promise<Blob | null> {
 	try {
 		const pdfjs = await loadPdfjs()
@@ -104,9 +100,6 @@ export function captureThumbnail(file: File): Promise<Blob | null> {
 	return Promise.resolve(null)
 }
 
-// Browsers report an empty MIME type for .glb files, but the API derives the
-// stored extension from the declared type, so it is set explicitly here
-// before upload.
 export function prepareUploadFile(file: File): File {
 	if (!file.name.toLowerCase().endsWith(".glb")) return file
 	if (file.type === "model/gltf-binary") return file

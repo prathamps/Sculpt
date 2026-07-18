@@ -220,7 +220,6 @@ export function MembersModal({
 					</DialogDescription>
 				</DialogHeader>
 
-				{/* Members List */}
 				<div className="space-y-3 pt-2">
 					<div className="flex items-center justify-between">
 						<h3 className="text-sm font-medium text-muted-foreground">
@@ -287,7 +286,6 @@ export function MembersModal({
 					</div>
 				</div>
 
-				{/* Invite Form */}
 				{amIOwner && (
 					<>
 						<div className="space-y-3 pt-2">

@@ -3,8 +3,6 @@ import bcrypt from "bcrypt"
 import { prisma } from "../../lib/prisma"
 import { ForbiddenError, ValidationError } from "../../lib/errors"
 
-// User as returned by the API surface — the password hash is globally omitted
-// from Prisma results (see lib/prisma.ts).
 export type SafeUser = Omit<User, "password">
 
 interface RegisterUserInput {
@@ -36,7 +34,6 @@ export const registerUser = async (
 }
 
 export const loginUser = async (data: LoginUserInput): Promise<User | null> => {
-	// Opt back in to the password column (globally omitted) for the compare.
 	const user = await prisma.user.findUnique({
 		where: {
 			email: data.email,
@@ -46,7 +43,6 @@ export const loginUser = async (data: LoginUserInput): Promise<User | null> => {
 
 	if (!user) return null
 
-	// OAuth-only accounts have no password set — they must use the provider.
 	if (!user.password) return null
 
 	const validPassword = await bcrypt.compare(data.password, user.password)
@@ -63,7 +59,6 @@ interface OAuthUserInput {
 	avatarUrl?: string | null
 }
 
-// Find a user by email (linking OAuth to an existing account) or create one.
 export const findOrCreateOAuthUser = async (
 	data: OAuthUserInput
 ): Promise<SafeUser> => {
@@ -72,7 +67,6 @@ export const findOrCreateOAuthUser = async (
 	})
 
 	if (existing) {
-		// Record the OAuth link / avatar on accounts that don't have them yet.
 		const needsUpdate =
 			(!existing.providerId && !!data.providerId) ||
 			(!existing.avatarUrl && !!data.avatarUrl)
@@ -106,7 +100,6 @@ export const loginAdmin = async (
 	email: string,
 	password: string
 ): Promise<User | null> => {
-	// Opt back in to the password column (globally omitted) for the compare.
 	const user = await prisma.user.findUnique({
 		where: {
 			email,
@@ -120,7 +113,6 @@ export const loginAdmin = async (
 	const validPassword = await bcrypt.compare(password, user.password)
 	if (!validPassword) return null
 
-	// Only return the user if they're an admin
 	if (user.role !== UserRole.ADMIN) return null
 
 	return user

@@ -75,7 +75,6 @@ import {
 } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 
-// three.js touches window at module scope, so the 3D canvas loads client-only.
 const ModelAnnotationCanvas = dynamic(
 	() =>
 		import("@/components/ModelAnnotationCanvas").then(
@@ -91,7 +90,6 @@ const ModelAnnotationCanvas = dynamic(
 	}
 )
 
-// Custom hook for media queries
 function useMediaQuery(query: string): boolean {
 	const [matches, setMatches] = useState(false)
 
@@ -164,7 +162,6 @@ function ProjectFileViewPageInner() {
 	)
 	const [showAllAnnotations, setShowAllAnnotations] = useState(false)
 
-	// Video-specific state
 	const [currentVideoTime, setCurrentVideoTime] = useState(0)
 	const [seekRequest, setSeekRequest] = useState<{
 		time: number
@@ -172,10 +169,8 @@ function ProjectFileViewPageInner() {
 	} | null>(null)
 	const [composeRange, setComposeRange] = useState<ComposeRange | null>(null)
 
-	// PDF-specific state
 	const [currentPdfPage, setCurrentPdfPage] = useState(1)
 
-	// 3D-model-specific state
 	const [pendingPin, setPendingPin] = useState<ModelAnchor | null>(null)
 	const [modelFlyTo, setModelFlyTo] = useState<ModelFlyToRequest | null>(null)
 
@@ -263,9 +258,6 @@ function ProjectFileViewPageInner() {
 		if (!isAuthenticated) return
 		let cancelled = false
 
-		// Only a 403 means "not a member" → view-only. Transient failures (5xx,
-		// network) are retried so a blip doesn't silently strip a member's
-		// ability to comment.
 		const load = async (attempt = 0): Promise<void> => {
 			try {
 				const res = await fetch(`${URI}/api/projects/${projectId}/my-role`, {
@@ -304,7 +296,6 @@ function ProjectFileViewPageInner() {
 		fetchImage()
 	}, [fetchImage])
 
-	// --- Compare mode (URL-driven, shareable) --------------------------------
 	const compareId = searchParams.get("compare")
 	const compareVersion = useMemo(
 		() =>
@@ -316,7 +307,6 @@ function ProjectFileViewPageInner() {
 	const isCompareMode =
 		!!compareVersion && !!selectedVersion && (image?.versions.length ?? 0) >= 2
 
-	// Strip a stale/invalid compare param (deleted version, single version).
 	useEffect(() => {
 		if (!image || !compareId) return
 		const valid =
@@ -361,13 +351,11 @@ function ProjectFileViewPageInner() {
 		router.replace(buildUrl({ v: version.id }), { scroll: false })
 	}
 
-	// --- Selection model -------------------------------------------------------
 	const selectedComment = useMemo(
 		() => comments.find((c) => c.id === selectedCommentId) ?? null,
 		[comments, selectedCommentId]
 	)
 
-	// A comment deleted by someone else (via socket) clears its own selection.
 	useEffect(() => {
 		if (selectedCommentId && !selectedComment) setSelectedCommentId(null)
 	}, [selectedCommentId, selectedComment])
@@ -407,7 +395,6 @@ function ProjectFileViewPageInner() {
 		[comments, handleSelectComment]
 	)
 
-	// Esc deselects the pinned comment (all media types).
 	useEffect(() => {
 		const onKeyDown = (e: KeyboardEvent) => {
 			if (e.key === "Escape") setSelectedCommentId(null)
@@ -416,8 +403,6 @@ function ProjectFileViewPageInner() {
 		return () => window.removeEventListener("keydown", onKeyDown)
 	}, [])
 
-	// Starting a new drawing unpins the selection; PDF drawings are tagged with
-	// the page they were drawn on.
 	const handleAddAnnotation = (newAnnotation: Omit<Annotation, "id">) => {
 		setSelectedCommentId(null)
 		addAnnotation(
@@ -433,11 +418,9 @@ function ProjectFileViewPageInner() {
 	const handlePdfPageChange = (page: number) => {
 		if (page === currentPdfPage) return
 		setCurrentPdfPage(page)
-		// Unsent drawings belong to the page they were drawn on.
 		clear()
 	}
 
-	// --- Compose range (video "slice" comments) --------------------------------
 	const handleMarkIn = () => {
 		setComposeRange((prev) => {
 			const start = currentVideoTime
@@ -463,7 +446,6 @@ function ProjectFileViewPageInner() {
 			? { start: composeRange.start, end: composeRange.end }
 			: null
 
-	// --- Derived annotation lists for the canvases ------------------------------
 	const timelineMarkers = useMemo(
 		() =>
 			comments
@@ -486,8 +468,6 @@ function ProjectFileViewPageInner() {
 	const canvasAnnotations = useMemo(() => {
 		let derived: Annotation[]
 		if (isVideo) {
-			// Every saved drawing renders while the playhead is inside its
-			// comment's [start, end] range; the selected one renders always.
 			derived = comments.flatMap((c) =>
 				annotationsOf(c).map((a) => ({
 					...a,
@@ -497,8 +477,6 @@ function ProjectFileViewPageInner() {
 					isHighlighted: c.id === selectedCommentId,
 				}))
 			)
-			// Unsent drafts must never vanish mid-composition: strip their time
-			// window so they stay on screen until posted or cleared.
 			return [
 				...annotations.map(
 					(a): Annotation => ({ ...a, t: undefined, tEnd: undefined })
@@ -561,8 +539,6 @@ function ProjectFileViewPageInner() {
 		return Array.from(byUser.values())
 	}, [peers])
 
-	// Pins are numbered by creation order so they stay stable as new comments
-	// arrive at the top of the (newest-first) list.
 	const modelPins = useMemo<ModelPin[]>(() => {
 		if (!isModel) return []
 		return comments
@@ -608,7 +584,6 @@ function ProjectFileViewPageInner() {
 				formData.append("versionName", versionName)
 			}
 
-			// For videos, capture the duration client-side and send it along.
 			if (fileToUpload.type.startsWith("video/")) {
 				const duration = await getVideoDuration(fileToUpload)
 				if (duration != null) formData.append("duration", String(duration))
@@ -775,7 +750,6 @@ function ProjectFileViewPageInner() {
 						<Eye className="h-4 w-4" aria-hidden="true" />
 					</Button>
 				)}
-				{/* Version selector dropdown */}
 				{!isCompareMode &&
 					image &&
 					image.versions &&
@@ -860,7 +834,6 @@ function ProjectFileViewPageInner() {
 							isSmallScreen && isSidebarOpen ? "h-[60%]" : "h-full"
 						}`}
 					>
-						{/* Canvas Section */}
 						<div className="flex-1 flex items-center justify-center bg-muted/20 overflow-auto">
 							{isImageLoading ? (
 								<div className="flex h-full w-full items-center justify-center">
@@ -882,9 +855,6 @@ function ProjectFileViewPageInner() {
 										onAddAnnotation={handleAddAnnotation}
 										onTimeChange={(t) => setCurrentVideoTime(t)}
 										onPlayStateChange={(playing) => {
-											// Playback hands visibility back to the time-window
-											// model; a pinned drawing must not cover unrelated
-											// frames.
 											if (playing) setSelectedCommentId(null)
 										}}
 										seekRequest={seekRequest}
@@ -927,7 +897,6 @@ function ProjectFileViewPageInner() {
 								</div>
 							)}
 						</div>
-						{/* Footer/Toolbar Section */}
 						{canComment ? (
 							<div className="border-t border-border">
 								<AnnotationFooter
@@ -983,7 +952,6 @@ function ProjectFileViewPageInner() {
 				</div>
 			)}
 
-			{/* Upload New Version Modal */}
 			<Dialog open={isUploadModalOpen} onOpenChange={setIsUploadModalOpen}>
 				<DialogContent className="sm:max-w-md">
 					<DialogHeader>

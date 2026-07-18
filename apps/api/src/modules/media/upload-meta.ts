@@ -10,11 +10,6 @@ const sanitizeDuration = (value: unknown): number | null =>
 		? value
 		: null
 
-// Pairs the "images" multipart field with the optional "thumbnails" field.
-// filesMeta is a JSON array aligned with the images order; entries with
-// hasThumbnail consume thumbnails in order. Explicit flags (rather than
-// implicit ordering) let a client skip a failed capture mid-batch without
-// mispairing every file after it.
 export const parseFilesMeta = (
 	rawFilesMeta: unknown,
 	fileCount: number,

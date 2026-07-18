@@ -37,13 +37,11 @@ passport.use(
 
 const API_URL = process.env.API_URL || "http://localhost:3001"
 
-// Which OAuth providers are configured (used by the frontend to show buttons).
 export const oauthProviders = {
 	google: false,
 	github: false,
 }
 
-// --- Google ------------------------------------------------------------------
 if (process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET) {
 	passport.use(
 		new GoogleStrategy(
@@ -78,7 +76,6 @@ if (process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET) {
 	console.log("[auth] Google OAuth enabled")
 }
 
-// --- GitHub ------------------------------------------------------------------
 if (process.env.GITHUB_CLIENT_ID && process.env.GITHUB_CLIENT_SECRET) {
 	passport.use(
 		new GitHubStrategy(

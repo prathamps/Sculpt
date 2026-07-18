@@ -278,7 +278,6 @@ export const joinProjectWithShareLink = async (
 		throw new Error("Invalid or expired share link.")
 	}
 
-	// Add or update user's membership
 	await prisma.projectMember.upsert({
 		where: {
 			projectId_userId: {
@@ -286,7 +285,7 @@ export const joinProjectWithShareLink = async (
 				userId: userId,
 			},
 		},
-		update: { role: link.role }, // Update role if they are already a member
+		update: { role: link.role },
 		create: {
 			projectId: link.projectId,
 			userId: userId,
@@ -296,7 +295,7 @@ export const joinProjectWithShareLink = async (
 
 	const project = await getProjectById(link.projectId, userId)
 	if (!project) {
-		throw new Error("Project not found after joining.") // Should not happen
+		throw new Error("Project not found after joining.")
 	}
 
 	return project

@@ -25,11 +25,7 @@ import { ModelAnchor, Vec3 } from "@/types"
 import { cn } from "@/lib/utils"
 
 const MODEL_TARGET_SIZE = 4
-// A pointer that travels further than this between down and up is an orbit
-// drag, not a pin-placement click.
 const CLICK_DRAG_TOLERANCE_PX = 4
-// Pins sit slightly off the surface so the occlusion ray doesn't hit the
-// face they're pinned to.
 const PIN_SURFACE_OFFSET = 0.06
 
 export interface ModelPin {
@@ -68,10 +64,6 @@ const pinPosition = (anchor: ModelAnchor): Vec3 => {
 	]
 }
 
-// Anchors are stored in normalized model space: the model is centered on the
-// origin and scaled so its largest dimension is MODEL_TARGET_SIZE. The
-// normalization is deterministic from the geometry, so saved anchors stay
-// valid across sessions and viewers.
 function NormalizedModel({
 	url,
 	canPlacePin,
@@ -85,8 +77,6 @@ function NormalizedModel({
 }) {
 	const gltf = useLoader(GLTFLoader, url)
 
-	// useLoader caches by URL and the compare view can mount the same model
-	// twice, so transforms are applied to a clone.
 	const scene = useMemo(() => {
 		const root = gltf.scene.clone(true)
 		const box = new THREE.Box3().setFromObject(root)
@@ -180,8 +170,6 @@ function PendingPinMarker({ anchor }: { anchor: ModelAnchor }) {
 	)
 }
 
-// Eases the camera toward a comment's saved pose. Any orbit interaction
-// cancels the flight (the goal ref is cleared by OrbitControls' onStart).
 function CameraRig({
 	flyTo,
 	goalRef,

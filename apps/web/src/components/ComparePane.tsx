@@ -19,7 +19,6 @@ import { cn, mediaUrl } from "@/lib/utils"
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001"
 
-// three.js touches window at module scope, so the 3D canvas loads client-only.
 const ModelAnnotationCanvas = dynamic(
 	() =>
 		import("./ModelAnnotationCanvas").then((mod) => mod.ModelAnnotationCanvas),
@@ -51,8 +50,6 @@ const flattenAnnotations = (comments: Comment[]): Annotation[] =>
 		}))
 	})
 
-// One half of the version compare view: a version picker, comment count and
-// a read-only render of that version's media with its comment markup.
 export function ComparePane({
 	label,
 	version,

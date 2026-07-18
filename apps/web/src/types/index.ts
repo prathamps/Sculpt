@@ -23,17 +23,15 @@ export interface Annotation {
 	points: Point[]
 	isHighlighted?: boolean
 	dimmed?: boolean
-	t?: number // timestamp (seconds) for video annotations
-	tEnd?: number // range end (seconds) for video annotations
-	page?: number // 1-based page for PDF annotations
+	t?: number
+	tEnd?: number
+	page?: number
 }
 
 export type MediaType = "IMAGE" | "VIDEO" | "PDF" | "MODEL"
 
 export type Vec3 = [number, number, number]
 
-// A comment's pin on a 3D model, in normalized model space (the viewer
-// centers the model at the origin and scales it to a fixed size on load).
 export interface ModelAnchor {
 	position: Vec3
 	normal?: Vec3
@@ -67,8 +65,8 @@ export interface Image {
 	createdAt: string
 	updatedAt: string
 	versions: ImageVersion[]
-	latestVersion?: ImageVersion // For simplified view
-	size?: number // Optional as it might not be available in all contexts
+	latestVersion?: ImageVersion
+	size?: number
 }
 
 export interface CommentLike {
@@ -91,11 +89,11 @@ export interface Comment {
 	likes?: CommentLike[]
 	likeCount?: number
 	isLikedByCurrentUser?: boolean
-	annotation?: Annotation | Annotation[] // Can be a single annotation or an array of annotations
-	timestamp?: number | null // seconds into a video this comment is anchored to
-	timestampEnd?: number | null // range end; null/absent = instant comment
-	page?: number | null // 1-based PDF page this comment is anchored to
-	modelAnchor?: ModelAnchor | null // 3D pin for MODEL versions
+	annotation?: Annotation | Annotation[]
+	timestamp?: number | null
+	timestampEnd?: number | null
+	page?: number | null
+	modelAnchor?: ModelAnchor | null
 	createdAt: string
 	updatedAt: string
 }

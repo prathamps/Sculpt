@@ -39,7 +39,6 @@ const authorizeExport = async (
 const slug = (name: string) =>
 	name.replace(/[^a-z0-9-_]+/gi, "_").slice(0, 60) || "report"
 
-// GET /api/export/image/:imageId/report.json
 export const getImageReportJson = async (
 	req: Request,
 	res: Response
@@ -65,7 +64,6 @@ export const getImageReportJson = async (
 	}
 }
 
-// GET /api/export/image/:imageId/report.csv
 export const getImageReportCsv = async (
 	req: Request,
 	res: Response

@@ -19,7 +19,6 @@ export default function OAuthCallbackPage() {
 			router.replace("/dashboard")
 		}, SESSION_HYDRATION_FALLBACK_MS)
 		return () => clearTimeout(fallbackIfSessionHydrationStalls)
-		// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, [])
 
 	return (

@@ -58,10 +58,6 @@ interface VideoAnnotationCanvasProps {
 	enableShortcuts?: boolean
 }
 
-// Video annotation surface: an HTML5 <video> with overlaid drawing canvases
-// and a custom scrubber. Annotations render while the playhead is inside
-// their [t, tEnd] range (instant drawings get a short default window), and
-// always while highlighted via comment selection.
 export function VideoAnnotationCanvas({
 	videoUrl,
 	tool,
@@ -98,9 +94,6 @@ export function VideoAnnotationCanvas({
 	const isDrawingRef = useRef(false)
 	const startPosRef = useRef<Point | null>(null)
 	const currentPathRef = useRef<Point[]>([])
-	// The playhead the canvas paints against. A ref (not the currentTime
-	// state) so drawAll keeps a stable identity across frames and never paints
-	// with a stale pre-seek time.
 	const playheadRef = useRef(0)
 	const frameStep = 1 / frameRate
 
@@ -124,7 +117,6 @@ export function VideoAnnotationCanvas({
 		drawAnnotations(ctx, visible, canvas.width, canvas.height)
 	}, [annotations])
 
-	// Fit the video + canvases into the container preserving aspect ratio.
 	const resize = useCallback(() => {
 		const video = videoRef.current
 		const container = containerRef.current
@@ -169,8 +161,6 @@ export function VideoAnnotationCanvas({
 		drawAll()
 	}, [drawAll, dims])
 
-	// timeupdate only fires ~4x/sec; while playing, track the playhead every
-	// animation frame so annotation windows appear and disappear on time.
 	useEffect(() => {
 		if (!isPlaying) return
 		let raf = 0
@@ -187,14 +177,12 @@ export function VideoAnnotationCanvas({
 		return () => cancelAnimationFrame(raf)
 	}, [isPlaying, drawAll])
 
-	// React to external seek requests (e.g. clicking a comment timestamp).
 	useEffect(() => {
 		if (seekRequest && videoRef.current) {
 			videoRef.current.pause()
 			videoRef.current.currentTime = Math.max(0, seekRequest.time)
 			playheadRef.current = Math.max(0, seekRequest.time)
 			setCurrentTime(playheadRef.current)
-			// Abandon any in-progress drawing and clear the preview overlay.
 			isDrawingRef.current = false
 			startPosRef.current = null
 			currentPathRef.current = []
@@ -271,8 +259,6 @@ export function VideoAnnotationCanvas({
 		[frameStep, seekTo, setPlaying]
 	)
 
-	// Playback keyboard shortcuts. Dead while typing in inputs/textareas and
-	// while the scrubber or a button has focus (they handle their own keys).
 	useEffect(() => {
 		if (!enableShortcuts) return
 		const onKeyDown = (e: KeyboardEvent) => {
@@ -314,7 +300,6 @@ export function VideoAnnotationCanvas({
 		return () => window.removeEventListener("keydown", onKeyDown)
 	}, [enableShortcuts, seekTo, stepFrame, togglePlay])
 
-	// --- Drawing -------------------------------------------------------------
 	const getRelativePos = (e: React.MouseEvent): Point | null => {
 		const canvas = previewCanvasRef.current
 		if (!canvas) return null
@@ -328,7 +313,6 @@ export function VideoAnnotationCanvas({
 	const handleMouseDown = (e: React.MouseEvent) => {
 		const pos = getRelativePos(e)
 		if (!pos) return
-		// Pause so the drawing stays anchored to a single frame.
 		videoRef.current?.pause()
 		setPlaying(false)
 		isDrawingRef.current = true
@@ -406,7 +390,6 @@ export function VideoAnnotationCanvas({
 		currentPathRef.current = []
 	}
 
-	// --- Export current annotated frame as PNG -------------------------------
 	const downloadFrame = () => {
 		const video = videoRef.current
 		const draw = drawingCanvasRef.current
@@ -490,7 +473,6 @@ export function VideoAnnotationCanvas({
 				)}
 			</div>
 
-			{/* Playback controls */}
 			<div className="flex items-end gap-2 border-t border-border/40 bg-card px-3 py-2">
 				<Button
 					size="icon"
