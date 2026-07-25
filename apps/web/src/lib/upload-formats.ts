@@ -107,6 +107,8 @@ export const ACCEPTED_FORMAT_GROUPS = [
 	},
 ]
 
+export const ACCEPTED_FORMAT_COUNT = ACCEPTED_EXTENSIONS.length
+
 export const isAcceptedUpload = (file: File): boolean =>
 	ACCEPTED_MIME_TYPES.includes(file.type) ||
 	ACCEPTED_EXTENSIONS.includes(extensionOf(file.name))

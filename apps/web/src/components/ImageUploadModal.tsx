@@ -17,6 +17,7 @@ import {
 	X,
 	Loader2,
 	AlertCircle,
+	ChevronDown,
 } from "lucide-react"
 import { Progress } from "@/components/ui/progress"
 import {
@@ -25,9 +26,13 @@ import {
 	thumbnailFileName,
 	withMimeTypeTheApiCanMap,
 } from "@/lib/media-capture"
-import { prepareModelUpload } from "@/lib/model-capture"
-import { isModelFile } from "@/lib/model-formats"
 import {
+	PreparedModelUpload,
+	prepareModelUpload,
+} from "@/lib/model-capture"
+import { isModelFile, needsGlbConversion } from "@/lib/model-formats"
+import {
+	ACCEPTED_FORMAT_COUNT,
 	ACCEPTED_FORMAT_GROUPS,
 	FILE_INPUT_ACCEPT,
 	MAX_UPLOAD_MB,
@@ -38,6 +43,18 @@ import {
 	rejectedUploadMessage,
 	unconvertibleModelMessage,
 } from "@/lib/upload-formats"
+
+const refuseUnconvertedModel = (
+	file: File,
+	prepared: PreparedModelUpload | null
+): void => {
+	if (!prepared || !needsGlbConversion(file) || prepared.glb) return
+	throw new Error(
+		prepared.failureReason
+			? `${file.name} could not be converted for viewing: ${prepared.failureReason}. Try re-exporting it, or export to GLB directly.`
+			: `${file.name} could not be converted for viewing. Try exporting it to GLB from your 3D tool.`
+	)
+}
 
 const serverReason = async (res: Response): Promise<string> => {
 	const fallback = `Upload failed (${res.status}).`
@@ -153,6 +170,7 @@ export function ImageUploadModal({
 				const prepared = isModelFile(fileToUpload)
 					? await prepareModelUpload(fileToUpload)
 					: null
+				refuseUnconvertedModel(fileToUpload, prepared)
 				const thumbnail = prepared
 					? prepared.thumbnail
 					: await captureThumbnail(fileToUpload)
@@ -183,6 +201,7 @@ export function ImageUploadModal({
 					const prepared = isModelFile(file)
 						? await prepareModelUpload(file)
 						: null
+					refuseUnconvertedModel(file, prepared)
 					const thumbnail = prepared
 						? prepared.thumbnail
 						: await captureThumbnail(file)
@@ -266,27 +285,18 @@ export function ImageUploadModal({
 								htmlFor="dropzone-file"
 								className="flex flex-col items-center justify-center w-full h-52 border-2 border-dashed rounded-lg cursor-pointer bg-muted/40 hover:bg-muted/60 transition-colors"
 							>
-								<div className="flex flex-col items-center justify-center pt-5 pb-6">
-									<UploadCloud className="w-8 h-8 mb-3 text-primary/80" />
-									<p className="mb-3 text-sm text-foreground">
+								<div className="flex flex-col items-center justify-center gap-1.5 px-6 py-6 text-center">
+									<UploadCloud className="mb-1 h-8 w-8 text-primary/80" />
+									<p className="text-sm text-foreground">
 										<span className="font-semibold">Click to upload</span> or
 										drag and drop
 									</p>
-									<dl className="grid w-full max-w-xs grid-cols-[auto_1fr] gap-x-3 gap-y-1 px-4 text-[11px] leading-snug">
-										{ACCEPTED_FORMAT_GROUPS.map(({ label, formats }) => (
-											<div key={label} className="contents">
-												<dt className="text-right font-medium text-foreground/70">
-													{label}
-												</dt>
-												<dd className="text-muted-foreground">{formats}</dd>
-											</div>
-										))}
-									</dl>
-									<p className="mt-2 text-[11px] text-muted-foreground">
+									<p className="text-xs text-muted-foreground">
+										Images, video, PDFs and 3D models
+									</p>
+									<p className="text-[11px] text-muted-foreground">
 										Up to {MAX_UPLOAD_MB} MB per file
-										{isVersionUpload
-											? " — only one file can be selected for a new version"
-											: ""}
+										{isVersionUpload ? " · one file per version" : ""}
 									</p>
 								</div>
 								<Input
@@ -300,9 +310,31 @@ export function ImageUploadModal({
 							</label>
 						</div>
 
+						<details className="group rounded-md border border-border/50 bg-muted/20 px-3 py-2">
+							<summary className="flex cursor-pointer list-none items-center justify-between text-xs text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+								<span>Supported formats ({ACCEPTED_FORMAT_COUNT})</span>
+								<ChevronDown
+									className="h-3.5 w-3.5 transition-transform group-open:rotate-180"
+									aria-hidden="true"
+								/>
+							</summary>
+							<dl className="mt-2 space-y-1.5">
+								{ACCEPTED_FORMAT_GROUPS.map(({ label, formats }) => (
+									<div key={label}>
+										<dt className="text-[11px] font-medium text-foreground/70">
+											{label}
+										</dt>
+										<dd className="text-[11px] leading-snug text-muted-foreground">
+											{formats}
+										</dd>
+									</div>
+								))}
+							</dl>
+						</details>
+
 						{error && (
-							<div className="flex items-center gap-2 text-destructive text-sm">
-								<AlertCircle className="h-4 w-4" />
+							<div className="flex items-start gap-2 text-destructive text-sm">
+								<AlertCircle className="mt-0.5 h-4 w-4 flex-shrink-0" aria-hidden="true" />
 								<span>{error}</span>
 							</div>
 						)}

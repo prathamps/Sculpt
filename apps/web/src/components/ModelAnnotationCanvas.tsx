@@ -234,8 +234,8 @@ class ModelErrorBoundary extends Component<
 			return (
 				<div className="flex h-full w-full items-center justify-center p-4 text-center">
 					<p className="max-w-xs text-sm text-muted-foreground">
-						This 3D model couldn&apos;t be loaded. It may be corrupted or use
-						an unsupported compression (e.g. Draco).
+						This 3D model couldn&apos;t be displayed. The file may be
+						incomplete or use a glTF feature this viewer doesn&apos;t support.
 					</p>
 				</div>
 			)

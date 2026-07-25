@@ -231,19 +231,25 @@ const exportGlb = async (model: Object3D): Promise<Blob> => {
 export interface PreparedModelUpload {
 	glb: Blob | null
 	thumbnail: Blob | null
+	failureReason: string | null
+}
+
+const readableReason = (error: unknown): string => {
+	const message = error instanceof Error ? error.message : String(error)
+	return message.replace(/^(THREE\.)?\w+Loader:\s*/, "").slice(0, 200)
 }
 
 export async function prepareModelUpload(
 	file: File
 ): Promise<PreparedModelUpload> {
 	const parse = sceneParsers[extensionOf(file.name)]
-	if (!parse) return { glb: null, thumbnail: null }
+	if (!parse) return { glb: null, thumbnail: null, failureReason: null }
 
 	if (file.size > MAX_BYTES_TO_PARSE_IN_BROWSER) {
 		console.warn(
 			`${file.name} is too large to parse in the browser; uploading it without a thumbnail`
 		)
-		return { glb: null, thumbnail: null }
+		return { glb: null, thumbnail: null, failureReason: null }
 	}
 
 	try {
@@ -259,9 +265,13 @@ export async function prepareModelUpload(
 			)
 		}
 		const glb = needsGlbConversion(file) ? await exportGlb(model) : null
-		return { glb, thumbnail }
+		return { glb, thumbnail, failureReason: null }
 	} catch (error) {
 		console.error(`Could not prepare 3D upload for ${file.name}:`, error)
-		return { glb: null, thumbnail: null }
+		return {
+			glb: null,
+			thumbnail: null,
+			failureReason: readableReason(error),
+		}
 	}
 }

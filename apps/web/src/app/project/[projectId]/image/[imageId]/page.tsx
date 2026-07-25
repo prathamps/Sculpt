@@ -61,7 +61,7 @@ import {
 	withMimeTypeTheApiCanMap,
 } from "@/lib/media-capture"
 import { prepareModelUpload } from "@/lib/model-capture"
-import { isModelFile } from "@/lib/model-formats"
+import { extensionOf, isModelFile } from "@/lib/model-formats"
 import {
 	FILE_INPUT_ACCEPT,
 	isNativelyPlayableVideo,
@@ -184,6 +184,12 @@ function ProjectFileViewPageInner() {
 	const isVideo = selectedVersion?.mediaType === "VIDEO"
 	const isPdf = selectedVersion?.mediaType === "PDF"
 	const isModel = selectedVersion?.mediaType === "MODEL"
+
+	const viewableModelUrl =
+		selectedVersion?.proxyUrl ||
+		(selectedVersion && extensionOf(selectedVersion.url) === "glb"
+			? selectedVersion.url
+			: null)
 
 	const playableVideoUrl =
 		selectedVersion?.proxyUrl ||
@@ -898,17 +904,26 @@ function ProjectFileViewPageInner() {
 									/>
 									)
 								) : isModel ? (
-									<ModelAnnotationCanvas
-										modelUrl={mediaUrl(
-											selectedVersion.proxyUrl || selectedVersion.url
-										)}
-										canComment={canComment}
-										pins={modelPins}
-										pendingPin={pendingPin}
-										flyTo={modelFlyTo}
-										onPlacePin={handlePlacePin}
-										onSelectComment={handleSelectCommentById}
-									/>
+									viewableModelUrl ? (
+										<ModelAnnotationCanvas
+											modelUrl={mediaUrl(viewableModelUrl)}
+											canComment={canComment}
+											pins={modelPins}
+											pendingPin={pendingPin}
+											flyTo={modelFlyTo}
+											onPlacePin={handlePlacePin}
+											onSelectComment={handleSelectCommentById}
+										/>
+									) : (
+										<div className="flex h-full w-full items-center justify-center p-4 text-center">
+											<p className="max-w-sm text-sm text-muted-foreground">
+												This model has no viewable version. It was stored
+												before conversion succeeded — re-upload it, exporting
+												to GLB from your 3D tool if the original format keeps
+												failing.
+											</p>
+										</div>
+									)
 								) : isPdf ? (
 									<PdfAnnotationCanvas
 										pdfUrl={mediaUrl(selectedVersion.url)}
