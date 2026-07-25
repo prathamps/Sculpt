@@ -51,6 +51,24 @@ export const isAcceptedUpload = (file: File): boolean =>
 	ACCEPTED_MIME_TYPES.includes(file.type) ||
 	ACCEPTED_EXTENSIONS.includes(extensionOf(file.name))
 
+export const MAX_UPLOAD_MB = Number(
+	process.env.NEXT_PUBLIC_MAX_UPLOAD_MB || 200
+)
+
+const MAX_UPLOAD_BYTES = MAX_UPLOAD_MB * 1024 * 1024
+
+export const isWithinUploadLimit = (file: File): boolean =>
+	file.size <= MAX_UPLOAD_BYTES
+
+export const oversizedUploadMessage = (oversized: File[]): string => {
+	if (oversized.length === 0) return ""
+	const describe = (file: File) =>
+		`${file.name} (${(file.size / 1024 / 1024).toFixed(0)} MB)`
+	return `${oversized.map(describe).join(", ")} ${
+		oversized.length === 1 ? "is" : "are"
+	} larger than the ${MAX_UPLOAD_MB} MB upload limit. Ask an administrator to raise MAX_UPLOAD_MB, or upload a smaller file.`
+}
+
 export const rejectedUploadMessage = (rejected: File[]): string => {
 	if (rejected.length === 0) return ""
 	const names = rejected.map((file) => file.name).join(", ")

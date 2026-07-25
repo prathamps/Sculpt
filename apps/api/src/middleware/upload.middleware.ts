@@ -71,12 +71,15 @@ const allowedMediaOnly = (
 	}
 }
 
-const MAX_FILE_SIZE_MB = Number(process.env.MAX_UPLOAD_MB || 200)
+export const maxUploadMb = Number(process.env.MAX_UPLOAD_MB || 200)
+
+export const oversizedUploadMessage = (): string =>
+	`File is larger than the ${maxUploadMb} MB upload limit. Ask an administrator to raise MAX_UPLOAD_MB, or upload a smaller file.`
 
 export const upload = multer({
 	storage: staging,
 	fileFilter: allowedMediaOnly,
-	limits: { fileSize: MAX_FILE_SIZE_MB * 1024 * 1024 },
+	limits: { fileSize: maxUploadMb * 1024 * 1024 },
 })
 
 export const detectMediaType = (

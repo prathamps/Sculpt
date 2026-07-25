@@ -43,6 +43,8 @@ Uploaded videos are transcoded in the background to a web-friendly H.264/AAC MP4
 
 3D formats are normalised in the **browser**, not on the server: `lib/model-capture.ts` loads the upload with the matching three.js loader (FBX, OBJ, STL, PLY, DAE, 3MF, 3DS, USDZ, AMF, WRL), renders a transparent-PNG thumbnail from an offscreen WebGL canvas, and re-exports the scene as GLB with `GLTFExporter`. The original file is stored as the version's `url` and the GLB lands in `proxyUrl` — the same columns the video pipeline uses — so the viewer, pins and compare view only ever deal with GLB. three.js and every loader are dynamically imported so they stay out of the main bundle and never execute during server rendering. Formats requiring a CAD kernel (STEP, IGES) or a proprietary SDK (SBSAR) are not supported.
 
+Compressed glTF is handled in both the viewer and the thumbnail pass via `lib/gltf-decoders.ts`: **Draco** geometry, **KTX2/Basis** textures and **EXT_meshopt_compression**. The decoders ship inside the `three` package and are copied to `public/three/` by `npm run copy-decoders` (wired to `predev`/`prebuild`), so a self-hosted instance never fetches them from a CDN and works fully offline. `public/three/` is generated, not committed.
+
 ### Real-time
 
 `realtime/socket.ts` owns the Socket.IO server. Clients join rooms per user (`user:<id>`), per project (`project:<id>`) and per image version (`imageVersion:<id>`); services emit domain events (`comment-updated`, `comment-deleted`, `notification`, …) into those rooms. Presence tracking feeds the notification service so offline members get email instead.

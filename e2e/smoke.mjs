@@ -309,6 +309,37 @@ if (convertedVersion?.thumbnailUrl) {
 	)
 }
 
+const dracoForm = new FormData()
+dracoForm.append(
+	"images",
+	new Blob([readFileSync(join(here, "fixtures/draco-cube.glb"))], {
+		type: "model/gltf-binary",
+	}),
+	"draco-cube.glb"
+)
+const dracoRes = await api(`/api/projects/${project.id}/images`, {
+	method: "POST",
+	body: dracoForm,
+})
+const dracoImage = dracoRes.ok
+	? (await dracoRes.json()).find((image) => image.name === "draco-cube.glb")
+	: null
+check("draco-compressed GLB uploads", !!dracoImage, `status=${dracoRes.status}`)
+if (dracoImage) {
+	await navigate(`${WEB}/project/${project.id}/image/${dracoImage.id}`, {
+		waitUntil: "domcontentloaded",
+		timeout: 120000,
+	})
+	await page.waitForSelector("canvas", { timeout: 90000 })
+	await page.waitForTimeout(4000)
+	const viewerText = await page.locator("body").innerText()
+	check(
+		"draco-compressed GLB renders instead of the unsupported-compression notice",
+		!viewerText.includes("couldn't be loaded"),
+		viewerText.slice(0, 120)
+	)
+}
+
 const unsupportedPath = join(tmpdir(), `sculpt-e2e-${stamp}.heic`)
 writeFileSync(unsupportedPath, Buffer.from("not really a heic"))
 let uploadAttempts = 0

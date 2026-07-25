@@ -30,7 +30,10 @@ import { isModelFile } from "@/lib/model-formats"
 import {
 	ACCEPTED_FORMAT_GROUPS,
 	FILE_INPUT_ACCEPT,
+	MAX_UPLOAD_MB,
 	isAcceptedUpload,
+	isWithinUploadLimit,
+	oversizedUploadMessage,
 	rejectedUploadMessage,
 } from "@/lib/upload-formats"
 
@@ -68,12 +71,19 @@ export function ImageUploadModal({
 	const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
 		if (e.target.files) {
 			const selectedFiles = Array.from(e.target.files)
-			const validFiles = selectedFiles.filter(isAcceptedUpload)
-			const rejectedFiles = selectedFiles.filter(
-				(file) => !isAcceptedUpload(file)
+			const wrongFormat = selectedFiles.filter((file) => !isAcceptedUpload(file))
+			const tooLarge = selectedFiles.filter(
+				(file) => isAcceptedUpload(file) && !isWithinUploadLimit(file)
+			)
+			const validFiles = selectedFiles.filter(
+				(file) => isAcceptedUpload(file) && isWithinUploadLimit(file)
 			)
 
-			setError(rejectedUploadMessage(rejectedFiles))
+			setError(
+				[rejectedUploadMessage(wrongFormat), oversizedUploadMessage(tooLarge)]
+					.filter(Boolean)
+					.join(" ")
+			)
 
 			if (imageId && validFiles.length > 1) {
 				setFiles([validFiles[0]])
@@ -257,11 +267,12 @@ export function ImageUploadModal({
 											</div>
 										))}
 									</dl>
-									{isVersionUpload && (
-										<p className="mt-2 text-xs text-muted-foreground">
-											Only one file can be selected for a new version
-										</p>
-									)}
+									<p className="mt-2 text-[11px] text-muted-foreground">
+										Up to {MAX_UPLOAD_MB} MB per file
+										{isVersionUpload
+											? " — only one file can be selected for a new version"
+											: ""}
+									</p>
 								</div>
 								<Input
 									id="dropzone-file"

@@ -1,5 +1,9 @@
 import type * as ThreeModule from "three"
 import { GLB_MIME, extensionOf, needsGlbConversion } from "./model-formats"
+import {
+	configureGltfCompression,
+	loadCompressionModules,
+} from "./gltf-decoders"
 
 type Three = typeof ThreeModule
 type Object3D = ThreeModule.Object3D
@@ -29,11 +33,13 @@ const decodeText = (buffer: ArrayBuffer): string =>
 type SceneParser = (three: Three, buffer: ArrayBuffer) => Promise<Object3D>
 
 const parseGltf: SceneParser = async (_three, buffer) => {
-	const { GLTFLoader } = await import(
-		"three/examples/jsm/loaders/GLTFLoader.js"
-	)
+	const [{ GLTFLoader }, compression] = await Promise.all([
+		import("three/examples/jsm/loaders/GLTFLoader.js"),
+		loadCompressionModules(),
+	])
+	const loader = configureGltfCompression(new GLTFLoader(), compression)
 	return new Promise<Object3D>((resolve, reject) => {
-		new GLTFLoader().parse(buffer, "", (gltf) => resolve(gltf.scene), reject)
+		loader.parse(buffer, "", (gltf) => resolve(gltf.scene), reject)
 	})
 }
 

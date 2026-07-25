@@ -19,7 +19,11 @@ import {
 	useThree,
 } from "@react-three/fiber"
 import { Html, OrbitControls } from "@react-three/drei"
+import { DRACOLoader } from "three/examples/jsm/loaders/DRACOLoader.js"
+import { KTX2Loader } from "three/examples/jsm/loaders/KTX2Loader.js"
+import { MeshoptDecoder } from "three/examples/jsm/libs/meshopt_decoder.module.js"
 import type { OrbitControls as OrbitControlsImpl } from "three-stdlib"
+import { configureGltfCompression } from "@/lib/gltf-decoders"
 import { Loader2 } from "lucide-react"
 import { ModelAnchor, Vec3 } from "@/types"
 import { cn } from "@/lib/utils"
@@ -75,7 +79,14 @@ function NormalizedModel({
 	onPlacePin?: (anchor: ModelAnchor) => void
 	controlsRef: React.RefObject<OrbitControlsImpl | null>
 }) {
-	const gltf = useLoader(GLTFLoader, url)
+	const renderer = useThree((state) => state.gl)
+	const gltf = useLoader(GLTFLoader, url, (loader) =>
+		configureGltfCompression(
+			loader,
+			{ DRACOLoader, KTX2Loader, MeshoptDecoder },
+			renderer
+		)
+	)
 
 	const scene = useMemo(() => {
 		const root = gltf.scene.clone(true)

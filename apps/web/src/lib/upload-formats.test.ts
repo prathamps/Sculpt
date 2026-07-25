@@ -1,12 +1,23 @@
 import { describe, expect, it } from "vitest"
 import {
 	ACCEPTED_MIME_TYPES,
+	MAX_UPLOAD_MB,
 	isAcceptedUpload,
+	isWithinUploadLimit,
+	oversizedUploadMessage,
 	rejectedUploadMessage,
 } from "./upload-formats"
 
 const fileNamed = (name: string, type: string) =>
 	new File([new Uint8Array([1])], name, { type })
+
+const fileOfMegabytes = (name: string, megabytes: number) => {
+	const file = new File([new Uint8Array([1])], name, { type: "video/mp4" })
+	Object.defineProperty(file, "size", {
+		value: Math.round(megabytes * 1024 * 1024),
+	})
+	return file
+}
 
 describe("isAcceptedUpload", () => {
 	it("accepts the formats the API stores", () => {
@@ -51,6 +62,33 @@ describe("isAcceptedUpload", () => {
 	it("never advertises a type the API does not map", () => {
 		expect(ACCEPTED_MIME_TYPES).not.toContain("image/svg+xml")
 		expect(ACCEPTED_MIME_TYPES).not.toContain("model/gltf+json")
+	})
+})
+
+describe("isWithinUploadLimit", () => {
+	it("accepts a file at the limit and rejects one past it", () => {
+		expect(isWithinUploadLimit(fileOfMegabytes("ok.mp4", MAX_UPLOAD_MB))).toBe(
+			true
+		)
+		expect(
+			isWithinUploadLimit(fileOfMegabytes("big.mp4", MAX_UPLOAD_MB + 1))
+		).toBe(false)
+	})
+})
+
+describe("oversizedUploadMessage", () => {
+	it("is empty when every file fits", () => {
+		expect(oversizedUploadMessage([])).toBe("")
+	})
+
+	it("names the file, its size and the limit", () => {
+		const message = oversizedUploadMessage([
+			fileOfMegabytes("huge.mp4", MAX_UPLOAD_MB + 300),
+		])
+		expect(message).toContain("huge.mp4")
+		expect(message).toContain(`${MAX_UPLOAD_MB + 300} MB`)
+		expect(message).toContain(`${MAX_UPLOAD_MB} MB upload limit`)
+		expect(message).toContain("MAX_UPLOAD_MB")
 	})
 })
 
