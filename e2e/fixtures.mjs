@@ -24,6 +24,38 @@ export const buildMinimalPdf = () => {
 	return Buffer.from(body, "latin1")
 }
 
+export const buildTetrahedronStl = () => {
+	const corners = [
+		[0, 0, 0],
+		[10, 0, 0],
+		[5, 10, 0],
+		[5, 4, 10],
+	]
+	const faces = [
+		[0, 1, 2],
+		[0, 1, 3],
+		[1, 2, 3],
+		[2, 0, 3],
+	]
+	const facet = (a, b, c) =>
+		[
+			"  facet normal 0 0 0",
+			"    outer loop",
+			`      vertex ${a.join(" ")}`,
+			`      vertex ${b.join(" ")}`,
+			`      vertex ${c.join(" ")}`,
+			"    endloop",
+			"  endfacet",
+		].join("\n")
+	const body = faces
+		.map(([i, j, k]) => facet(corners[i], corners[j], corners[k]))
+		.join("\n")
+	return Buffer.from(
+		`solid sculpt-e2e\n${body}\nendsolid sculpt-e2e\n`,
+		"latin1"
+	)
+}
+
 export const buildCubeGlb = () => {
 	const faces = [
 		{ n: [0, 0, 1], corners: [[-1, -1, 1], [1, -1, 1], [1, 1, 1], [-1, 1, 1]] },

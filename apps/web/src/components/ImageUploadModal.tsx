@@ -22,18 +22,27 @@ import { Progress } from "@/components/ui/progress"
 import {
 	captureThumbnail,
 	getVideoDuration,
+	thumbnailFileName,
 	withMimeTypeTheApiCanMap,
 } from "@/lib/media-capture"
+import { prepareModelUpload } from "@/lib/model-capture"
+import { MODEL_FILE_ACCEPT, isModelFile } from "@/lib/model-formats"
 
-const ACCEPTED_TYPES =
-	"image/*,video/mp4,video/webm,video/quicktime,application/pdf,.glb,model/gltf-binary"
+const ACCEPTED_TYPES = `image/*,video/mp4,video/webm,video/quicktime,application/pdf,${MODEL_FILE_ACCEPT}`
+
+const ACCEPTED_FORMAT_GROUPS = [
+	{ label: "Images", formats: "JPG, PNG, WebP, GIF, AVIF" },
+	{ label: "Video", formats: "MP4, WebM, MOV" },
+	{ label: "Documents", formats: "PDF" },
+	{ label: "3D", formats: "GLB, FBX, OBJ, STL, PLY, DAE, 3MF, 3DS, USDZ" },
+]
 
 const isAcceptedFile = (file: File) =>
 	file.type.startsWith("image/") ||
 	["video/mp4", "video/webm", "video/quicktime", "application/pdf"].includes(
 		file.type
 	) ||
-	file.name.toLowerCase().endsWith(".glb")
+	isModelFile(file)
 
 interface ImageUploadModalProps {
 	projectId: string | null
@@ -62,7 +71,7 @@ export function ImageUploadModal({
 
 			if (validFiles.length !== selectedFiles.length) {
 				setError(
-					"Only image, video (MP4, WebM, MOV), PDF and GLB 3D model files are allowed."
+					"Only image, video, PDF and 3D model files are allowed."
 				)
 			} else {
 				setError("")
@@ -118,9 +127,17 @@ export function ImageUploadModal({
 					const duration = await getVideoDuration(fileToUpload)
 					if (duration != null) formData.append("duration", String(duration))
 				}
-				const thumbnail = await captureThumbnail(fileToUpload)
+				const prepared = isModelFile(fileToUpload)
+					? await prepareModelUpload(fileToUpload)
+					: null
+				const thumbnail = prepared
+					? prepared.thumbnail
+					: await captureThumbnail(fileToUpload)
 				if (thumbnail) {
-					formData.append("thumbnail", thumbnail, "thumbnail.jpg")
+					formData.append("thumbnail", thumbnail, thumbnailFileName(thumbnail))
+				}
+				if (prepared?.glb) {
+					formData.append("modelProxy", prepared.glb, "converted.glb")
 				}
 
 				res = await fetch(`${URI}/api/images/${imageId}/versions`, {
@@ -129,19 +146,34 @@ export function ImageUploadModal({
 					credentials: "include",
 				})
 			} else {
-				const filesMeta: { duration: number | null; hasThumbnail: boolean }[] =
-					[]
+				const filesMeta: {
+					duration: number | null
+					hasThumbnail: boolean
+					hasModelProxy: boolean
+				}[] = []
 				for (const selected of files) {
 					const file = withMimeTypeTheApiCanMap(selected)
 					formData.append("images", file)
 					const duration = file.type.startsWith("video/")
 						? await getVideoDuration(file)
 						: null
-					const thumbnail = await captureThumbnail(file)
+					const prepared = isModelFile(file)
+						? await prepareModelUpload(file)
+						: null
+					const thumbnail = prepared
+						? prepared.thumbnail
+						: await captureThumbnail(file)
 					if (thumbnail) {
-						formData.append("thumbnails", thumbnail, "thumbnail.jpg")
+						formData.append("thumbnails", thumbnail, thumbnailFileName(thumbnail))
 					}
-					filesMeta.push({ duration, hasThumbnail: !!thumbnail })
+					if (prepared?.glb) {
+						formData.append("modelProxies", prepared.glb, "converted.glb")
+					}
+					filesMeta.push({
+						duration,
+						hasThumbnail: !!thumbnail,
+						hasModelProxy: !!prepared?.glb,
+					})
 				}
 				formData.append("filesMeta", JSON.stringify(filesMeta))
 
@@ -209,16 +241,22 @@ export function ImageUploadModal({
 							>
 								<div className="flex flex-col items-center justify-center pt-5 pb-6">
 									<UploadCloud className="w-8 h-8 mb-3 text-primary/80" />
-									<p className="mb-2 text-sm text-foreground">
+									<p className="mb-3 text-sm text-foreground">
 										<span className="font-semibold">Click to upload</span> or
 										drag and drop
 									</p>
-									<p className="text-xs text-muted-foreground">
-										Images (JPG, PNG, WebP), videos (MP4, WebM, MOV), PDFs or
-										3D models (GLB)
-									</p>
+									<dl className="grid w-full max-w-xs grid-cols-[auto_1fr] gap-x-3 gap-y-1 px-4 text-[11px] leading-snug">
+										{ACCEPTED_FORMAT_GROUPS.map(({ label, formats }) => (
+											<div key={label} className="contents">
+												<dt className="text-right font-medium text-foreground/70">
+													{label}
+												</dt>
+												<dd className="text-muted-foreground">{formats}</dd>
+											</div>
+										))}
+									</dl>
 									{isVersionUpload && (
-										<p className="text-xs text-muted-foreground mt-1">
+										<p className="mt-2 text-xs text-muted-foreground">
 											Only one file can be selected for a new version
 										</p>
 									)}

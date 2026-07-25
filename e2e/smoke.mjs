@@ -2,7 +2,14 @@ import { chromium } from "playwright-core"
 import { readFileSync } from "node:fs"
 import { fileURLToPath } from "node:url"
 import { dirname, join } from "node:path"
-import { PNG_1PX, buildCubeGlb, buildMinimalPdf } from "./fixtures.mjs"
+import { writeFileSync } from "node:fs"
+import { tmpdir } from "node:os"
+import {
+	PNG_1PX,
+	buildCubeGlb,
+	buildMinimalPdf,
+	buildTetrahedronStl,
+} from "./fixtures.mjs"
 
 const API = process.env.SCULPT_API_URL || "http://localhost:3001"
 const WEB = process.env.SCULPT_WEB_URL || "http://localhost:3000"
@@ -235,6 +242,70 @@ if (readyVersion?.proxyUrl) {
 		await page
 			.waitForSelector(`video[src*="${proxyBasename}"]`, { timeout: 30000 })
 			.then(() => true, () => false)
+	)
+}
+
+const stlPath = join(tmpdir(), `sculpt-e2e-${stamp}.stl`)
+writeFileSync(stlPath, buildTetrahedronStl())
+await navigate(`${WEB}/project/${project.id}`, {
+	waitUntil: "domcontentloaded",
+	timeout: 120000,
+})
+await page.click('button:has-text("Upload")')
+await page.setInputFiles("#dropzone-file", stlPath)
+await page.click('button:has-text("Upload 1 file")')
+
+const convertedVersion = await (async () => {
+	const deadline = Date.now() + 90000
+	while (Date.now() < deadline) {
+		const res = await api(`/api/projects/${project.id}/images`)
+		const images = res.ok ? await res.json() : []
+		const stl = images.find((image) => image.name.endsWith(".stl"))
+		if (stl?.latestVersion) return stl.latestVersion
+		await new Promise((resolve) => setTimeout(resolve, 1500))
+	}
+	return null
+})()
+
+check("browser upload of an STL creates a version", !!convertedVersion)
+check(
+	"STL is stored as a MODEL",
+	convertedVersion?.mediaType === "MODEL",
+	`got=${convertedVersion?.mediaType}`
+)
+check(
+	"STL was converted to a GLB proxy in the browser",
+	convertedVersion?.proxyStatus === "READY" &&
+		!!convertedVersion?.proxyUrl &&
+		convertedVersion.proxyUrl.endsWith(".glb"),
+	`status=${convertedVersion?.proxyStatus} url=${convertedVersion?.proxyUrl}`
+)
+check(
+	"the original STL is still stored alongside the proxy",
+	!!convertedVersion?.url && convertedVersion.url.endsWith(".stl"),
+	`url=${convertedVersion?.url}`
+)
+check(
+	"a 3D thumbnail was rendered for the model",
+	!!convertedVersion?.thumbnailUrl,
+	`thumbnailUrl=${convertedVersion?.thumbnailUrl}`
+)
+if (convertedVersion?.thumbnailUrl) {
+	const thumbRes = await api(
+		convertedVersion.thumbnailUrl.startsWith("/")
+			? convertedVersion.thumbnailUrl
+			: `/${convertedVersion.thumbnailUrl}`
+	)
+	const bytes = thumbRes.ok
+		? Buffer.from(await thumbRes.arrayBuffer())
+		: Buffer.alloc(0)
+	check(
+		"the 3D thumbnail is a transparent PNG with pixels",
+		bytes.length > 1000 &&
+			bytes.subarray(0, 8).equals(
+				Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])
+			),
+		`bytes=${bytes.length}`
 	)
 }
 

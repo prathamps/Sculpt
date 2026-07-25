@@ -57,8 +57,11 @@ import { mediaUrl, roleAtLeast } from "@/lib/utils"
 import {
 	captureThumbnail,
 	getVideoDuration,
+	thumbnailFileName,
 	withMimeTypeTheApiCanMap,
 } from "@/lib/media-capture"
+import { prepareModelUpload } from "@/lib/model-capture"
+import { MODEL_FILE_ACCEPT, isModelFile } from "@/lib/model-formats"
 import { useVersionComments } from "@/hooks/useVersionComments"
 import { useAnnotationHistory } from "@/hooks/useAnnotationHistory"
 import { usePresence } from "@/hooks/usePresence"
@@ -588,8 +591,16 @@ function ProjectFileViewPageInner() {
 				const duration = await getVideoDuration(fileToUpload)
 				if (duration != null) formData.append("duration", String(duration))
 			}
-			const thumbnail = await captureThumbnail(fileToUpload)
-			if (thumbnail) formData.append("thumbnail", thumbnail, "thumbnail.jpg")
+			const prepared = isModelFile(fileToUpload)
+				? await prepareModelUpload(fileToUpload)
+				: null
+			const thumbnail = prepared
+				? prepared.thumbnail
+				: await captureThumbnail(fileToUpload)
+			if (thumbnail) formData.append("thumbnail", thumbnail, thumbnailFileName(thumbnail))
+			if (prepared?.glb) {
+				formData.append("modelProxy", prepared.glb, "converted.glb")
+			}
 
 			const res = await fetch(`${URI}/api/images/${imageId}/versions`, {
 				method: "POST",
@@ -863,7 +874,9 @@ function ProjectFileViewPageInner() {
 									/>
 								) : isModel ? (
 									<ModelAnnotationCanvas
-										modelUrl={mediaUrl(selectedVersion.url)}
+										modelUrl={mediaUrl(
+											selectedVersion.proxyUrl || selectedVersion.url
+										)}
 										canComment={canComment}
 										pins={modelPins}
 										pendingPin={pendingPin}
@@ -975,7 +988,7 @@ function ProjectFileViewPageInner() {
 								type="file"
 								aria-label="Version file"
 								onChange={(e) => setUploadFile(e.target.files?.[0] || null)}
-								accept="image/*,video/*,application/pdf,.glb,model/gltf-binary"
+								accept={`image/*,video/*,application/pdf,${MODEL_FILE_ACCEPT}`}
 							/>
 						</div>
 						<div className="flex justify-end gap-2">

@@ -17,6 +17,7 @@ router.post(
 	upload.fields([
 		{ name: "image", maxCount: 1 },
 		{ name: "thumbnail", maxCount: 1 },
+		{ name: "modelProxy", maxCount: 1 },
 	]),
 	imageController.uploadImageVersion
 )
@@ -41,6 +42,7 @@ projectImagesRouter.post(
 	upload.fields([
 		{ name: "images", maxCount: 10 },
 		{ name: "thumbnails", maxCount: 10 },
+		{ name: "modelProxies", maxCount: 10 },
 	]),
 	imageController.uploadImage
 )

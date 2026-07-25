@@ -39,6 +39,10 @@ Interfaces exist only at seams where implementations genuinely swap:
 
 Uploaded videos are transcoded in the background to a web-friendly H.264/AAC MP4 capped at 1080p (`modules/media/video-pipeline.ts`, ffmpeg via `ffmpeg-static`). The upload request copies the staged file aside, stores the original, marks the version `proxyStatus: PENDING` and returns immediately; an in-process queue transcodes, probes the real duration with ffprobe, generates a poster frame when the client didn't supply one, stores the results through the storage port and marks the version `READY` (or `FAILED` — the player falls back to the original file). Completion is pushed to viewers over the version's socket room as `version-updated`. Jobs left `PENDING` by a crashed process are marked `FAILED` at boot.
 
+### 3D model ingest
+
+3D formats are normalised in the **browser**, not on the server: `lib/model-capture.ts` loads the upload with the matching three.js loader (FBX, OBJ, STL, PLY, DAE, 3MF, 3DS, USDZ, AMF, WRL), renders a transparent-PNG thumbnail from an offscreen WebGL canvas, and re-exports the scene as GLB with `GLTFExporter`. The original file is stored as the version's `url` and the GLB lands in `proxyUrl` — the same columns the video pipeline uses — so the viewer, pins and compare view only ever deal with GLB. three.js and every loader are dynamically imported so they stay out of the main bundle and never execute during server rendering. Formats requiring a CAD kernel (STEP, IGES) or a proprietary SDK (SBSAR) are not supported.
+
 ### Real-time
 
 `realtime/socket.ts` owns the Socket.IO server. Clients join rooms per user (`user:<id>`), per project (`project:<id>`) and per image version (`imageVersion:<id>`); services emit domain events (`comment-updated`, `comment-deleted`, `notification`, …) into those rooms. Presence tracking feeds the notification service so offline members get email instead.

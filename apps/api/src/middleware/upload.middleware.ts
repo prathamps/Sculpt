@@ -8,6 +8,20 @@ const stagingDir = path.join(uploadsDir, ".staging")
 
 fs.mkdirSync(stagingDir, { recursive: true })
 
+const MODEL_MIME_EXTENSIONS: Record<string, string> = {
+	"model/gltf-binary": ".glb",
+	"model/fbx": ".fbx",
+	"model/obj": ".obj",
+	"model/stl": ".stl",
+	"model/ply": ".ply",
+	"model/vnd.collada+xml": ".dae",
+	"model/3mf": ".3mf",
+	"image/x-3ds": ".3ds",
+	"model/vnd.usdz+zip": ".usdz",
+	"application/x-amf": ".amf",
+	"model/vrml": ".wrl",
+}
+
 const INLINE_SAFE_MIME_EXTENSIONS: Record<string, string> = {
 	"image/jpeg": ".jpg",
 	"image/jpg": ".jpg",
@@ -19,7 +33,7 @@ const INLINE_SAFE_MIME_EXTENSIONS: Record<string, string> = {
 	"video/webm": ".webm",
 	"video/quicktime": ".mov",
 	"application/pdf": ".pdf",
-	"model/gltf-binary": ".glb",
+	...MODEL_MIME_EXTENSIONS,
 }
 
 export const isAllowedMime = (mimetype: string): boolean =>
@@ -51,7 +65,7 @@ const allowedMediaOnly = (
 	} else {
 		cb(
 			new Error(
-				"Unsupported file type. Allowed: JPEG, PNG, GIF, WebP, AVIF images, MP4, WebM, MOV videos, PDF documents and GLB 3D models."
+				"Unsupported file type. Allowed: JPEG, PNG, GIF, WebP, AVIF images, MP4, WebM, MOV videos, PDF documents and GLB, FBX, OBJ, STL, PLY, DAE, 3MF, 3DS, USDZ, AMF, WRL 3D models."
 			)
 		)
 	}
@@ -70,7 +84,7 @@ export const detectMediaType = (
 ): "IMAGE" | "VIDEO" | "PDF" | "MODEL" =>
 	mimetype === "application/pdf"
 		? "PDF"
-		: mimetype === "model/gltf-binary"
+		: mimetype in MODEL_MIME_EXTENSIONS
 			? "MODEL"
 			: mimetype.startsWith("video/")
 				? "VIDEO"
