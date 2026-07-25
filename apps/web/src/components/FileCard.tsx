@@ -148,9 +148,11 @@ function CardThumbnail({
 		)
 	}
 
+	const previewUrl = thumbnailUrl || file.latestVersion?.proxyUrl || fileUrl
+
 	return (
 		<img
-			src={imageError ? "/placeholder-image.svg" : mediaUrl(fileUrl)}
+			src={imageError ? "/placeholder-image.svg" : mediaUrl(previewUrl)}
 			alt={file.name}
 			className={cn(
 				"h-full w-full object-cover",

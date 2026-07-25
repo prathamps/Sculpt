@@ -73,6 +73,8 @@ const fixtures = [
 	["sample-video.mp4", readFileSync(join(here, "fixtures/sample-video.mp4")), "video/mp4", "VIDEO"],
 	["sample-doc.pdf", buildMinimalPdf(), "application/pdf", "PDF"],
 	["sample-model.glb", buildCubeGlb(), "model/gltf-binary", "MODEL"],
+	["sample-video.mkv", readFileSync(join(here, "fixtures/sample-video.mkv")), "video/x-matroska", "VIDEO"],
+	["sample-image.tiff", readFileSync(join(here, "fixtures/sample-image.tiff")), "image/tiff", "IMAGE"],
 ]
 for (const [name, bytes, mime] of fixtures) {
 	uploadForm.append("images", new Blob([bytes], { type: mime }), name)
@@ -82,7 +84,11 @@ const uploadRes = await api(`/api/projects/${project.id}/images`, {
 	body: uploadForm,
 })
 const uploaded = uploadRes.ok ? await uploadRes.json() : []
-check("upload all four media types", uploadRes.status === 201 && uploaded.length === 4, `status=${uploadRes.status}`)
+check(
+	"upload every media type, including containers a browser cannot open",
+	uploadRes.status === 201 && uploaded.length === fixtures.length,
+	`status=${uploadRes.status}`
+)
 
 const byName = (name) => uploaded.find((image) => image.name === name)
 for (const [name, , , expectedType] of fixtures) {
@@ -306,6 +312,31 @@ if (convertedVersion?.thumbnailUrl) {
 				Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])
 			),
 		`bytes=${bytes.length}`
+	)
+}
+
+const renditionTargets = [
+	["sample-video.mkv", "a browser-playable MP4", ".mp4"],
+	["sample-image.tiff", "a browser-viewable PNG", ".png"],
+]
+for (const [name, description, expectedSuffix] of renditionTargets) {
+	const version = byName(name).latestVersion
+	const deadline = Date.now() + PROXY_READY_TIMEOUT_MS
+	let ready = null
+	while (Date.now() < deadline) {
+		const poll = await api(`/api/images/versions/${version.id}`)
+		const current = poll.ok ? await poll.json() : null
+		if (current?.proxyStatus === "READY") {
+			ready = current
+			break
+		}
+		if (current?.proxyStatus === "FAILED") break
+		await new Promise((resolve) => setTimeout(resolve, 2000))
+	}
+	check(
+		`${name} is converted to ${description}`,
+		!!ready?.proxyUrl && ready.proxyUrl.endsWith(expectedSuffix),
+		`status=${ready?.proxyStatus} url=${ready?.proxyUrl}`
 	)
 }
 

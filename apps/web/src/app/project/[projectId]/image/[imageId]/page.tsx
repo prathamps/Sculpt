@@ -62,7 +62,10 @@ import {
 } from "@/lib/media-capture"
 import { prepareModelUpload } from "@/lib/model-capture"
 import { isModelFile } from "@/lib/model-formats"
-import { FILE_INPUT_ACCEPT } from "@/lib/upload-formats"
+import {
+	FILE_INPUT_ACCEPT,
+	isNativelyPlayableVideo,
+} from "@/lib/upload-formats"
 import { useVersionComments } from "@/hooks/useVersionComments"
 import { useAnnotationHistory } from "@/hooks/useAnnotationHistory"
 import { usePresence } from "@/hooks/usePresence"
@@ -181,6 +184,17 @@ function ProjectFileViewPageInner() {
 	const isVideo = selectedVersion?.mediaType === "VIDEO"
 	const isPdf = selectedVersion?.mediaType === "PDF"
 	const isModel = selectedVersion?.mediaType === "MODEL"
+
+	const playableVideoUrl =
+		selectedVersion?.proxyUrl ||
+		(selectedVersion && isNativelyPlayableVideo(selectedVersion.url)
+			? selectedVersion.url
+			: null)
+	const awaitingRendition =
+		!!selectedVersion &&
+		selectedVersion.proxyStatus === "PENDING" &&
+		!selectedVersion.proxyUrl &&
+		(isVideo ? !playableVideoUrl : selectedVersion.mediaType === "IMAGE")
 
 	const {
 		comments,
@@ -728,10 +742,10 @@ function ProjectFileViewPageInner() {
 						)}
 					</div>
 				)}
-				{isVideo && selectedVersion?.proxyStatus === "PENDING" && (
+				{selectedVersion?.proxyStatus === "PENDING" && (
 					<span className="flex items-center gap-1 text-xs text-muted-foreground">
 						<Loader2 className="h-3 w-3 animate-spin" aria-hidden="true" />
-						Optimizing video…
+						{isVideo ? "Optimizing video…" : "Preparing preview…"}
 					</span>
 				)}
 				{image && image.versions && image.versions.length >= 2 && (
@@ -853,10 +867,19 @@ function ProjectFileViewPageInner() {
 								</div>
 							) : selectedVersion ? (
 								isVideo ? (
+									!playableVideoUrl ? (
+										<div className="flex h-full w-full flex-col items-center justify-center gap-2">
+											<Loader2
+												className="h-6 w-6 animate-spin text-muted-foreground"
+												aria-hidden="true"
+											/>
+											<p className="text-sm text-muted-foreground">
+												Preparing this video for playback…
+											</p>
+										</div>
+									) : (
 									<VideoAnnotationCanvas
-										videoUrl={mediaUrl(
-											selectedVersion.proxyUrl || selectedVersion.url
-										)}
+										videoUrl={mediaUrl(playableVideoUrl)}
 										tool={tool}
 										color={color}
 										canDraw={canComment}
@@ -873,6 +896,7 @@ function ProjectFileViewPageInner() {
 										initialDuration={selectedVersion.duration}
 										annotations={canvasAnnotations}
 									/>
+									)
 								) : isModel ? (
 									<ModelAnnotationCanvas
 										modelUrl={mediaUrl(
@@ -896,9 +920,21 @@ function ProjectFileViewPageInner() {
 										onAddAnnotation={handleAddAnnotation}
 										annotations={canvasAnnotations}
 									/>
+								) : awaitingRendition ? (
+									<div className="flex h-full w-full flex-col items-center justify-center gap-2">
+										<Loader2
+											className="h-6 w-6 animate-spin text-muted-foreground"
+											aria-hidden="true"
+										/>
+										<p className="text-sm text-muted-foreground">
+											Preparing a preview of this file…
+										</p>
+									</div>
 								) : (
 									<AnnotationCanvas
-										imageUrl={mediaUrl(selectedVersion.url)}
+										imageUrl={mediaUrl(
+											selectedVersion.proxyUrl || selectedVersion.url
+										)}
 										tool={tool}
 										color={color}
 										onAddAnnotation={handleAddAnnotation}

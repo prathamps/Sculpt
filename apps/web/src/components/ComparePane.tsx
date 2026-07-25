@@ -156,7 +156,7 @@ export function ComparePane({
 		}
 		return (
 			<AnnotationCanvas
-				imageUrl={mediaUrl(version.url)}
+				imageUrl={mediaUrl(version.proxyUrl || version.url)}
 				tool="pencil"
 				color="#4783E8"
 				readOnly

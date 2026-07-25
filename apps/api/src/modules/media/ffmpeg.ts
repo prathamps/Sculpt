@@ -82,6 +82,24 @@ export const transcodeToWebProxy = async (
 	])
 }
 
+export const renderBrowserSafeImage = async (
+	sourcePath: string,
+	outputPath: string
+): Promise<void> => {
+	await run(ffmpegBinary, [
+		"-y",
+		"-i",
+		sourcePath,
+		"-frames:v",
+		"1",
+		"-vf",
+		"scale=w=4096:h=4096:force_original_aspect_ratio=decrease:force_divisible_by=2",
+		"-pix_fmt",
+		"rgba",
+		outputPath,
+	])
+}
+
 export const capturePosterFrame = async (
 	sourcePath: string,
 	outputPath: string

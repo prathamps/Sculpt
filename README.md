@@ -7,7 +7,8 @@ Sculpt is an open-source, real-time visual collaboration platform inspired by fr
 - **Annotation tools** — pencil, rectangle and line drawing with color options and undo/redo
 - **Location-aware comments** — threaded discussions tied to exact coordinates, with likes and resolution tracking
 - **Video annotation** — frame-by-frame playback with timestamp-anchored comments and drawings; export the current annotated frame as PNG. Uploads are transcoded in the background to a web-friendly 1080p rendition so scrubbing stays smooth
-- **3D model review** — orbit a model and drop numbered pins directly on its surface; selecting a comment flies the camera back to the exact saved view. GLB, FBX, OBJ, STL, PLY, DAE, 3MF, 3DS, USDZ, AMF and WRL are accepted (converted to GLB in the browser on upload, with a rendered thumbnail), including Draco-, KTX2- and meshopt-compressed glTF
+- **3D model review** — orbit a model and drop numbered pins directly on its surface; selecting a comment flies the camera back to the exact saved view. GLB, glTF, FBX, OBJ, STL, PLY, DAE, 3MF, 3DS, USDZ, AMF, WRL, KMZ, VOX, PCD, XYZ and GCODE are accepted (converted to GLB in the browser on upload, with a rendered thumbnail), including Draco-, KTX2- and meshopt-compressed glTF
+- **Wide format support** — anything you upload becomes reviewable. Video in containers a browser cannot play (MKV, AVI, WMV, FLV, MPEG, TS, 3GP, MXF, DV, ProRes) is transcoded on the server; images a browser cannot show (TIFF, PSD, TGA, EXR, DPX, JPEG 2000, PCX) get a PNG rendition. The original file is always kept
 - **PDF review** — page-by-page viewing with comments and drawings anchored to the page they were made on
 - **Version control** — upload new versions of a file while preserving its feedback history
 - **Real-time collaboration** — Socket.IO keeps annotations, comments and notifications live across the team

@@ -107,6 +107,49 @@ const sceneParsers: Record<string, SceneParser> = {
 		)
 		return new VRMLLoader().parse(decodeText(buffer), "")
 	},
+	kmz: async (_three, buffer) => {
+		const { KMZLoader } = await import(
+			"three/examples/jsm/loaders/KMZLoader.js"
+		)
+		return new KMZLoader().parse(buffer).scene
+	},
+	vox: async (_three, buffer) => {
+		const { VOXLoader } = await import(
+			"three/examples/jsm/loaders/VOXLoader.js"
+		)
+		return new VOXLoader().parse(buffer).scene
+	},
+	pcd: async (_three, buffer) => {
+		const { PCDLoader } = await import(
+			"three/examples/jsm/loaders/PCDLoader.js"
+		)
+		return new PCDLoader().parse(buffer)
+	},
+	xyz: async (three, buffer) => {
+		const { XYZLoader } = await import(
+			"three/examples/jsm/loaders/XYZLoader.js"
+		)
+		return new Promise<Object3D>((resolve, reject) => {
+			try {
+				new XYZLoader().parse(decodeText(buffer), (geometry) => {
+					resolve(
+						new three.Points(
+							geometry,
+							new three.PointsMaterial({ size: 0.05, vertexColors: true })
+						)
+					)
+				})
+			} catch (error) {
+				reject(error)
+			}
+		})
+	},
+	gcode: async (_three, buffer) => {
+		const { GCodeLoader } = await import(
+			"three/examples/jsm/loaders/GCodeLoader.js"
+		)
+		return new GCodeLoader().parse(decodeText(buffer))
+	},
 }
 
 export const canRenderModelFormat = (fileName: string): boolean =>

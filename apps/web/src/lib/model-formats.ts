@@ -2,6 +2,7 @@ export const GLB_MIME = "model/gltf-binary"
 
 export const MODEL_SOURCE_MIME_BY_EXTENSION: Record<string, string> = {
 	glb: GLB_MIME,
+	gltf: "model/gltf+json",
 	fbx: "model/fbx",
 	obj: "model/obj",
 	stl: "model/stl",
@@ -12,6 +13,11 @@ export const MODEL_SOURCE_MIME_BY_EXTENSION: Record<string, string> = {
 	usdz: "model/vnd.usdz+zip",
 	amf: "application/x-amf",
 	wrl: "model/vrml",
+	kmz: "model/vnd.kmz",
+	vox: "model/vox",
+	pcd: "model/pcd",
+	xyz: "model/xyz",
+	gcode: "text/x.gcode",
 }
 
 export const MODEL_EXTENSIONS = Object.keys(MODEL_SOURCE_MIME_BY_EXTENSION)

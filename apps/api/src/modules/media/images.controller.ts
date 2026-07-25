@@ -3,13 +3,17 @@ import { Request, Response } from "express"
 import fs from "fs"
 import * as imageService from "./images.service"
 import { CommentsService } from "../comments/comments.service"
-import { detectMediaType } from "../../middleware/upload.middleware"
+import {
+	detectMediaType,
+	needsBrowserSafeImageRendition,
+} from "../../middleware/upload.middleware"
 import { parseFilesMeta } from "./upload-meta"
 import {
 	discardStagedVideo,
 	enqueueVideoProxy,
 	stageVideoForProcessing,
 } from "./video-pipeline"
+import { enqueueImageRendition } from "./image-pipeline"
 import { storage } from "../../storage"
 import { AppError } from "../../lib/errors"
 import { recordAudit, requestIp } from "../audit/audit.service"
@@ -178,10 +182,11 @@ export const uploadImage = async (
 		let modelProxyIndex = 0
 		for (const [index, file] of files.entries()) {
 			const mediaType = detectMediaType(file.mimetype)
-			const transcodeSource =
-				mediaType === "VIDEO"
-					? await stageVideoForProcessing(file.path)
-					: null
+			const needsRendition =
+				mediaType === "VIDEO" || needsBrowserSafeImageRendition(file.mimetype)
+			const transcodeSource = needsRendition
+				? await stageVideoForProcessing(file.path)
+				: null
 			stagedVideoSources.push(transcodeSource)
 
 			const url = await storage.store({
@@ -233,12 +238,15 @@ export const uploadImage = async (
 		created.forEach((image, index) => {
 			const sourcePath = stagedVideoSources[index]
 			const firstVersion = image.versions[0]
-			if (sourcePath && firstVersion) {
+			if (!sourcePath || !firstVersion) return
+			if (imagePayloads[index].mediaType === "VIDEO") {
 				enqueueVideoProxy({
 					versionId: firstVersion.id,
 					sourcePath,
 					needsPoster: !imagePayloads[index].thumbnailUrl,
 				})
+			} else {
+				enqueueImageRendition({ versionId: firstVersion.id, sourcePath })
 			}
 		})
 
@@ -339,8 +347,11 @@ export const uploadImageVersion = async (
 	let transcodeSource: string | null = null
 	try {
 		const mediaType = detectMediaType(file.mimetype)
-		transcodeSource =
-			mediaType === "VIDEO" ? await stageVideoForProcessing(file.path) : null
+		const needsRendition =
+			mediaType === "VIDEO" || needsBrowserSafeImageRendition(file.mimetype)
+		transcodeSource = needsRendition
+			? await stageVideoForProcessing(file.path)
+			: null
 
 		const url = await storage.store({
 			path: file.path,
@@ -382,11 +393,18 @@ export const uploadImageVersion = async (
 					: null,
 		})
 		if (transcodeSource) {
-			enqueueVideoProxy({
-				versionId: version.id,
-				sourcePath: transcodeSource,
-				needsPoster: !thumbnailUrl,
-			})
+			if (mediaType === "VIDEO") {
+				enqueueVideoProxy({
+					versionId: version.id,
+					sourcePath: transcodeSource,
+					needsPoster: !thumbnailUrl,
+				})
+			} else {
+				enqueueImageRendition({
+					versionId: version.id,
+					sourcePath: transcodeSource,
+				})
+			}
 			transcodeSource = null
 		}
 

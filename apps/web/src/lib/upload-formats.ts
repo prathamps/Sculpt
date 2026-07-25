@@ -5,22 +5,71 @@ import {
 	needsGlbConversion,
 } from "./model-formats"
 
-const IMAGE_MIME_TYPES = [
-	"image/jpeg",
-	"image/jpg",
-	"image/png",
-	"image/gif",
-	"image/webp",
-	"image/avif",
-]
+const IMAGE_MIME_BY_EXTENSION: Record<string, string> = {
+	jpg: "image/jpeg",
+	jpeg: "image/jpeg",
+	png: "image/png",
+	gif: "image/gif",
+	webp: "image/webp",
+	avif: "image/avif",
+	bmp: "image/bmp",
+	ico: "image/x-icon",
+	tif: "image/tiff",
+	tiff: "image/tiff",
+	tga: "image/x-targa",
+	psd: "image/vnd.adobe.photoshop",
+	exr: "image/x-exr",
+	dpx: "image/x-dpx",
+	jp2: "image/jp2",
+	pcx: "image/x-pcx",
+	ppm: "image/x-portable-pixmap",
+}
 
-const VIDEO_MIME_TYPES = ["video/mp4", "video/webm", "video/quicktime"]
+const VIDEO_MIME_BY_EXTENSION: Record<string, string> = {
+	mp4: "video/mp4",
+	m4v: "video/x-m4v",
+	webm: "video/webm",
+	mov: "video/quicktime",
+	mkv: "video/x-matroska",
+	avi: "video/x-msvideo",
+	wmv: "video/x-ms-wmv",
+	asf: "video/x-ms-asf",
+	flv: "video/x-flv",
+	mpg: "video/mpeg",
+	mpeg: "video/mpeg",
+	ts: "video/mp2t",
+	m2ts: "video/mp2t-m2ts",
+	"3gp": "video/3gpp",
+	"3g2": "video/3gpp2",
+	ogv: "video/ogg",
+	mxf: "application/mxf",
+	dv: "video/x-dv",
+	vob: "video/dvd",
+}
 
-const DOCUMENT_MIME_TYPES = ["application/pdf"]
+const DOCUMENT_MIME_BY_EXTENSION: Record<string, string> = {
+	pdf: "application/pdf",
+}
 
-const IMAGE_EXTENSIONS = ["jpg", "jpeg", "png", "gif", "webp", "avif"]
-const VIDEO_EXTENSIONS = ["mp4", "webm", "mov"]
-const DOCUMENT_EXTENSIONS = ["pdf"]
+const NATIVELY_PLAYABLE_VIDEO_EXTENSIONS = ["mp4", "m4v", "webm", "mov", "ogv"]
+
+export const UPLOAD_MIME_BY_EXTENSION: Record<string, string> = {
+	...IMAGE_MIME_BY_EXTENSION,
+	...VIDEO_MIME_BY_EXTENSION,
+	...DOCUMENT_MIME_BY_EXTENSION,
+	...MODEL_SOURCE_MIME_BY_EXTENSION,
+}
+
+const IMAGE_MIME_TYPES = Object.values(IMAGE_MIME_BY_EXTENSION)
+const VIDEO_MIME_TYPES = Object.values(VIDEO_MIME_BY_EXTENSION)
+const DOCUMENT_MIME_TYPES = Object.values(DOCUMENT_MIME_BY_EXTENSION)
+
+const IMAGE_EXTENSIONS = Object.keys(IMAGE_MIME_BY_EXTENSION)
+const VIDEO_EXTENSIONS = Object.keys(VIDEO_MIME_BY_EXTENSION)
+const DOCUMENT_EXTENSIONS = Object.keys(DOCUMENT_MIME_BY_EXTENSION)
+
+export const isNativelyPlayableVideo = (url: string): boolean =>
+	NATIVELY_PLAYABLE_VIDEO_EXTENSIONS.includes(extensionOf(url))
 
 export const ACCEPTED_MIME_TYPES = [
 	...IMAGE_MIME_TYPES,
@@ -42,10 +91,20 @@ export const FILE_INPUT_ACCEPT = [
 ].join(",")
 
 export const ACCEPTED_FORMAT_GROUPS = [
-	{ label: "Images", formats: "JPG, PNG, WebP, GIF, AVIF" },
-	{ label: "Video", formats: "MP4, WebM, MOV" },
+	{
+		label: "Images",
+		formats: "JPG, PNG, WebP, GIF, AVIF, BMP, TIFF, PSD, TGA, EXR, DPX",
+	},
+	{
+		label: "Video",
+		formats: "MP4, MOV, WebM, MKV, AVI, WMV, MPEG, TS, 3GP, MXF, DV",
+	},
 	{ label: "Documents", formats: "PDF" },
-	{ label: "3D", formats: "GLB, FBX, OBJ, STL, PLY, DAE, 3MF, 3DS, USDZ" },
+	{
+		label: "3D",
+		formats:
+			"GLB, glTF, FBX, OBJ, STL, PLY, DAE, 3MF, 3DS, USDZ, KMZ, VOX, PCD, XYZ",
+	},
 ]
 
 export const isAcceptedUpload = (file: File): boolean =>
@@ -93,5 +152,7 @@ export const rejectedUploadMessage = (rejected: File[]): string => {
 	const names = rejected.map((file) => file.name).join(", ")
 	return `${names} ${
 		rejected.length === 1 ? "is not a supported format" : "are not supported formats"
-	}. Sculpt accepts JPG, PNG, WebP, GIF and AVIF images, MP4, WebM and MOV video, PDF documents, and GLB, FBX, OBJ, STL, PLY, DAE, 3MF, 3DS, USDZ, AMF and WRL 3D models.`
+	}. ${ACCEPTED_FORMAT_GROUPS.map(
+		(group) => `${group.label}: ${group.formats}`
+	).join(". ")}.`
 }

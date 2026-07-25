@@ -36,24 +36,40 @@ describe("isAcceptedUpload", () => {
 		}
 	})
 
-	it("rejects image types the API would refuse, rather than letting the upload 400", () => {
+	it("accepts images that only work after a server-side rendition", () => {
 		for (const [name, type] of [
-			["photo.heic", "image/heic"],
 			["scan.tiff", "image/tiff"],
-			["old.bmp", "image/bmp"],
-			["logo.svg", "image/svg+xml"],
+			["layers.psd", "image/vnd.adobe.photoshop"],
+			["sprite.tga", "image/x-targa"],
+			["plate.exr", "image/x-exr"],
+			["frame.dpx", "image/x-dpx"],
 		]) {
-			expect(isAcceptedUpload(fileNamed(name, type))).toBe(false)
+			expect(isAcceptedUpload(fileNamed(name, type))).toBe(true)
 		}
 	})
 
-	it("rejects video containers the API would refuse", () => {
-		expect(isAcceptedUpload(fileNamed("clip.avi", "video/x-msvideo"))).toBe(
-			false
-		)
-		expect(isAcceptedUpload(fileNamed("clip.mkv", "video/x-matroska"))).toBe(
-			false
-		)
+	it("accepts video containers a browser cannot play, since they are transcoded", () => {
+		for (const [name, type] of [
+			["clip.mkv", "video/x-matroska"],
+			["clip.avi", "video/x-msvideo"],
+			["clip.wmv", "video/x-ms-wmv"],
+			["broadcast.mxf", "application/mxf"],
+			["stream.ts", "video/mp2t"],
+		]) {
+			expect(isAcceptedUpload(fileNamed(name, type))).toBe(true)
+		}
+	})
+
+	it("still rejects formats nothing in the stack can decode", () => {
+		for (const [name, type] of [
+			["photo.heic", "image/heic"],
+			["photo.cr2", ""],
+			["logo.svg", "image/svg+xml"],
+			["deck.pptx", ""],
+			["archive.zip", "application/zip"],
+		]) {
+			expect(isAcceptedUpload(fileNamed(name, type))).toBe(false)
+		}
 	})
 
 	it("rejects 3D formats that need a CAD kernel or proprietary SDK", () => {
@@ -62,9 +78,10 @@ describe("isAcceptedUpload", () => {
 		}
 	})
 
-	it("never advertises a type the API does not map", () => {
+	it("never advertises a type the API refuses to store", () => {
 		expect(ACCEPTED_MIME_TYPES).not.toContain("image/svg+xml")
-		expect(ACCEPTED_MIME_TYPES).not.toContain("model/gltf+json")
+		expect(ACCEPTED_MIME_TYPES).not.toContain("image/heic")
+		expect(ACCEPTED_MIME_TYPES).not.toContain("application/octet-stream")
 	})
 })
 
