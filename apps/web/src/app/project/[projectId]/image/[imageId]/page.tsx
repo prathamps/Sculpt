@@ -61,7 +61,8 @@ import {
 	withMimeTypeTheApiCanMap,
 } from "@/lib/media-capture"
 import { prepareModelUpload } from "@/lib/model-capture"
-import { MODEL_FILE_ACCEPT, isModelFile } from "@/lib/model-formats"
+import { isModelFile } from "@/lib/model-formats"
+import { FILE_INPUT_ACCEPT } from "@/lib/upload-formats"
 import { useVersionComments } from "@/hooks/useVersionComments"
 import { useAnnotationHistory } from "@/hooks/useAnnotationHistory"
 import { usePresence } from "@/hooks/usePresence"
@@ -988,7 +989,7 @@ function ProjectFileViewPageInner() {
 								type="file"
 								aria-label="Version file"
 								onChange={(e) => setUploadFile(e.target.files?.[0] || null)}
-								accept={`image/*,video/*,application/pdf,${MODEL_FILE_ACCEPT}`}
+								accept={FILE_INPUT_ACCEPT}
 							/>
 						</div>
 						<div className="flex justify-end gap-2">

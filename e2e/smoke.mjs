@@ -309,6 +309,33 @@ if (convertedVersion?.thumbnailUrl) {
 	)
 }
 
+const unsupportedPath = join(tmpdir(), `sculpt-e2e-${stamp}.heic`)
+writeFileSync(unsupportedPath, Buffer.from("not really a heic"))
+let uploadAttempts = 0
+const countUploadAttempts = (request) => {
+	if (request.url().includes("/images") && request.method() === "POST") {
+		uploadAttempts++
+	}
+}
+page.on("request", countUploadAttempts)
+await navigate(`${WEB}/project/${project.id}`, {
+	waitUntil: "domcontentloaded",
+	timeout: 120000,
+})
+await page.click('button:has-text("Upload")')
+await page.setInputFiles("#dropzone-file", unsupportedPath)
+const namedTheFile = await page
+	.waitForSelector(`text=/${stamp}\\.heic/`, { timeout: 10000 })
+	.then(() => true, () => false)
+check("an unsupported format is refused by name before uploading", namedTheFile)
+await page.waitForTimeout(1500)
+check(
+	"no request is sent for a format the API would reject",
+	uploadAttempts === 0,
+	`attempts=${uploadAttempts}`
+)
+page.off("request", countUploadAttempts)
+
 const deleteRes = await api(`/api/projects/${project.id}`, { method: "DELETE" })
 check("cleanup deletes the project", deleteRes.status === 200 || deleteRes.status === 204, `status=${deleteRes.status}`)
 

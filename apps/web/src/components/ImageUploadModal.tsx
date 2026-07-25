@@ -26,23 +26,24 @@ import {
 	withMimeTypeTheApiCanMap,
 } from "@/lib/media-capture"
 import { prepareModelUpload } from "@/lib/model-capture"
-import { MODEL_FILE_ACCEPT, isModelFile } from "@/lib/model-formats"
+import { isModelFile } from "@/lib/model-formats"
+import {
+	ACCEPTED_FORMAT_GROUPS,
+	FILE_INPUT_ACCEPT,
+	isAcceptedUpload,
+	rejectedUploadMessage,
+} from "@/lib/upload-formats"
 
-const ACCEPTED_TYPES = `image/*,video/mp4,video/webm,video/quicktime,application/pdf,${MODEL_FILE_ACCEPT}`
-
-const ACCEPTED_FORMAT_GROUPS = [
-	{ label: "Images", formats: "JPG, PNG, WebP, GIF, AVIF" },
-	{ label: "Video", formats: "MP4, WebM, MOV" },
-	{ label: "Documents", formats: "PDF" },
-	{ label: "3D", formats: "GLB, FBX, OBJ, STL, PLY, DAE, 3MF, 3DS, USDZ" },
-]
-
-const isAcceptedFile = (file: File) =>
-	file.type.startsWith("image/") ||
-	["video/mp4", "video/webm", "video/quicktime", "application/pdf"].includes(
-		file.type
-	) ||
-	isModelFile(file)
+const serverReason = async (res: Response): Promise<string> => {
+	const fallback = `Upload failed (${res.status}).`
+	try {
+		const body = await res.clone().json()
+		return typeof body?.message === "string" ? body.message : fallback
+	} catch {
+		const text = await res.text().catch(() => "")
+		return text.trim() ? text.trim().slice(0, 300) : fallback
+	}
+}
 
 interface ImageUploadModalProps {
 	projectId: string | null
@@ -67,15 +68,12 @@ export function ImageUploadModal({
 	const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
 		if (e.target.files) {
 			const selectedFiles = Array.from(e.target.files)
-			const validFiles = selectedFiles.filter(isAcceptedFile)
+			const validFiles = selectedFiles.filter(isAcceptedUpload)
+			const rejectedFiles = selectedFiles.filter(
+				(file) => !isAcceptedUpload(file)
+			)
 
-			if (validFiles.length !== selectedFiles.length) {
-				setError(
-					"Only image, video, PDF and 3D model files are allowed."
-				)
-			} else {
-				setError("")
-			}
+			setError(rejectedUploadMessage(rejectedFiles))
 
 			if (imageId && validFiles.length > 1) {
 				setFiles([validFiles[0]])
@@ -185,7 +183,7 @@ export function ImageUploadModal({
 			}
 
 			if (!res.ok) {
-				throw new Error("Upload failed")
+				throw new Error(await serverReason(res))
 			}
 
 			setUploadProgress(100)
@@ -193,8 +191,12 @@ export function ImageUploadModal({
 				onUploadComplete()
 				onClose()
 			}, 500)
-		} catch {
-			setError("An error occurred during upload.")
+		} catch (uploadError) {
+			setError(
+				uploadError instanceof Error && uploadError.message
+					? uploadError.message
+					: "An error occurred during upload."
+			)
 			setUploadProgress(0)
 		} finally {
 			clearProgressSimulation()
@@ -267,7 +269,7 @@ export function ImageUploadModal({
 									multiple={!isVersionUpload}
 									className="hidden"
 									onChange={handleFileChange}
-									accept={ACCEPTED_TYPES}
+									accept={FILE_INPUT_ACCEPT}
 								/>
 							</label>
 						</div>
