@@ -6,7 +6,6 @@ const hostnameOf = (origin: string): string | null => {
 	}
 }
 
-// Configured hosts don't change at runtime, so resolve them once on first use.
 let cachedHosts: Set<string> | null = null
 const allowedHosts = (): Set<string> => {
 	if (!cachedHosts) {
@@ -19,10 +18,6 @@ const allowedHosts = (): Set<string> => {
 	return cachedHosts
 }
 
-// Credentialed cross-origin access is allowed only for localhost (any port),
-// *.vercel.app preview/production deployments, and the configured app hosts.
-// Matching is on the parsed hostname, never a substring, so lookalikes such as
-// vercel.app.evil.com or sculpt-localhost.evil.com are rejected.
 export const isAllowedOrigin = (origin: string | undefined): boolean => {
 	if (!origin) return true
 	const host = hostnameOf(origin)

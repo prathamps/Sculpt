@@ -88,6 +88,8 @@ export const getProjectById = async (projectId: string) => {
 	})
 }
 
+const TREND_DAYS = 30
+
 export const getDashboardStats = async () => {
 	const [
 		userCount,
@@ -107,7 +109,7 @@ export const getDashboardStats = async () => {
 			orderBy: {
 				createdAt: "asc",
 			},
-			take: 30, // Last 30 days
+			take: TREND_DAYS,
 		}),
 		prisma.project.groupBy({
 			by: ["createdAt"],
@@ -115,7 +117,7 @@ export const getDashboardStats = async () => {
 			orderBy: {
 				createdAt: "asc",
 			},
-			take: 30, // Last 30 days
+			take: TREND_DAYS,
 		}),
 	])
 

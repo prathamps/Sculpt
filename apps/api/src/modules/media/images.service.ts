@@ -1,5 +1,5 @@
 import { prisma } from "../../lib/prisma"
-import { Image, ImageVersion, MediaType } from "@prisma/client"
+import { Image, ImageVersion, MediaType, ProxyStatus } from "@prisma/client"
 import { storage } from "../../storage"
 
 interface ImagePayload {
@@ -9,6 +9,7 @@ interface ImagePayload {
 	mediaType?: MediaType
 	duration?: number | null
 	thumbnailUrl?: string | null
+	proxyStatus?: ProxyStatus | null
 }
 
 interface VersionOptions {
@@ -16,12 +17,13 @@ interface VersionOptions {
 	mediaType?: MediaType
 	duration?: number | null
 	thumbnailUrl?: string | null
+	proxyStatus?: ProxyStatus | null
 }
 
 export const addImagesToProject = async (
 	images: ImagePayload[]
-): Promise<{ count: number }> => {
-	const createdImages = await Promise.all(
+): Promise<(Image & { versions: ImageVersion[] })[]> => {
+	return Promise.all(
 		images.map((img) =>
 			prisma.image.create({
 				data: {
@@ -35,14 +37,14 @@ export const addImagesToProject = async (
 							mediaType: img.mediaType ?? MediaType.IMAGE,
 							duration: img.duration ?? null,
 							thumbnailUrl: img.thumbnailUrl ?? null,
+							proxyStatus: img.proxyStatus ?? null,
 						},
 					},
 				},
+				include: { versions: true },
 			})
 		)
 	)
-
-	return { count: createdImages.length }
 }
 
 export const getImagesForProject = async (
@@ -116,6 +118,7 @@ export const addImageVersion = async (
 			mediaType: options.mediaType ?? MediaType.IMAGE,
 			duration: options.duration ?? null,
 			thumbnailUrl: options.thumbnailUrl ?? null,
+			proxyStatus: options.proxyStatus ?? null,
 		},
 	})
 }
@@ -130,13 +133,15 @@ export const deleteImage = async (id: string): Promise<void> => {
 
 	await prisma.image.delete({ where: { id } })
 
-	await Promise.all(
-		image.versions.flatMap((version) => [
-			storage.remove(version.url),
-			...(version.thumbnailUrl ? [storage.remove(version.thumbnailUrl)] : []),
-		])
-	)
+	await Promise.all(image.versions.flatMap(storedVersionFileRemovals))
 }
+
+const storedVersionFileRemovals = (
+	version: Pick<ImageVersion, "url" | "thumbnailUrl" | "proxyUrl">
+): Promise<void>[] =>
+	[version.url, version.thumbnailUrl, version.proxyUrl]
+		.filter((url): url is string => !!url)
+		.map((url) => storage.remove(url))
 
 export const deleteImageVersion = async (versionId: string): Promise<void> => {
 	const version = await prisma.imageVersion.findUnique({
@@ -154,8 +159,7 @@ export const deleteImageVersion = async (versionId: string): Promise<void> => {
 	}
 
 	await prisma.imageVersion.delete({ where: { id: versionId } })
-	await storage.remove(version.url)
-	if (version.thumbnailUrl) await storage.remove(version.thumbnailUrl)
+	await Promise.all(storedVersionFileRemovals(version))
 }
 
 export const updateImage = async (

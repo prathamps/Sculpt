@@ -1,6 +1,6 @@
 import { JsonValue } from "@prisma/client/runtime/library";
 import { prisma } from "../../lib/prisma"
-import { Comment, CommentLike, User } from "@prisma/client"
+import { Comment, CommentLike, MediaType, User } from "@prisma/client"
 
 import { io } from "../../realtime/socket"
 import { NotificationService } from "../notifications/notification.service"
@@ -29,9 +29,30 @@ const asVec3 = (value: unknown): Vec3 | null =>
 		? (value as Vec3)
 		: null
 
+interface RequestedAnchors {
+	timestamp: number | null
+	timestampEnd: number | null
+	page: number | null
+	modelAnchor: unknown
+}
+
+const anchorsSupportedBy = (
+	mediaType: MediaType,
+	requested: RequestedAnchors
+): RequestedAnchors => ({
+	timestamp: mediaType === "VIDEO" ? requested.timestamp : null,
+	timestampEnd: mediaType === "VIDEO" ? requested.timestampEnd : null,
+	page: mediaType === "PDF" ? requested.page : null,
+	modelAnchor: mediaType === "MODEL" ? requested.modelAnchor : null,
+})
+
+const clampToDuration = (
+	seconds: number | null,
+	duration: number | null
+): number | null =>
+	seconds === null || duration === null ? seconds : Math.min(seconds, duration)
+
 export class CommentsService {
-	// Rebuilt from validated fields so unvalidated client JSON never reaches
-	// the database.
 	private static parseModelAnchor(value: unknown): ModelAnchor {
 		if (typeof value !== "object" || value === null || Array.isArray(value)) {
 			throw new ValidationError("modelAnchor must be an object")
@@ -67,16 +88,9 @@ export class CommentsService {
 		return anchor
 	}
 
-	// Anchors are media-type dependent: timestamps only make sense on videos,
-	// page only on PDFs, modelAnchor only on 3D models. Out-of-range timestamps
-	// are clamped rather than rejected because client-measured playhead floats
-	// can exceed the stored duration by rounding, and duration is nullable.
 	private static async validateAnchors(
 		imageVersionId: string,
-		timestamp: number | null,
-		timestampEnd: number | null,
-		page: number | null,
-		modelAnchor: unknown
+		requested: RequestedAnchors
 	): Promise<{
 		timestamp: number | null
 		timestampEnd: number | null
@@ -89,16 +103,10 @@ export class CommentsService {
 		})
 		if (!version) throw new NotFoundError("Image version not found")
 
-		if (version.mediaType !== "VIDEO") {
-			timestamp = null
-			timestampEnd = null
-		}
-		if (version.mediaType !== "PDF") {
-			page = null
-		}
-		if (version.mediaType !== "MODEL") {
-			modelAnchor = null
-		}
+		const { timestamp, timestampEnd, page, modelAnchor } = anchorsSupportedBy(
+			version.mediaType,
+			requested
+		)
 
 		if (timestamp !== null && (!Number.isFinite(timestamp) || timestamp < 0)) {
 			throw new ValidationError("timestamp must be a non-negative number")
@@ -118,20 +126,14 @@ export class CommentsService {
 				)
 			}
 		}
-		if (version.duration !== null) {
-			if (timestamp !== null) timestamp = Math.min(timestamp, version.duration)
-			if (timestampEnd !== null) {
-				timestampEnd = Math.min(timestampEnd, version.duration)
-			}
-		}
 
 		if (page !== null && (!Number.isInteger(page) || page < 1)) {
 			throw new ValidationError("page must be a positive integer")
 		}
 
 		return {
-			timestamp,
-			timestampEnd,
+			timestamp: clampToDuration(timestamp, version.duration),
+			timestampEnd: clampToDuration(timestampEnd, version.duration),
 			page,
 			modelAnchor:
 				modelAnchor === null || modelAnchor === undefined
@@ -140,7 +142,6 @@ export class CommentsService {
 		}
 	}
 
-	// Create a new comment
 	static async createComment(data: {
 		content: string
 		imageVersionId: string
@@ -152,13 +153,12 @@ export class CommentsService {
 		page?: number | null
 		modelAnchor?: unknown
 	}): Promise<Comment> {
-		const anchors = await this.validateAnchors(
-			data.imageVersionId,
-			data.timestamp ?? null,
-			data.timestampEnd ?? null,
-			data.page ?? null,
-			data.modelAnchor ?? null
-		)
+		const anchors = await this.validateAnchors(data.imageVersionId, {
+			timestamp: data.timestamp ?? null,
+			timestampEnd: data.timestampEnd ?? null,
+			page: data.page ?? null,
+			modelAnchor: data.modelAnchor ?? null,
+		})
 
 		const comment = await prisma.comment.create({
 			data: {
@@ -198,17 +198,15 @@ export class CommentsService {
 		return comment
 	}
 
-	// Get comments for an image version
 	static async getCommentsByImageVersionId(
 		imageVersionId: string,
 		currentUserId?: string
 	): Promise<CommentWithLikesAndUser[]> {
 		try {
-			// Get comments directly from the database for consistency
 			const comments = await prisma.comment.findMany({
 				where: {
 					imageVersionId,
-					parentId: null, // Only get top-level comments
+					parentId: null,
 				},
 				include: {
 					user: true,
@@ -225,14 +223,12 @@ export class CommentsService {
 				},
 			})
 
-			// Transform comments to include like info
 			const transformedComments = comments.map((comment) => {
 				const likeCount = comment.likes.length
 				const isLikedByCurrentUser = currentUserId
 					? comment.likes.some((like) => like.userId === currentUserId)
 					: false
 
-				// Transform replies as well
 				const transformedReplies = comment.replies?.map((reply) => {
 					const replyLikeCount = reply.likes.length
 					const replyIsLikedByCurrentUser = currentUserId
@@ -260,7 +256,6 @@ export class CommentsService {
 		}
 	}
 
-	// Update a comment
 	static async updateComment(
 		commentId: string,
 		data: {
@@ -270,7 +265,6 @@ export class CommentsService {
 		userId: string
 	): Promise<Comment> {
 		try {
-			// Verify the comment belongs to the user
 			const existingComment = await prisma.comment.findFirst({
 				where: {
 					id: commentId,
@@ -301,7 +295,6 @@ export class CommentsService {
 				},
 			})
 
-			// Send real-time update with imageVersionId included
 			console.log(
 				`Emitting comment-updated event to imageVersion:${existingComment.imageVersionId}`
 			)
@@ -320,10 +313,8 @@ export class CommentsService {
 		}
 	}
 
-	// Delete a comment
 	static async deleteComment(commentId: string, userId: string): Promise<void> {
 		try {
-			// Verify the comment belongs to the user
 			const comment = await prisma.comment.findFirst({
 				where: {
 					id: commentId,
@@ -341,14 +332,12 @@ export class CommentsService {
 				)
 			}
 
-			// Delete from database (cascades to likes via Prisma schema)
 			await prisma.comment.delete({
 				where: {
 					id: commentId,
 				},
 			})
 
-			// Send real-time update with explicit imageVersionId
 			console.log(
 				`Emitting comment-deleted event to imageVersion:${comment.imageVersionId}`
 			)
@@ -362,13 +351,11 @@ export class CommentsService {
 		}
 	}
 
-	// Like or unlike a comment
 	static async toggleLike(
 		commentId: string,
 		userId: string
 	): Promise<{ liked: boolean; count: number }> {
 		try {
-			// Check if like exists
 			const existingLike = await prisma.commentLike.findFirst({
 				where: {
 					commentId,
@@ -379,7 +366,6 @@ export class CommentsService {
 			let liked: boolean
 
 			if (existingLike) {
-				// Unlike the comment
 				await prisma.commentLike.delete({
 					where: {
 						id: existingLike.id,
@@ -387,7 +373,6 @@ export class CommentsService {
 				})
 				liked = false
 			} else {
-				// Like the comment
 				await prisma.commentLike.create({
 					data: {
 						commentId,
@@ -395,7 +380,6 @@ export class CommentsService {
 					},
 				})
 
-				// Get comment info to send notifications
 				const comment = await prisma.comment.findUnique({
 					where: { id: commentId },
 					select: { userId: true, imageVersionId: true },
@@ -403,7 +387,6 @@ export class CommentsService {
 
 				liked = true
 
-				// Send notification to comment author (if not self-like)
 				if (comment && comment.userId !== userId) {
 					await NotificationService.createNotification({
 						userId: comment.userId,
@@ -417,14 +400,12 @@ export class CommentsService {
 				}
 			}
 
-			// Get updated like count
 			const likeCount = await prisma.commentLike.count({
 				where: {
 					commentId,
 				},
 			})
 
-			// Get the comment to send the imageVersionId
 			const commentData = await prisma.comment.findUnique({
 				where: { id: commentId },
 				select: { imageVersionId: true },
@@ -481,7 +462,6 @@ export class CommentsService {
 		return { resolved: updated.resolved }
 	}
 
-	// Helper method to create notifications for comments
 	private static async handleCommentNotifications(
 		comment: Comment & { user: Omit<User, "password"> },
 		currentUserId: string
@@ -490,7 +470,6 @@ export class CommentsService {
 			console.log(`Creating notifications for comment ${comment.id}`)
 
 			if (comment.parentId) {
-				// This is a reply - notify the parent comment author
 				const parentComment = await prisma.comment.findUnique({
 					where: { id: comment.parentId },
 					select: { userId: true },
@@ -514,7 +493,6 @@ export class CommentsService {
 					})
 				}
 			} else {
-				// This is a new comment - notify project members
 				console.log(
 					`Finding image version for comment: ${comment.imageVersionId}`
 				)
@@ -539,7 +517,6 @@ export class CommentsService {
 							`Found image ${image.name} in project: ${image.projectId}`
 						)
 
-						// Create project notification (excluding the commenter)
 						await NotificationService.createProjectNotification({
 							projectId: image.projectId,
 							content: `${comment.user.name || "Someone"} commented on image "${
@@ -563,7 +540,6 @@ export class CommentsService {
 			}
 		} catch (error) {
 			console.error("Error creating comment notifications:", error)
-			// Don't throw here, as this is just a helper method
 		}
 	}
 }

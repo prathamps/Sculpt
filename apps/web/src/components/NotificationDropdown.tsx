@@ -17,7 +17,6 @@ import { useSocket } from "@/context/SocketContext"
 import { useRouter } from "next/navigation"
 import { cn } from "@/lib/utils"
 
-// API and socket constants
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001"
 
 interface Notification {
@@ -43,7 +42,6 @@ export function NotificationDropdown() {
 	const [hasUnread, setHasUnread] = useState(false)
 	const [isOpen, setIsOpen] = useState(false)
 
-	// Fetch initial notifications
 	useEffect(() => {
 		if (!user) return
 
@@ -66,7 +64,6 @@ export function NotificationDropdown() {
 		fetchNotifications()
 	}, [user])
 
-	// Listen for socket events
 	useEffect(() => {
 		if (!socket || !isConnected || !user) return
 
@@ -75,7 +72,6 @@ export function NotificationDropdown() {
 		const handleNotification = (notification: Notification) => {
 			console.log("New notification received:", notification)
 			setNotifications((prev) => {
-				// Check if notification already exists to prevent duplicates
 				if (prev.some((n) => n.id === notification.id)) {
 					return prev
 				}
@@ -116,14 +112,12 @@ export function NotificationDropdown() {
 
 	const handleNotificationClick = async (notification: Notification) => {
 		try {
-			// Mark as read locally first for responsiveness
 			const updatedNotifications = notifications.map((n) =>
 				n.id === notification.id ? { ...n, read: true } : n
 			)
 			setNotifications(updatedNotifications)
 			setHasUnread(updatedNotifications.some((n) => !n.read))
 
-			// Navigate to the relevant page
 			if (notification.metadata) {
 				const { projectId, imageId } = notification.metadata
 				if (projectId && imageId) {
@@ -133,7 +127,6 @@ export function NotificationDropdown() {
 				}
 			}
 
-			// Call API to mark as read
 			if (!notification.id.startsWith("project-")) {
 				await fetch(`${API_URL}/api/notifications/${notification.id}/read`, {
 					method: "PUT",

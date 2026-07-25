@@ -9,7 +9,7 @@ Follow the **Local development** section of the [README](README.md). In short: `
 ## Project conventions
 
 - **Feature modules** — backend code lives in `apps/api/src/modules/<feature>/` with `routes` → `controller` → `service`. New endpoints belong in the module that owns the domain concept; see [docs/architecture.md](docs/architecture.md).
-- **Clean code over comments** — prefer small, well-named functions to explanatory comments. Comments are for constraints the code can't express.
+- **No comments** — this codebase carries zero comments by policy, and CI enforces it. Express intent through small, well-named functions, named constants and precise names; encode invariants in tests whose names state the rule. If you feel a comment is needed, refactor until it isn't.
 - **Errors** — throw `AppError` subclasses (`lib/errors.ts`) from services; map them to HTTP responses in controllers.
 - **Audit logging** — any new mutation that changes who can see or do what (auth, membership, roles, sharing, destructive actions) must record an audit entry via `modules/audit/audit.service.ts`.
 - **UI** — build on the shadcn/ui primitives in `apps/web/src/components/ui`; use Tailwind utilities and `lucide-react` icons. Resolve media URLs with `mediaUrl()`.
@@ -18,9 +18,17 @@ Follow the **Local development** section of the [README](README.md). In short: `
 
 ```bash
 cd apps/api && npm run build && npm test
-cd apps/web && npm run lint && npm run build
+cd apps/web && npm run lint && npx tsc --noEmit && npm test && npm run build
 ```
 
-CI runs the same gates (plus `prisma validate`) and must pass. If you change the Prisma schema, include a migration (`npx prisma migrate dev --name <change>`).
+If your change touches uploads, playback, the viewers, realtime or auth, also run the browser smoke suite with both dev servers up:
+
+```bash
+cd e2e && npm install && npm run smoke
+```
+
+CI runs all of the above (plus `prisma validate` and the zero-comment gate) and must pass. If you change the Prisma schema, include a migration (`npx prisma migrate dev --name <change>`).
+
+Found a security problem? Follow [SECURITY.md](SECURITY.md) instead of opening a public issue.
 
 Keep PRs focused, describe the behavior change, and add tests for logic that can regress — authorization rules, data transforms and anything security-relevant.

@@ -58,8 +58,6 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 	}, [])
 
 	const login = () => {
-		// The token is now handled by httpOnly cookie,
-		// but we can re-fetch user profile here
 		const fetchUser = async () => {
 			try {
 				const res = await fetch(`${URI}/api/users/profile`, {
@@ -91,8 +89,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 	}
 
 	const logout = () => {
-		// We need to make a request to the backend to clear the cookie
-		const doLogout = async () => {
+		const clearCookieAndRedirect = async () => {
 			await fetch(`${URI}/api/auth/logout`, {
 				method: "POST",
 				credentials: "include",
@@ -100,7 +97,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 			setUser(null)
 			router.push("/login")
 		}
-		doLogout()
+		clearCookieAndRedirect()
 	}
 
 	const value = useMemo(

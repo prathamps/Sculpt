@@ -5,6 +5,11 @@ import * as imageService from "./images.service"
 import { CommentsService } from "../comments/comments.service"
 import { detectMediaType } from "../../middleware/upload.middleware"
 import { parseFilesMeta } from "./upload-meta"
+import {
+	discardStagedVideo,
+	enqueueVideoProxy,
+	stageVideoForProcessing,
+} from "./video-pipeline"
 import { storage } from "../../storage"
 import { AppError } from "../../lib/errors"
 import { recordAudit, requestIp } from "../audit/audit.service"
@@ -15,7 +20,7 @@ import {
 	getMemberRole,
 	roleMeets,
 } from "../projects/access"
-import { ProjectRole } from "@prisma/client"
+import { ProjectRole, ProxyStatus } from "@prisma/client"
 
 const requireUserId = (req: Request, res: Response): string | null => {
 	const userId = (req.user as AuthenticatedUser)?.id
@@ -165,10 +170,18 @@ export const uploadImage = async (
 	}
 
 	const storedUrls: string[] = []
+	const stagedVideoSources: (string | null)[] = []
 	try {
 		const imagePayloads = []
 		let thumbnailIndex = 0
 		for (const [index, file] of files.entries()) {
+			const mediaType = detectMediaType(file.mimetype)
+			const transcodeSource =
+				mediaType === "VIDEO"
+					? await stageVideoForProcessing(file.path)
+					: null
+			stagedVideoSources.push(transcodeSource)
+
 			const url = await storage.store({
 				path: file.path,
 				originalName: file.originalname,
@@ -191,13 +204,25 @@ export const uploadImage = async (
 				url,
 				name: file.originalname,
 				projectId,
-				mediaType: detectMediaType(file.mimetype),
+				mediaType,
 				duration: metas[index].duration,
 				thumbnailUrl,
+				proxyStatus: transcodeSource ? ProxyStatus.PENDING : null,
 			})
 		}
 
-		const images = await imageService.addImagesToProject(imagePayloads)
+		const created = await imageService.addImagesToProject(imagePayloads)
+		created.forEach((image, index) => {
+			const sourcePath = stagedVideoSources[index]
+			const firstVersion = image.versions[0]
+			if (sourcePath && firstVersion) {
+				enqueueVideoProxy({
+					versionId: firstVersion.id,
+					sourcePath,
+					needsPoster: !imagePayloads[index].thumbnailUrl,
+				})
+			}
+		})
 
 		await recordAudit({
 			action: "media.uploaded",
@@ -208,7 +233,7 @@ export const uploadImage = async (
 			ipAddress: requestIp(req),
 		})
 
-		if (images.count > 0) {
+		if (created.length > 0) {
 			const newImages = await imageService.getImagesForProject(projectId)
 			res.status(201).json(newImages)
 		} else {
@@ -216,6 +241,11 @@ export const uploadImage = async (
 		}
 	} catch (error) {
 		await Promise.all(storedUrls.map((url) => storage.remove(url)))
+		await Promise.all(
+			stagedVideoSources
+				.filter((source): source is string => !!source)
+				.map(discardStagedVideo)
+		)
 		res.status(500).json({ message: "Error uploading image", error })
 	}
 }
@@ -285,7 +315,12 @@ export const uploadImageVersion = async (
 	}
 
 	const storedUrls: string[] = []
+	let transcodeSource: string | null = null
 	try {
+		const mediaType = detectMediaType(file.mimetype)
+		transcodeSource =
+			mediaType === "VIDEO" ? await stageVideoForProcessing(file.path) : null
+
 		const url = await storage.store({
 			path: file.path,
 			originalName: file.originalname,
@@ -303,12 +338,21 @@ export const uploadImageVersion = async (
 			storedUrls.push(thumbnailUrl)
 		}
 
-		await imageService.addImageVersion(imageId, url, {
+		const version = await imageService.addImageVersion(imageId, url, {
 			versionName: req.body.versionName,
-			mediaType: detectMediaType(file.mimetype),
+			mediaType,
 			duration: req.body.duration ? Number(req.body.duration) : null,
 			thumbnailUrl,
+			proxyStatus: transcodeSource ? ProxyStatus.PENDING : null,
 		})
+		if (transcodeSource) {
+			enqueueVideoProxy({
+				versionId: version.id,
+				sourcePath: transcodeSource,
+				needsPoster: !thumbnailUrl,
+			})
+			transcodeSource = null
+		}
 
 		await recordAudit({
 			action: "media.version_uploaded",
@@ -327,6 +371,7 @@ export const uploadImageVersion = async (
 		res.status(201).json(withLatestVersion(image))
 	} catch (error) {
 		await Promise.all(storedUrls.map((url) => storage.remove(url)))
+		if (transcodeSource) await discardStagedVideo(transcodeSource)
 		res.status(500).json({ message: "Error uploading image version", error })
 	}
 }

@@ -6,7 +6,6 @@ import { recordAudit, requestIp } from "../audit/audit.service"
 import { AppError } from "../../lib/errors"
 import { getMemberRole } from "./access"
 
-// Extended types for the transformed data
 interface ExtendedImage extends Image {
 	versions?: ImageVersion[]
 	latestVersion?: ImageVersion | null
@@ -49,10 +48,8 @@ export const getProjects = async (
 			userId
 		)) as unknown as ExtendedProject[]
 
-		// Transform the projects to add latestVersion to each image
 		projects = projects.map((project) => {
 			const transformedImages = project.images.map((image: ExtendedImage) => {
-				// Add latestVersion from the first version (already sorted desc)
 				return {
 					...image,
 					latestVersion:
@@ -107,9 +104,7 @@ export const getProject = async (
 			return
 		}
 
-		// Transform the images to add latestVersion to each image
 		const transformedImages = project.images.map((image: ExtendedImage) => {
-			// Add latestVersion from the first version (already sorted desc)
 			return {
 				...image,
 				latestVersion:

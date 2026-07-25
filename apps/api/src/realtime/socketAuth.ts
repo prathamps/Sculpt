@@ -10,10 +10,6 @@ export interface SocketUser {
 	avatarUrl: string | null
 }
 
-// Verifies the same JWT cookie the HTTP API uses (see modules/auth/passport.ts).
-// Verification failure must never reject the connection — unauthenticated
-// sockets keep working for legacy flows, they just get no presence identity
-// and cannot join version rooms.
 export const resolveSocketUser = async (
 	socket: Socket
 ): Promise<SocketUser | null> => {

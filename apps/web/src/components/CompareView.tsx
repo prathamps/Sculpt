@@ -11,8 +11,6 @@ interface CompareViewProps {
 	onRightChange: (version: ImageVersion) => void
 }
 
-// Side-by-side (stacked on small screens) read-only comparison of two
-// versions of the same file.
 export function CompareView({
 	versions,
 	leftVersion,

@@ -4,7 +4,6 @@ import { io } from "../../realtime/socket"
 import { AuthenticatedRequest } from "../../types"
 
 export class NotificationsController {
-	// Get all notifications for the logged-in user
 	static async getUserNotifications(req: AuthenticatedRequest, res: Response) {
 		try {
 			const userId = req.user?.id
@@ -22,7 +21,6 @@ export class NotificationsController {
 		}
 	}
 
-	// Mark a notification as read
 	static async markAsRead(req: AuthenticatedRequest, res: Response) {
 		try {
 			const userId = req.user?.id
@@ -46,7 +44,6 @@ export class NotificationsController {
 		}
 	}
 
-	// Mark all notifications as read for the logged-in user
 	static async markAllAsRead(req: AuthenticatedRequest, res: Response) {
 		try {
 			const userId = req.user?.id
@@ -64,7 +61,6 @@ export class NotificationsController {
 		}
 	}
 
-	// Test notification endpoint
 	static async sendTestNotification(req: AuthenticatedRequest, res: Response) {
 		try {
 			const user = req.user
@@ -75,7 +71,6 @@ export class NotificationsController {
 
 			console.log(`Creating test notification for user ${user.id}`)
 
-			// Create a test notification
 			const testNotification = {
 				id: `test-${Date.now()}`,
 				userId: user.id,
@@ -89,7 +84,6 @@ export class NotificationsController {
 				},
 			}
 
-			// Emit directly via Socket.IO
 			io.to(`user:${user.id}`).emit("notification", testNotification)
 
 			console.log(`Test notification emitted to user:${user.id}`)

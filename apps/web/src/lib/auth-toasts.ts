@@ -1,6 +1,5 @@
 import { toast } from "sonner"
 
-// Error type enums for login and signup scenarios
 export type LoginErrorType =
 	| "invalid_credentials"
 	| "network_error"
@@ -16,7 +15,6 @@ export type SignupErrorType =
 	| "server_error"
 	| "unknown"
 
-// Interface for toast message configuration
 interface ToastMessage {
 	title: string
 	description?: string
@@ -29,75 +27,71 @@ interface ToastMessage {
 	}
 }
 
-// Error message mappings for login scenarios
+const PERSIST_UNTIL_DISMISSED: number | undefined = undefined
+
 const LOGIN_ERROR_MESSAGES: Record<LoginErrorType, ToastMessage> = {
 	invalid_credentials: {
 		title: "Invalid email or password",
 		description: "Please check your credentials and try again",
-		duration: undefined, // Persistent until dismissed
+		duration: PERSIST_UNTIL_DISMISSED,
 	},
 	network_error: {
 		title: "Connection error. Please try again",
 		description: "Check your internet connection and retry",
-		duration: undefined,
+		duration: PERSIST_UNTIL_DISMISSED,
 	},
 	server_error: {
 		title: "Server error. Please try again later",
 		description: "Our servers are experiencing issues",
-		duration: undefined,
+		duration: PERSIST_UNTIL_DISMISSED,
 	},
 	rate_limited: {
 		title: "Too many attempts. Please wait before trying again",
 		description: "Please wait a few minutes before attempting to log in again",
-		duration: undefined,
+		duration: PERSIST_UNTIL_DISMISSED,
 	},
 	unknown: {
 		title: "Login failed",
 		description: "An unexpected error occurred. Please try again",
-		duration: undefined,
+		duration: PERSIST_UNTIL_DISMISSED,
 	},
 }
 
-// Error message mappings for signup scenarios
 const SIGNUP_ERROR_MESSAGES: Record<SignupErrorType, ToastMessage> = {
 	email_exists: {
 		title: "An account with this email already exists",
 		description: "Try logging in instead or use a different email address",
-		duration: undefined,
+		duration: PERSIST_UNTIL_DISMISSED,
 	},
 	weak_password: {
 		title: "Password does not meet requirements",
 		description:
 			"Password must be at least 8 characters with mixed case, numbers, and symbols",
-		duration: undefined,
+		duration: PERSIST_UNTIL_DISMISSED,
 	},
 	validation_error: {
 		title: "Please check your information",
 		description: "Some fields contain invalid information",
-		duration: undefined,
+		duration: PERSIST_UNTIL_DISMISSED,
 	},
 	network_error: {
 		title: "Connection error. Please try again",
 		description: "Check your internet connection and retry",
-		duration: undefined,
+		duration: PERSIST_UNTIL_DISMISSED,
 	},
 	server_error: {
 		title: "Server error. Please try again later",
 		description: "Our servers are experiencing issues",
-		duration: undefined,
+		duration: PERSIST_UNTIL_DISMISSED,
 	},
 	unknown: {
 		title: "Registration failed",
 		description: "An unexpected error occurred. Please try again",
-		duration: undefined,
+		duration: PERSIST_UNTIL_DISMISSED,
 	},
 }
 
-// Authentication Toast Service
 export const authToasts = {
-	/**
-	 * Show success message for successful login
-	 */
 	showLoginSuccess(): void {
 		toast.success("Welcome back!", {
 			description: "You're now logged in and ready to go",
@@ -105,10 +99,6 @@ export const authToasts = {
 		})
 	},
 
-	/**
-	 * Show error message for failed login attempts
-	 * @param errorType - The type of login error that occurred
-	 */
 	showLoginError(errorType: LoginErrorType): void {
 		const message = LOGIN_ERROR_MESSAGES[errorType]
 		toast.error(message.title, {
@@ -117,9 +107,6 @@ export const authToasts = {
 		})
 	},
 
-	/**
-	 * Show success message for successful signup
-	 */
 	showSignupSuccess(): void {
 		toast.success("Account created successfully!", {
 			description: "You can now log in with your new account to get started",
@@ -127,10 +114,6 @@ export const authToasts = {
 		})
 	},
 
-	/**
-	 * Show error message for failed signup attempts
-	 * @param errorType - The type of signup error that occurred
-	 */
 	showSignupError(errorType: SignupErrorType): void {
 		const message = SIGNUP_ERROR_MESSAGES[errorType]
 		toast.error(message.title, {
@@ -140,20 +123,15 @@ export const authToasts = {
 	},
 }
 
-// Interface for API error responses
 interface ApiErrorResponse {
 	message?: string
 	code?: string
 	[key: string]: unknown
 }
 
-// Utility functions to determine error types from API responses
+const NO_RESPONSE_STATUS = 0
+
 export const errorUtils = {
-	/**
-	 * Determine login error type from HTTP status code and response
-	 * @param status - HTTP status code
-	 * @returns LoginErrorType
-	 */
 	getLoginErrorType(status: number): LoginErrorType {
 		switch (status) {
 			case 401:
@@ -164,19 +142,13 @@ export const errorUtils = {
 			case 502:
 			case 503:
 				return "server_error"
-			case 0: // Network error (no response)
+			case NO_RESPONSE_STATUS:
 				return "network_error"
 			default:
 				return "unknown"
 		}
 	},
 
-	/**
-	 * Determine signup error type from HTTP status code and response
-	 * @param status - HTTP status code
-	 * @param response - API response object (optional)
-	 * @returns SignupErrorType
-	 */
 	getSignupErrorType(
 		status: number,
 		_response?: ApiErrorResponse
@@ -185,7 +157,6 @@ export const errorUtils = {
 			case 409:
 				return "email_exists"
 			case 400:
-				// Check if it's a password validation error
 				if (_response?.message?.toLowerCase().includes("password")) {
 					return "weak_password"
 				}
@@ -194,18 +165,13 @@ export const errorUtils = {
 			case 502:
 			case 503:
 				return "server_error"
-			case 0: // Network error (no response)
+			case NO_RESPONSE_STATUS:
 				return "network_error"
 			default:
 				return "unknown"
 		}
 	},
 
-	/**
-	 * Check if an error is a network error
-	 * @param error - Error object or fetch error
-	 * @returns boolean
-	 */
 	isNetworkError(error: Error | TypeError | unknown): boolean {
 		return (
 			error instanceof TypeError ||
@@ -216,5 +182,4 @@ export const errorUtils = {
 	},
 }
 
-// Export types for use in other files
 export type { ToastMessage, ApiErrorResponse }

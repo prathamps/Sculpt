@@ -11,7 +11,6 @@ const FRONTEND_URL =
 	process.env.NEXT_PUBLIC_APP_URL ||
 	"http://localhost:3000"
 
-// Sets the auth cookie for a user id (shared by password + OAuth login).
 const setAuthCookie = (res: Response, userId: string) => {
 	const token = jwt.sign({ id: userId }, process.env.JWT_SECRET || "your_jwt_secret", {
 		expiresIn: "1h",
@@ -80,13 +79,10 @@ export const logout = (_req: Request, res: Response) => {
 	return res.status(200).json({ message: "Logged out successfully" })
 }
 
-// Lists which OAuth providers are configured so the UI can render buttons.
 export const getOAuthProviders = (_req: Request, res: Response) => {
 	return res.status(200).json(oauthProviders)
 }
 
-// Final step of the OAuth dance: passport has attached req.user; we mint our
-// own JWT cookie and bounce the browser back to the frontend callback page.
 export const oauthCallback = (req: Request, res: Response) => {
 	const user = req.user as AuthenticatedUser | undefined
 	if (!user) {

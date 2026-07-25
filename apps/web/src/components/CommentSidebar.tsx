@@ -29,9 +29,6 @@ interface CommentSidebarProps {
 	canReply?: boolean
 }
 
-// Presentational comment list. Data ownership (fetching + socket updates)
-// lives in useVersionComments at the page level so scrubber markers keep
-// working when this sidebar is closed.
 export function CommentSidebar({
 	comments,
 	isLoading = false,
@@ -48,7 +45,6 @@ export function CommentSidebar({
 	const [filter, setFilter] = useState<CommentFilter>("all")
 	const [thisPageOnly, setThisPageOnly] = useState(false)
 
-	// Apply filters
 	const filteredComments = comments.filter((comment) => {
 		const matchesSearch = comment.content
 			.toLowerCase()

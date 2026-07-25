@@ -72,7 +72,6 @@ export function ProjectContentView({
 	const [searchQuery, setSearchQuery] = useState("")
 	const [showFilterBar, setShowFilterBar] = useState(false)
 
-	// Filter and sort files
 	const filteredAndSortedFiles = useMemo(() => {
 		if (!project) return []
 
@@ -87,7 +86,6 @@ export function ProjectContentView({
 			return fileMediaType(file) === MEDIA_FOR_FILTER[fileType]
 		})
 
-		// Then sort
 		return filtered.sort((a, b) => {
 			switch (sortBy) {
 				case "newest":
@@ -147,7 +145,6 @@ export function ProjectContentView({
 
 	return (
 		<main className="flex-1 overflow-y-auto p-5 md:p-6">
-			{/* Project Header */}
 			<div className="mb-6 flex flex-col gap-4 border-b border-border/30 pb-4 sm:flex-row sm:items-center sm:justify-between">
 				<div>
 					<h1 className="text-xl font-semibold text-foreground md:text-2xl">
@@ -235,7 +232,6 @@ export function ProjectContentView({
 				</div>
 			</div>
 
-			{/* Filter Bar */}
 			{showFilterBar && (
 				<div className="mb-4 rounded-md border border-border/50 bg-card/50 p-3">
 					<div className="flex flex-wrap items-center gap-3">
@@ -382,7 +378,6 @@ export function ProjectContentView({
 				</div>
 			)}
 
-			{/* Files Section */}
 			<div className="flex items-center justify-between pb-4">
 				<h3 className="text-sm font-medium">
 					{filteredAndSortedFiles.length} file

@@ -13,6 +13,8 @@ import adminRoutes from "./modules/admin/admin.routes"
 import { isAllowedOrigin } from "./lib/cors"
 import { uploadsDir } from "./storage"
 
+const pdfJsRangedFetchHeader = "Range"
+
 const corsOptions: cors.CorsOptions = {
 	origin: (origin, callback) => {
 		if (isAllowedOrigin(origin)) return callback(null, true)
@@ -20,19 +22,35 @@ const corsOptions: cors.CorsOptions = {
 	},
 	credentials: true,
 	methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-	// Range is needed for pdf.js ranged fetches of uploaded PDFs cross-origin.
-	allowedHeaders: ["Content-Type", "Authorization", "Cookie", "Range"],
+	allowedHeaders: [
+		"Content-Type",
+		"Authorization",
+		"Cookie",
+		pdfJsRangedFetchHeader,
+	],
 }
+
+const trustProxyOnlyWithKnownHopCount = (app: express.Express): void => {
+	if (!process.env.TRUST_PROXY) return
+	const hops = Number(process.env.TRUST_PROXY)
+	app.set("trust proxy", Number.isNaN(hops) ? process.env.TRUST_PROXY : hops)
+}
+
+const setNonExecutableUploadHeaders = (res: express.Response): void => {
+	res.setHeader("X-Content-Type-Options", "nosniff")
+	res.setHeader("Content-Disposition", "inline")
+	res.setHeader("Content-Security-Policy", "default-src 'none'")
+}
+
+const isUploadRejection = (err: Error & { code?: string }): boolean =>
+	err?.code === "LIMIT_FILE_SIZE" ||
+	err?.code === "LIMIT_UNEXPECTED_FILE" ||
+	!!err?.message?.startsWith("Unsupported file type")
 
 export const createApp = (): express.Express => {
 	const app = express()
 
-	// req.ip / X-Forwarded-For are only trusted when a known proxy count is set,
-	// so audit-logged IPs can't be spoofed on a direct-facing deployment.
-	if (process.env.TRUST_PROXY) {
-		const hops = Number(process.env.TRUST_PROXY)
-		app.set("trust proxy", Number.isNaN(hops) ? process.env.TRUST_PROXY : hops)
-	}
+	trustProxyOnlyWithKnownHopCount(app)
 
 	app.use(cors(corsOptions))
 	app.use(express.json())
@@ -42,13 +60,7 @@ export const createApp = (): express.Express => {
 	app.use(
 		"/uploads",
 		express.static(uploadsDir, {
-			setHeaders: (res) => {
-				// Stop the browser from sniffing an uploaded file into an executable
-				// type, and never render user uploads inline on the API origin.
-				res.setHeader("X-Content-Type-Options", "nosniff")
-				res.setHeader("Content-Disposition", "inline")
-				res.setHeader("Content-Security-Policy", "default-src 'none'")
-			},
+			setHeaders: setNonExecutableUploadHeaders,
 		})
 	)
 
@@ -65,8 +77,6 @@ export const createApp = (): express.Express => {
 	app.use("/api/admin", adminRoutes)
 	app.use("/api/export", exportRoutes)
 
-	// Turn upload rejections (unsupported type, size limit) into clean 400s
-	// instead of the default 500.
 	app.use(
 		(
 			err: Error & { code?: string },
@@ -75,11 +85,7 @@ export const createApp = (): express.Express => {
 			next: express.NextFunction
 		) => {
 			if (res.headersSent) return next(err)
-			if (
-				err?.code === "LIMIT_FILE_SIZE" ||
-				err?.code === "LIMIT_UNEXPECTED_FILE" ||
-				err?.message?.startsWith("Unsupported file type")
-			) {
+			if (isUploadRejection(err)) {
 				res.status(400).json({ message: err.message })
 				return
 			}

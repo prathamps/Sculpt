@@ -1,4 +1,3 @@
-// Prisma Schema
 
 generator client {
   provider = "prisma-client-js"
@@ -29,14 +28,20 @@ enum MediaType {
   MODEL
 }
 
+enum ProxyStatus {
+  PENDING
+  READY
+  FAILED
+}
+
 model User {
   id            String          @id @default(cuid())
   email         String          @unique
   name          String?
-  password      String? // nullable for OAuth-only accounts
+  password      String?
   role          UserRole        @default(USER)
-  provider      String? // "local" | "google" | "github"
-  providerId    String? // provider account id (for OAuth)
+  provider      String?
+  providerId    String?
   avatarUrl     String?
   memberships   ProjectMember[]
   notifications Notification[]
@@ -104,8 +109,10 @@ model ImageVersion {
   versionName String    @default("Version 1")
   versionNumber Int     @default(1)
   mediaType   MediaType @default(IMAGE)
-  duration    Float? // video duration in seconds (null for images)
-  thumbnailUrl String? // poster frame for videos, first-page render for PDFs
+  duration    Float?
+  thumbnailUrl String?
+  proxyUrl    String?
+  proxyStatus ProxyStatus?
   imageId     String
   image       Image     @relation(fields: [imageId], references: [id], onDelete: Cascade)
   annotations Json[]
@@ -125,11 +132,11 @@ model Comment {
   parent         Comment?      @relation("CommentToComment", fields: [parentId], references: [id], onDelete: Cascade)
   replies        Comment[]     @relation("CommentToComment")
   likes          CommentLike[]
-  annotation     Json?         // Store annotation data as JSON
-  timestamp      Float?        // seconds into a video this comment is anchored to (null for images)
-  timestampEnd   Float?        // range end for video comments; null = instant comment
-  page           Int?          // 1-based PDF page this comment is anchored to (null otherwise)
-  modelAnchor    Json?         // 3D pin for MODEL versions: { position, normal?, camera? } (null otherwise)
+  annotation     Json?
+  timestamp      Float?
+  timestampEnd   Float?
+  page           Int?
+  modelAnchor    Json?
   resolved       Boolean       @default(false)
   createdAt      DateTime      @default(now())
   updatedAt      DateTime      @updatedAt
@@ -160,7 +167,7 @@ model Notification {
   id        String   @id @default(cuid())
   content   String
   read      Boolean  @default(false)
-  metadata  Json? // e.g. { type, imageVersionId, projectId, commentId }
+  metadata  Json?
   userId    String
   user      User     @relation(fields: [userId], references: [id])
   createdAt DateTime @default(now())

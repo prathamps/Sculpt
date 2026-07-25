@@ -19,7 +19,6 @@ router.delete(
 	projectController.removeMemberFromProject
 )
 
-// Share links
 router.post("/:projectId/share-links", projectController.createShareLink)
 router.get("/:projectId/share-links", projectController.getShareLinks)
 router.delete(
@@ -27,7 +26,6 @@ router.delete(
 	projectController.revokeShareLink
 )
 
-// Mount the project-specific image routes
 router.use("/:projectId/images", projectImagesRouter)
 
 export default router

@@ -46,16 +46,13 @@ export default function LoginPage() {
 				authToasts.showLoginSuccess()
 				router.push("/dashboard")
 			} else {
-				// Parse error response to get more details
 				let errorResponse
 				try {
 					errorResponse = await res.json()
 				} catch {
-					// If response is not JSON, use default error handling
 					errorResponse = null
 				}
 
-				// Determine error type based on status code and response
 				const errorType = errorUtils.getLoginErrorType(res.status)
 				authToasts.showLoginError(errorType)
 
@@ -66,7 +63,6 @@ export default function LoginPage() {
 				})
 			}
 		} catch (error) {
-			// Handle network errors and other fetch failures
 			if (errorUtils.isNetworkError(error)) {
 				authToasts.showLoginError("network_error")
 			} else {

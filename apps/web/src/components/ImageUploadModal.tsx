@@ -22,7 +22,7 @@ import { Progress } from "@/components/ui/progress"
 import {
 	captureThumbnail,
 	getVideoDuration,
-	prepareUploadFile,
+	withMimeTypeTheApiCanMap,
 } from "@/lib/media-capture"
 
 const ACCEPTED_TYPES =
@@ -40,7 +40,7 @@ interface ImageUploadModalProps {
 	isOpen: boolean
 	onClose: () => void
 	onUploadComplete: () => void
-	imageId?: string // Optional for uploading new versions
+	imageId?: string
 }
 
 export function ImageUploadModal({
@@ -68,9 +68,7 @@ export function ImageUploadModal({
 				setError("")
 			}
 
-			// If uploading a new version, only allow one file
 			if (imageId && validFiles.length > 1) {
-				// Take only the first file
 				setFiles([validFiles[0]])
 				setError("Only one file can be uploaded as a new version.")
 			} else {
@@ -84,8 +82,6 @@ export function ImageUploadModal({
 	}
 
 	const simulateProgress = () => {
-		// Simulate progress for demo purposes
-		// In production, this would be replaced with actual upload progress
 		setUploadProgress(0)
 		const interval = setInterval(() => {
 			setUploadProgress((prev) => {
@@ -108,7 +104,6 @@ export function ImageUploadModal({
 		setIsUploading(true)
 		setError("")
 
-		// Start progress simulation
 		const clearProgressSimulation = simulateProgress()
 
 		const formData = new FormData()
@@ -116,10 +111,8 @@ export function ImageUploadModal({
 		try {
 			let res
 
-			// If imageId is provided, we're uploading a new version
 			if (imageId && files.length > 0) {
-				// Make sure we have a file to upload
-				const fileToUpload = prepareUploadFile(files[0])
+				const fileToUpload = withMimeTypeTheApiCanMap(files[0])
 				formData.append("image", fileToUpload)
 				if (fileToUpload.type.startsWith("video/")) {
 					const duration = await getVideoDuration(fileToUpload)
@@ -136,13 +129,10 @@ export function ImageUploadModal({
 					credentials: "include",
 				})
 			} else {
-				// Otherwise, we're uploading new images. Each entry in filesMeta
-				// mirrors the images order; flagged entries consume the thumbnails
-				// field in order (see the API's parseFilesMeta).
 				const filesMeta: { duration: number | null; hasThumbnail: boolean }[] =
 					[]
 				for (const selected of files) {
-					const file = prepareUploadFile(selected)
+					const file = withMimeTypeTheApiCanMap(selected)
 					formData.append("images", file)
 					const duration = file.type.startsWith("video/")
 						? await getVideoDuration(file)
@@ -166,7 +156,6 @@ export function ImageUploadModal({
 				throw new Error("Upload failed")
 			}
 
-			// Complete the progress
 			setUploadProgress(100)
 			setTimeout(() => {
 				onUploadComplete()
@@ -208,7 +197,6 @@ export function ImageUploadModal({
 						</div>
 						<Progress value={uploadProgress} className="h-2 w-full bg-muted" />
 						<p className="text-xs text-center text-muted-foreground">
-							{/* In production, this would be stored in S3 or Cloudinary */}
 							Files are being uploaded to temporary storage
 						</p>
 					</div>

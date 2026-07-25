@@ -10,7 +10,6 @@ router.get("/profile", (req: Request, res: Response) => {
 	res.json(req.user)
 })
 
-// Alias — the documented endpoint for the authenticated user's profile.
 router.get("/me", (req: Request, res: Response) => {
 	res.json(req.user)
 })

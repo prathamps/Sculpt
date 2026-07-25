@@ -1,7 +1,5 @@
 import { Annotation, Point } from "@/types"
 
-// Single painter for all annotation canvases (image, video, PDF) so stroke
-// and highlight styling can't drift between them. Points are normalized 0-1.
 export function drawAnnotations(
 	ctx: CanvasRenderingContext2D,
 	annotations: Pick<

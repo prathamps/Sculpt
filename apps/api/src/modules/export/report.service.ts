@@ -132,7 +132,6 @@ const csvEscape = (value: unknown): string => {
 	return s
 }
 
-// Flatten an image report into CSV (one row per top-level comment).
 export const buildImageReportCsv = (report: ImageReport): string => {
 	const header = [
 		"version",

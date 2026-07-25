@@ -64,7 +64,6 @@ export function AnnotationCanvas({
 		const drawCanvas = drawingCanvasRef.current
 		const previewCanvas = previewCanvasRef.current
 
-		// Set canvas dimensions to match the image aspect ratio
 		const containerWidth = containerRef.current.clientWidth || 800
 		const containerHeight = containerRef.current.clientHeight || 600
 		const imgAspectRatio = image.width / image.height
@@ -74,16 +73,13 @@ export function AnnotationCanvas({
 		let canvasHeight: number
 
 		if (imgAspectRatio > containerAspectRatio) {
-			// Image is wider than container
 			canvasWidth = containerWidth * 0.95
 			canvasHeight = canvasWidth / imgAspectRatio
 		} else {
-			// Image is taller than container
 			canvasHeight = containerHeight * 0.95
 			canvasWidth = canvasHeight * imgAspectRatio
 		}
 
-		// Set all canvases to the same dimensions
 		const canvases = [imgCanvas, drawCanvas]
 		if (previewCanvas) canvases.push(previewCanvas)
 
@@ -94,14 +90,12 @@ export function AnnotationCanvas({
 			canvas.style.height = `${canvasHeight}px`
 		})
 
-		// Draw image on the image canvas
 		const imgCtx = imgCanvas.getContext("2d")
 		if (imgCtx) {
 			imgCtx.clearRect(0, 0, canvasWidth, canvasHeight)
 			imgCtx.drawImage(image, 0, 0, canvasWidth, canvasHeight)
 		}
 
-		// Draw all annotations on the drawing canvas
 		const drawCtx = drawCanvas.getContext("2d")
 		if (!drawCtx) return
 
@@ -144,18 +138,14 @@ export function AnnotationCanvas({
 		}
 	}, [annotations, redrawAll, image])
 
-	// Get position as a percentage of the canvas size (0-1)
-	// This ensures coordinates remain consistent when canvas is resized
-	const getRelativePos = (e: React.MouseEvent): Point | null => {
+	const getNormalizedCanvasPos = (e: React.MouseEvent): Point | null => {
 		const canvas = previewCanvasRef.current
 		if (!canvas) return null
 		const rect = canvas.getBoundingClientRect()
 
-		// Calculate position relative to the canvas element, not the viewport
 		const x = (e.clientX - rect.left) / rect.width
 		const y = (e.clientY - rect.top) / rect.height
 
-		// Ensure coordinates are within bounds (0-1)
 		return {
 			x: Math.max(0, Math.min(1, x)),
 			y: Math.max(0, Math.min(1, y)),
@@ -164,7 +154,7 @@ export function AnnotationCanvas({
 
 	const handleMouseDown = (e: React.MouseEvent) => {
 		if (readOnly) return
-		const pos = getRelativePos(e)
+		const pos = getNormalizedCanvasPos(e)
 		if (!pos) return
 		setIsDrawing(true)
 		startPosRef.current = pos
@@ -173,7 +163,7 @@ export function AnnotationCanvas({
 
 	const handleMouseMove = (e: React.MouseEvent) => {
 		if (!isDrawing) return
-		const pos = getRelativePos(e)
+		const pos = getNormalizedCanvasPos(e)
 		if (!pos) return
 
 		const previewCtx = previewCanvasRef.current?.getContext("2d")
@@ -220,7 +210,7 @@ export function AnnotationCanvas({
 		if (!isDrawing) return
 		setIsDrawing(false)
 
-		const pos = getRelativePos(e)
+		const pos = getNormalizedCanvasPos(e)
 		const startPos = startPosRef.current
 		if (!pos || !startPos) return
 
@@ -248,9 +238,8 @@ export function AnnotationCanvas({
 		currentPathRef.current = []
 	}
 
-	// Add touch support for mobile devices
 	const handleTouchStart = (e: React.TouchEvent) => {
-		e.preventDefault() // Prevent scrolling while drawing
+		e.preventDefault()
 		if (e.touches.length > 0) {
 			const touch = e.touches[0]
 			const mouseEvent = new MouseEvent("mousedown", {

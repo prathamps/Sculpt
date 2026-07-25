@@ -7,7 +7,6 @@ import { isUserOnline } from "../../lib/presence"
 import { sendNotificationEmail } from "./email.service"
 
 export class NotificationService {
-	// Create a notification and send it via Socket.io
 	static async createNotification(data: {
 		userId: string
 		content: string
@@ -18,7 +17,6 @@ export class NotificationService {
 				`Creating notification for user ${data.userId}: "${data.content}"`
 			)
 
-			// Create notification in database (persisting metadata for click-through)
 			const notification = await prisma.notification.create({
 				data: {
 					userId: data.userId,
@@ -31,13 +29,11 @@ export class NotificationService {
 
 			console.log(`Notification created with ID: ${notification.id}`)
 
-			// Prepare the full notification data to send
 			const fullNotification = {
 				...notification,
 				metadata: data.metadata || {},
 			}
 
-			// Store notification in Redis for quick access
 			try {
 				await safeRedis.hSet(
 					`notifications:${data.userId}`,
@@ -47,10 +43,8 @@ export class NotificationService {
 				console.log(`Notification stored in Redis for user ${data.userId}`)
 			} catch (redisError) {
 				console.error(`Redis error storing notification: ${redisError}`)
-				// Continue execution - Redis is optional
 			}
 
-			// Send notification in real-time
 			try {
 				console.log(`Emitting notification to user:${data.userId}`)
 				io.to(`user:${data.userId}`).emit("notification", fullNotification)
@@ -58,7 +52,6 @@ export class NotificationService {
 				console.error(`Socket error when sending notification: ${socketError}`)
 			}
 
-			// If the recipient is offline, fall back to an email notification.
 			try {
 				if (!isUserOnline(data.userId)) {
 					const recipient = await prisma.user.findUnique({
@@ -85,11 +78,10 @@ export class NotificationService {
 		}
 	}
 
-	// Create a project notification for all project members
 	static async createProjectNotification(data: {
 		projectId: string
 		content: string
-		excludeUserId?: string // Optional user to exclude (e.g., the user who triggered the notification)
+		excludeUserId?: string
 		metadata?: JsonValue
 	}): Promise<void> {
 		try {
@@ -101,7 +93,6 @@ export class NotificationService {
 				console.log(`Excluding user: ${data.excludeUserId}`)
 			}
 
-			// Get all project members
 			const members = await prisma.projectMember.findMany({
 				where: {
 					projectId: data.projectId,
@@ -114,7 +105,6 @@ export class NotificationService {
 
 			console.log(`Found ${members.length} project members to notify`)
 
-			// Create notification for each member
 			const notificationPromises = members.map((member) => {
 				console.log(
 					`Creating notification for project member: ${member.userId}`
@@ -131,7 +121,6 @@ export class NotificationService {
 
 			await Promise.all(notificationPromises)
 
-			// Also send notification to project room for real-time updates
 			console.log(`Emitting project-update to room project:${data.projectId}`)
 			io.to(`project:${data.projectId}`).emit("project-update", {
 				type: "notification",
@@ -145,10 +134,8 @@ export class NotificationService {
 		}
 	}
 
-	// Get all notifications for a user
 	static async getUserNotifications(userId: string): Promise<Notification[]> {
 		try {
-			// Try to get notifications from Redis first
 			const notificationKeys = await safeRedis.hKeys(`notifications:${userId}`)
 
 			if (notificationKeys.length > 0) {
@@ -158,7 +145,6 @@ export class NotificationService {
 				return notificationValues.map((value: string) => JSON.parse(value))
 			}
 
-			// Fall back to database if Redis doesn't have the data
 			const notifications = await prisma.notification.findMany({
 				where: {
 					userId,
@@ -168,7 +154,6 @@ export class NotificationService {
 				},
 			})
 
-			// Store in Redis for future requests
 			const notificationsObject: Record<string, string> = {}
 			notifications.forEach((notification) => {
 				notificationsObject[notification.id] = JSON.stringify(notification)
@@ -185,7 +170,6 @@ export class NotificationService {
 		}
 	}
 
-	// Mark a notification as read
 	static async markAsRead(
 		notificationId: string,
 		userId: string
@@ -194,14 +178,13 @@ export class NotificationService {
 			const notification = await prisma.notification.update({
 				where: {
 					id: notificationId,
-					userId, // Ensure the notification belongs to this user
+					userId,
 				},
 				data: {
 					read: true,
 				},
 			})
 
-			// Update in Redis
 			const existingNotification = await safeRedis.hGet(
 				`notifications:${userId}`,
 				notificationId
@@ -226,7 +209,6 @@ export class NotificationService {
 		}
 	}
 
-	// Mark all notifications as read for a user
 	static async markAllAsRead(userId: string): Promise<void> {
 		try {
 			await prisma.notification.updateMany({
@@ -239,7 +221,6 @@ export class NotificationService {
 				},
 			})
 
-			// Update Redis
 			const notificationKeys = await safeRedis.hKeys(`notifications:${userId}`)
 			if (notificationKeys.length > 0) {
 				for (const key of notificationKeys) {

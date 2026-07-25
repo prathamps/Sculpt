@@ -2,12 +2,10 @@ import { createClient } from "redis"
 
 console.log("Initializing Redis client...")
 
-// Create Redis client
 const redisClient = createClient({
 	url: process.env.REDIS_URL || "redis://localhost:6379",
 })
 
-// Handle connection events
 redisClient.on("error", (err) => {
 	console.error("Redis Client Error:", err)
 })
@@ -24,7 +22,6 @@ redisClient.on("ready", () => {
 	console.log("Redis client is ready")
 })
 
-// Connect to Redis
 ;(async () => {
 	try {
 		console.log("Attempting to connect to Redis...")
@@ -37,7 +34,6 @@ redisClient.on("ready", () => {
 	}
 })()
 
-// Create a wrapper for Redis commands that falls back gracefully if Redis is unavailable
 const safeRedis = {
 	get: async (...args: Parameters<typeof redisClient.get>) => {
 		try {

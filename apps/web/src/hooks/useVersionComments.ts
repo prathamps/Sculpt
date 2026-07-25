@@ -7,9 +7,6 @@ import { Comment } from "@/types"
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001"
 
-// Owns the comment list for an image version: initial fetch, live socket
-// updates, and the version-room lifecycle. Lives at the page level so scrubber
-// markers keep working when the comment sidebar is closed.
 export function useVersionComments(imageVersionId: string | null) {
 	const { user } = useAuth()
 	const { socket, isConnected, joinImageVersion, leaveImageVersion } =

@@ -21,9 +21,7 @@ export function ModeToggle() {
     document.documentElement.classList.toggle("dark", next === "dark")
     try {
       localStorage.setItem("theme", next)
-    } catch {
-      // ignore storage failures (private mode, etc.)
-    }
+    } catch {}
   }
 
   return (

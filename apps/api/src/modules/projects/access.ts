@@ -1,8 +1,6 @@
 import { prisma } from "../../lib/prisma"
 import { ProjectRole } from "@prisma/client"
 
-// Capability order: a role grants everything its lower-ranked roles grant.
-// VIEWER reads, MEMBER comments, EDITOR manages media, OWNER manages the project.
 const ROLE_RANK: Record<ProjectRole, number> = {
 	VIEWER: 0,
 	MEMBER: 1,

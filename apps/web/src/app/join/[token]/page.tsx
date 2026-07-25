@@ -14,7 +14,7 @@ export default function JoinPage() {
 	const URI = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001"
 	useEffect(() => {
 		if (loading) {
-			return // Wait until auth state is loaded
+			return
 		}
 		if (!isAuthenticated) {
 			router.push(`/login?redirect=/join/${token}`)
@@ -34,7 +34,6 @@ export default function JoinPage() {
 
 				if (res.ok) {
 					setMessage("Successfully joined project! Redirecting...")
-					// Redirect to the dashboard, which will then show the new project
 					router.push("/dashboard")
 				} else {
 					const data = await res.json()

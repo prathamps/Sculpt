@@ -83,7 +83,6 @@ export function ProjectSidebar({
 					isSidebarOpen ? "translate-x-0" : "-translate-x-full"
 				)}
 			>
-				{/* Workspace Switcher */}
 				<div className="mb-4 flex items-center justify-between">
 					<div className="flex items-center gap-2">
 						<div className="flex h-7 w-7 items-center justify-center rounded-md bg-sidebar-primary text-sidebar-primary-foreground">
@@ -94,7 +93,6 @@ export function ProjectSidebar({
 					<ChevronDown className="h-4 w-4 text-muted-foreground" />
 				</div>
 
-				{/* Search */}
 				<div className="relative mb-5">
 					<Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
 					<Input
@@ -107,7 +105,6 @@ export function ProjectSidebar({
 					/>
 				</div>
 
-				{/* Projects heading */}
 				<div className="flex items-center justify-between">
 					<h2 className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
 						Projects
@@ -121,7 +118,6 @@ export function ProjectSidebar({
 					</button>
 				</div>
 
-				{/* Project list */}
 				<nav className="mt-2 -mx-2 flex-1 space-y-px overflow-y-auto">
 					{filteredProjects.length === 0 && (
 						<div className="px-2 py-3 text-center text-xs text-muted-foreground">
@@ -192,7 +188,6 @@ export function ProjectSidebar({
 				</nav>
 			</aside>
 
-			{/* Modals */}
 			<MembersModal
 				isOpen={isMembersModalOpen}
 				onClose={() => setMembersModalOpen(false)}

@@ -31,13 +31,12 @@ interface AnnotationFooterProps {
 	annotations: Annotation[]
 	imageVersionId: string
 	onCommentAdded: () => void
-	timestamp?: number | null // live video playhead (seconds)
+	timestamp?: number | null
 	composeRange?: ComposeRange
 	onMarkIn?: () => void
 	onMarkOut?: () => void
 	onClearRange?: () => void
-	page?: number | null // PDF page the comment anchors to
-	// undefined = not a 3D context; null = 3D context with no pin placed yet
+	page?: number | null
 	modelAnchor?: ModelAnchor | null
 	onClearModelAnchor?: () => void
 }
@@ -56,7 +55,7 @@ export function AnnotationFooter({
 	annotations,
 	imageVersionId,
 	onCommentAdded,
-	timestamp,
+	timestamp: livePlayheadSeconds,
 	composeRange,
 	onMarkIn,
 	onMarkOut,
@@ -70,11 +69,9 @@ export function AnnotationFooter({
 	const { user } = useAuth()
 	const URI = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001"
 
-	const isVideoContext = typeof timestamp === "number"
+	const isVideoContext = typeof livePlayheadSeconds === "number"
 	const isModelContext = modelAnchor !== undefined
-	// A pinned mark-in wins over the live playhead; otherwise the comment is
-	// anchored to wherever the playhead is when it's sent.
-	const anchorStart = composeRange?.start ?? timestamp ?? null
+	const anchorStart = composeRange?.start ?? livePlayheadSeconds ?? null
 	const anchorEnd = composeRange?.end ?? null
 	const hasRange =
 		typeof anchorStart === "number" &&
@@ -86,7 +83,6 @@ export function AnnotationFooter({
 
 		setIsSending(true)
 		try {
-			// Send all annotations with the comment, not just the current one
 			const annotationsToSend =
 				annotations.length > 0
 					? annotations
@@ -117,10 +113,8 @@ export function AnnotationFooter({
 
 			if (res.ok) {
 				setComment("")
-				// Clear the current annotation after submitting
 				onClear()
 				onClearRange?.()
-				// Notify parent that comment was added to refresh comments
 				onCommentAdded()
 			}
 		} catch (error) {
@@ -132,7 +126,6 @@ export function AnnotationFooter({
 
 	return (
 		<div className="space-y-3 border-t border-border/40 bg-card p-4">
-			{/* Top row with comment input */}
 			<div className="flex items-start gap-2">
 				<Avatar className="h-8 w-8 flex-shrink-0">
 					<AvatarImage
@@ -172,7 +165,6 @@ export function AnnotationFooter({
 				</div>
 			</div>
 
-			{/* Bottom row with tools */}
 			<div className="flex items-center justify-between">
 				<div className="flex items-center gap-2">
 					{annotations.length > 0 && (

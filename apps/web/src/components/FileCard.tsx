@@ -81,8 +81,6 @@ function CardThumbnail({
 						onError={() => setImageError(true)}
 					/>
 				) : (
-					// Legacy videos have no stored poster; let the browser paint the
-					// first frame from metadata instead.
 					<video
 						src={mediaUrl(fileUrl)}
 						preload="metadata"
@@ -272,8 +270,6 @@ export function FileCard({
 					href={`/project/${projectId}/image/${file.id}`}
 					tabIndex={linkTabIndex}
 				>
-					{/* One shared aspect ratio keeps the grid rows even across mixed
-					    media; object-cover crops the source to fit. */}
 					<div className="relative aspect-video overflow-hidden bg-muted">
 						<CardThumbnail
 							file={file}

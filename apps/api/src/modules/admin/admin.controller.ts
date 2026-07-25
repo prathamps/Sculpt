@@ -16,6 +16,8 @@ import {
 	requestIp,
 } from "../audit/audit.service"
 
+const ADMIN_SESSION_HOURS = 8
+
 export const adminLogin = async (req: Request, res: Response) => {
 	try {
 		const { email, password } = req.body
@@ -37,19 +39,17 @@ export const adminLogin = async (req: Request, res: Response) => {
 				.json({ message: "Access denied: Admin privileges required" })
 		}
 
-		// Generate JWT token
 		const token = jwt.sign(
 			{ id: admin.id },
 			process.env.JWT_SECRET || "your_jwt_secret",
-			{ expiresIn: "8h" } // Longer session for admins
+			{ expiresIn: `${ADMIN_SESSION_HOURS}h` }
 		)
 
-		// Set httpOnly cookie
 		res.cookie("admin_token", token, {
 			httpOnly: true,
 			secure: process.env.NODE_ENV === "production",
 			sameSite: "none",
-			maxAge: 8 * 3600000, // 8 hours
+			maxAge: ADMIN_SESSION_HOURS * 3600000,
 		})
 
 		await recordAudit({
@@ -68,14 +68,12 @@ export const adminLogin = async (req: Request, res: Response) => {
 }
 
 export const adminProfile = async (req: Request, res: Response) => {
-	// The user is already authenticated as an admin through middleware
 	const admin = req.user
 
 	if (!admin) {
 		return res.status(401).json({ message: "Not authenticated" })
 	}
 
-	// Extract what we need from the user object
 	const { id, email, name, role, createdAt, updatedAt } = admin as AuthenticatedUser
 
 	return res.status(200).json({
