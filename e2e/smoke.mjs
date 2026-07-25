@@ -111,13 +111,30 @@ const launchSystemBrowser = async () => {
 const browser = await launchSystemBrowser()
 const context = await browser.newContext({ viewport: { width: 1440, height: 900 } })
 const page = await context.newPage()
-const consoleErrors = []
-page.on("console", (msg) => {
-	if (msg.type() === "error") consoleErrors.push(msg.text())
-})
-page.on("pageerror", (err) => consoleErrors.push(String(err)))
 
-await page.goto(`${WEB}/login`, { waitUntil: "networkidle", timeout: 90000 })
+const consoleErrors = []
+let navigationInFlight = false
+const recordConsoleError = (message) => {
+	consoleErrors.push({ message, duringNavigation: navigationInFlight })
+}
+page.on("console", (msg) => {
+	if (msg.type() === "error") recordConsoleError(msg.text())
+})
+page.on("pageerror", (err) => recordConsoleError(String(err)))
+
+const NAVIGATION_ABORT_GRACE_MS = 750
+
+const navigate = async (url, options) => {
+	navigationInFlight = true
+	try {
+		await page.goto(url, options)
+	} finally {
+		await page.waitForTimeout(NAVIGATION_ABORT_GRACE_MS)
+		navigationInFlight = false
+	}
+}
+
+await navigate(`${WEB}/login`, { waitUntil: "networkidle", timeout: 90000 })
 await page.fill("#email", email)
 await page.fill("#password", password)
 let loggedIn = false
@@ -137,7 +154,7 @@ if (!loggedIn) fatal("cannot continue without a session")
 
 const openViewer = async (imageName) => {
 	const image = byName(imageName)
-	await page.goto(`${WEB}/project/${project.id}/image/${image.id}`, {
+	await navigate(`${WEB}/project/${project.id}/image/${image.id}`, {
 		waitUntil: "domcontentloaded",
 		timeout: 120000,
 	})
@@ -224,12 +241,27 @@ if (readyVersion?.proxyUrl) {
 const deleteRes = await api(`/api/projects/${project.id}`, { method: "DELETE" })
 check("cleanup deletes the project", deleteRes.status === 200 || deleteRes.status === 204, `status=${deleteRes.status}`)
 
-const unexpectedErrors = consoleErrors.filter(
-	(message) =>
-		!message.includes("status of 401") && !message.includes("favicon")
+const EXPECTED_BEFORE_LOGIN = /status of 401/
+const REQUEST_ABORTED = /Failed to fetch|NetworkError|Load failed|ERR_ABORTED/i
+
+const ignorable = ({ message, duringNavigation }) =>
+	message.includes("favicon") ||
+	EXPECTED_BEFORE_LOGIN.test(message) ||
+	(duringNavigation && REQUEST_ABORTED.test(message))
+
+const unexpectedErrors = consoleErrors.filter((entry) => !ignorable(entry))
+const abortsIgnored = consoleErrors.filter(
+	(entry) => entry.duringNavigation && REQUEST_ABORTED.test(entry.message)
 )
+if (abortsIgnored.length) {
+	console.log(
+		`  (ignored ${abortsIgnored.length} request(s) aborted by test navigation)`
+	)
+}
 check("no unexpected browser console errors", unexpectedErrors.length === 0)
-unexpectedErrors.slice(0, 10).forEach((message) => console.log("  ERR:", message.slice(0, 200)))
+unexpectedErrors
+	.slice(0, 10)
+	.forEach(({ message }) => console.log("  ERR:", message.slice(0, 200)))
 
 await browser.close()
 console.log(`\n${passed} passed, ${failures.length} failed`)
