@@ -12,6 +12,7 @@ type BufferGeometry = ThreeModule.BufferGeometry
 const THUMBNAIL_WIDTH = 640
 const THUMBNAIL_HEIGHT = 360
 const NORMALIZED_MODEL_SIZE = 4
+const MAX_BYTES_TO_PARSE_IN_BROWSER = 256 * 1024 * 1024
 
 const loadThree = (): Promise<Three> => import("three")
 
@@ -194,6 +195,13 @@ export async function prepareModelUpload(
 ): Promise<PreparedModelUpload> {
 	const parse = sceneParsers[extensionOf(file.name)]
 	if (!parse) return { glb: null, thumbnail: null }
+
+	if (file.size > MAX_BYTES_TO_PARSE_IN_BROWSER) {
+		console.warn(
+			`${file.name} is too large to parse in the browser; uploading it without a thumbnail`
+		)
+		return { glb: null, thumbnail: null }
+	}
 
 	try {
 		const three = await loadThree()

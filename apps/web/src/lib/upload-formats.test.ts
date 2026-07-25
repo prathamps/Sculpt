@@ -1,11 +1,14 @@
 import { describe, expect, it } from "vitest"
 import {
 	ACCEPTED_MIME_TYPES,
+	MAX_BROWSER_CONVERTIBLE_MODEL_MB,
 	MAX_UPLOAD_MB,
 	isAcceptedUpload,
+	isTooLargeToConvertInBrowser,
 	isWithinUploadLimit,
 	oversizedUploadMessage,
 	rejectedUploadMessage,
+	unconvertibleModelMessage,
 } from "./upload-formats"
 
 const fileNamed = (name: string, type: string) =>
@@ -89,6 +92,48 @@ describe("oversizedUploadMessage", () => {
 		expect(message).toContain(`${MAX_UPLOAD_MB + 300} MB`)
 		expect(message).toContain(`${MAX_UPLOAD_MB} MB upload limit`)
 		expect(message).toContain("MAX_UPLOAD_MB")
+	})
+})
+
+describe("isTooLargeToConvertInBrowser", () => {
+	const modelOfMegabytes = (name: string, megabytes: number) => {
+		const file = new File([new Uint8Array([1])], name, { type: "" })
+		Object.defineProperty(file, "size", {
+			value: Math.round(megabytes * 1024 * 1024),
+		})
+		return file
+	}
+
+	it("flags a large model that would need browser conversion", () => {
+		expect(
+			isTooLargeToConvertInBrowser(
+				modelOfMegabytes("huge.fbx", MAX_BROWSER_CONVERTIBLE_MODEL_MB + 1)
+			)
+		).toBe(true)
+	})
+
+	it("allows a large GLB, which needs no conversion", () => {
+		expect(
+			isTooLargeToConvertInBrowser(
+				modelOfMegabytes("huge.glb", MAX_BROWSER_CONVERTIBLE_MODEL_MB + 500)
+			)
+		).toBe(false)
+	})
+
+	it("allows a model within the conversion budget", () => {
+		expect(
+			isTooLargeToConvertInBrowser(
+				modelOfMegabytes("fine.fbx", MAX_BROWSER_CONVERTIBLE_MODEL_MB - 1)
+			)
+		).toBe(false)
+	})
+
+	it("tells the uploader to export GLB instead", () => {
+		const message = unconvertibleModelMessage([
+			modelOfMegabytes("huge.fbx", MAX_BROWSER_CONVERTIBLE_MODEL_MB + 1),
+		])
+		expect(message).toContain("huge.fbx")
+		expect(message).toContain("Export to GLB")
 	})
 })
 

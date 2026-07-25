@@ -32,9 +32,11 @@ import {
 	FILE_INPUT_ACCEPT,
 	MAX_UPLOAD_MB,
 	isAcceptedUpload,
+	isTooLargeToConvertInBrowser,
 	isWithinUploadLimit,
 	oversizedUploadMessage,
 	rejectedUploadMessage,
+	unconvertibleModelMessage,
 } from "@/lib/upload-formats"
 
 const serverReason = async (res: Response): Promise<string> => {
@@ -75,12 +77,25 @@ export function ImageUploadModal({
 			const tooLarge = selectedFiles.filter(
 				(file) => isAcceptedUpload(file) && !isWithinUploadLimit(file)
 			)
+			const unconvertible = selectedFiles.filter(
+				(file) =>
+					isAcceptedUpload(file) &&
+					isWithinUploadLimit(file) &&
+					isTooLargeToConvertInBrowser(file)
+			)
 			const validFiles = selectedFiles.filter(
-				(file) => isAcceptedUpload(file) && isWithinUploadLimit(file)
+				(file) =>
+					isAcceptedUpload(file) &&
+					isWithinUploadLimit(file) &&
+					!isTooLargeToConvertInBrowser(file)
 			)
 
 			setError(
-				[rejectedUploadMessage(wrongFormat), oversizedUploadMessage(tooLarge)]
+				[
+					rejectedUploadMessage(wrongFormat),
+					oversizedUploadMessage(tooLarge),
+					unconvertibleModelMessage(unconvertible),
+				]
 					.filter(Boolean)
 					.join(" ")
 			)

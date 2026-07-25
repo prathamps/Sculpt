@@ -71,7 +71,11 @@ const allowedMediaOnly = (
 	}
 }
 
-export const maxUploadMb = Number(process.env.MAX_UPLOAD_MB || 200)
+const DEFAULT_MAX_UPLOAD_MB = 2048
+
+export const maxUploadMb = Number(
+	process.env.MAX_UPLOAD_MB || DEFAULT_MAX_UPLOAD_MB
+)
 
 export const oversizedUploadMessage = (): string =>
 	`File is larger than the ${maxUploadMb} MB upload limit. Ask an administrator to raise MAX_UPLOAD_MB, or upload a smaller file.`

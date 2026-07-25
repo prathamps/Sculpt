@@ -2,6 +2,7 @@ import {
 	MODEL_EXTENSIONS,
 	MODEL_SOURCE_MIME_BY_EXTENSION,
 	extensionOf,
+	needsGlbConversion,
 } from "./model-formats"
 
 const IMAGE_MIME_TYPES = [
@@ -51,14 +52,32 @@ export const isAcceptedUpload = (file: File): boolean =>
 	ACCEPTED_MIME_TYPES.includes(file.type) ||
 	ACCEPTED_EXTENSIONS.includes(extensionOf(file.name))
 
+const DEFAULT_MAX_UPLOAD_MB = 2048
+
 export const MAX_UPLOAD_MB = Number(
-	process.env.NEXT_PUBLIC_MAX_UPLOAD_MB || 200
+	process.env.NEXT_PUBLIC_MAX_UPLOAD_MB || DEFAULT_MAX_UPLOAD_MB
 )
 
 const MAX_UPLOAD_BYTES = MAX_UPLOAD_MB * 1024 * 1024
 
 export const isWithinUploadLimit = (file: File): boolean =>
 	file.size <= MAX_UPLOAD_BYTES
+
+export const MAX_BROWSER_CONVERTIBLE_MODEL_MB = 256
+
+const MAX_BROWSER_CONVERTIBLE_MODEL_BYTES =
+	MAX_BROWSER_CONVERTIBLE_MODEL_MB * 1024 * 1024
+
+export const isTooLargeToConvertInBrowser = (file: File): boolean =>
+	needsGlbConversion(file) &&
+	file.size > MAX_BROWSER_CONVERTIBLE_MODEL_BYTES
+
+export const unconvertibleModelMessage = (files: File[]): string => {
+	if (files.length === 0) return ""
+	return `${files.map((file) => file.name).join(", ")} ${
+		files.length === 1 ? "is" : "are"
+	} too large to convert in the browser (over ${MAX_BROWSER_CONVERTIBLE_MODEL_MB} MB). Export to GLB from your 3D tool and upload that instead.`
+}
 
 export const oversizedUploadMessage = (oversized: File[]): string => {
 	if (oversized.length === 0) return ""
