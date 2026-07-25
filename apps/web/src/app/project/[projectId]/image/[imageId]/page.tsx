@@ -57,7 +57,7 @@ import { mediaUrl, roleAtLeast } from "@/lib/utils"
 import {
 	captureThumbnail,
 	getVideoDuration,
-	prepareUploadFile,
+	withMimeTypeTheApiCanMap,
 } from "@/lib/media-capture"
 import { useVersionComments } from "@/hooks/useVersionComments"
 import { useAnnotationHistory } from "@/hooks/useAnnotationHistory"
@@ -577,7 +577,7 @@ function ProjectFileViewPageInner() {
 
 		setIsUploading(true)
 		try {
-			const fileToUpload = prepareUploadFile(uploadFile)
+			const fileToUpload = withMimeTypeTheApiCanMap(uploadFile)
 			const formData = new FormData()
 			formData.append("image", fileToUpload)
 			if (versionName) {

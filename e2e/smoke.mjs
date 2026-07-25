@@ -94,7 +94,12 @@ check(
 const launchSystemBrowser = async () => {
 	const options = {
 		headless: true,
-		args: ["--use-angle=swiftshader", "--enable-unsafe-swiftshader"],
+		args: [
+			"--use-angle=swiftshader",
+			"--enable-unsafe-swiftshader",
+			"--no-sandbox",
+			"--disable-dev-shm-usage",
+		],
 	}
 	try {
 		return await chromium.launch({ ...options, channel: "chrome" })

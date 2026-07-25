@@ -1,6 +1,6 @@
 import { JsonValue } from "@prisma/client/runtime/library";
 import { prisma } from "../../lib/prisma"
-import { Comment, CommentLike, User } from "@prisma/client"
+import { Comment, CommentLike, MediaType, User } from "@prisma/client"
 
 import { io } from "../../realtime/socket"
 import { NotificationService } from "../notifications/notification.service"
@@ -28,6 +28,29 @@ const asVec3 = (value: unknown): Vec3 | null =>
 	value.every((n) => typeof n === "number" && Number.isFinite(n))
 		? (value as Vec3)
 		: null
+
+interface RequestedAnchors {
+	timestamp: number | null
+	timestampEnd: number | null
+	page: number | null
+	modelAnchor: unknown
+}
+
+const anchorsSupportedBy = (
+	mediaType: MediaType,
+	requested: RequestedAnchors
+): RequestedAnchors => ({
+	timestamp: mediaType === "VIDEO" ? requested.timestamp : null,
+	timestampEnd: mediaType === "VIDEO" ? requested.timestampEnd : null,
+	page: mediaType === "PDF" ? requested.page : null,
+	modelAnchor: mediaType === "MODEL" ? requested.modelAnchor : null,
+})
+
+const clampToDuration = (
+	seconds: number | null,
+	duration: number | null
+): number | null =>
+	seconds === null || duration === null ? seconds : Math.min(seconds, duration)
 
 export class CommentsService {
 	private static parseModelAnchor(value: unknown): ModelAnchor {
@@ -67,10 +90,7 @@ export class CommentsService {
 
 	private static async validateAnchors(
 		imageVersionId: string,
-		timestamp: number | null,
-		timestampEnd: number | null,
-		page: number | null,
-		modelAnchor: unknown
+		requested: RequestedAnchors
 	): Promise<{
 		timestamp: number | null
 		timestampEnd: number | null
@@ -83,16 +103,10 @@ export class CommentsService {
 		})
 		if (!version) throw new NotFoundError("Image version not found")
 
-		if (version.mediaType !== "VIDEO") {
-			timestamp = null
-			timestampEnd = null
-		}
-		if (version.mediaType !== "PDF") {
-			page = null
-		}
-		if (version.mediaType !== "MODEL") {
-			modelAnchor = null
-		}
+		const { timestamp, timestampEnd, page, modelAnchor } = anchorsSupportedBy(
+			version.mediaType,
+			requested
+		)
 
 		if (timestamp !== null && (!Number.isFinite(timestamp) || timestamp < 0)) {
 			throw new ValidationError("timestamp must be a non-negative number")
@@ -112,20 +126,14 @@ export class CommentsService {
 				)
 			}
 		}
-		if (version.duration !== null) {
-			if (timestamp !== null) timestamp = Math.min(timestamp, version.duration)
-			if (timestampEnd !== null) {
-				timestampEnd = Math.min(timestampEnd, version.duration)
-			}
-		}
 
 		if (page !== null && (!Number.isInteger(page) || page < 1)) {
 			throw new ValidationError("page must be a positive integer")
 		}
 
 		return {
-			timestamp,
-			timestampEnd,
+			timestamp: clampToDuration(timestamp, version.duration),
+			timestampEnd: clampToDuration(timestampEnd, version.duration),
 			page,
 			modelAnchor:
 				modelAnchor === null || modelAnchor === undefined
@@ -145,13 +153,12 @@ export class CommentsService {
 		page?: number | null
 		modelAnchor?: unknown
 	}): Promise<Comment> {
-		const anchors = await this.validateAnchors(
-			data.imageVersionId,
-			data.timestamp ?? null,
-			data.timestampEnd ?? null,
-			data.page ?? null,
-			data.modelAnchor ?? null
-		)
+		const anchors = await this.validateAnchors(data.imageVersionId, {
+			timestamp: data.timestamp ?? null,
+			timestampEnd: data.timestampEnd ?? null,
+			page: data.page ?? null,
+			modelAnchor: data.modelAnchor ?? null,
+		})
 
 		const comment = await prisma.comment.create({
 			data: {

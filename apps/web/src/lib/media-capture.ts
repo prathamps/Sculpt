@@ -1,4 +1,4 @@
-import { loadPdfjs } from "./pdf"
+import { loadPdfjsInBrowser } from "./pdf"
 
 const THUMBNAIL_MAX_WIDTH = 640
 const CAPTURE_TIMEOUT_MS = 10000
@@ -69,7 +69,7 @@ export function captureVideoThumbnail(file: File): Promise<Blob | null> {
 
 export async function capturePdfThumbnail(file: File): Promise<Blob | null> {
 	try {
-		const pdfjs = await loadPdfjs()
+		const pdfjs = await loadPdfjsInBrowser()
 		const loadingTask = pdfjs.getDocument({
 			data: await file.arrayBuffer(),
 		})
@@ -100,8 +100,12 @@ export function captureThumbnail(file: File): Promise<Blob | null> {
 	return Promise.resolve(null)
 }
 
-export function prepareUploadFile(file: File): File {
-	if (!file.name.toLowerCase().endsWith(".glb")) return file
-	if (file.type === "model/gltf-binary") return file
-	return new File([file], file.name, { type: "model/gltf-binary" })
+const GLB_MIME = "model/gltf-binary"
+
+const isGlbFilename = (name: string): boolean =>
+	name.toLowerCase().endsWith(".glb")
+
+export function withMimeTypeTheApiCanMap(file: File): File {
+	if (!isGlbFilename(file.name) || file.type === GLB_MIME) return file
+	return new File([file], file.name, { type: GLB_MIME })
 }

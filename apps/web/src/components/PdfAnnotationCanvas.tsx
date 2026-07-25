@@ -7,7 +7,7 @@ import type {
 	RenderTask,
 } from "pdfjs-dist"
 import { AnnotationTool } from "@/app/project/[projectId]/image/[imageId]/page"
-import { loadPdfjs } from "@/lib/pdf"
+import { loadPdfjsInBrowser } from "@/lib/pdf"
 import { drawAnnotations } from "@/lib/annotation-drawing"
 import { Loader2, ChevronLeft, ChevronRight, ZoomIn, ZoomOut } from "lucide-react"
 import { Button } from "@/components/ui/button"
@@ -83,7 +83,7 @@ export function PdfAnnotationCanvas({
 		setPdfDocument(null)
 		;(async () => {
 			try {
-				const pdfjs = await loadPdfjs()
+				const pdfjs = await loadPdfjsInBrowser()
 				if (cancelled) return
 				loadingTask = pdfjs.getDocument({ url: pdfUrl })
 				const doc = await loadingTask.promise

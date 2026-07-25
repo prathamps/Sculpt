@@ -22,7 +22,7 @@ import { Progress } from "@/components/ui/progress"
 import {
 	captureThumbnail,
 	getVideoDuration,
-	prepareUploadFile,
+	withMimeTypeTheApiCanMap,
 } from "@/lib/media-capture"
 
 const ACCEPTED_TYPES =
@@ -112,7 +112,7 @@ export function ImageUploadModal({
 			let res
 
 			if (imageId && files.length > 0) {
-				const fileToUpload = prepareUploadFile(files[0])
+				const fileToUpload = withMimeTypeTheApiCanMap(files[0])
 				formData.append("image", fileToUpload)
 				if (fileToUpload.type.startsWith("video/")) {
 					const duration = await getVideoDuration(fileToUpload)
@@ -132,7 +132,7 @@ export function ImageUploadModal({
 				const filesMeta: { duration: number | null; hasThumbnail: boolean }[] =
 					[]
 				for (const selected of files) {
-					const file = prepareUploadFile(selected)
+					const file = withMimeTypeTheApiCanMap(selected)
 					formData.append("images", file)
 					const duration = file.type.startsWith("video/")
 						? await getVideoDuration(file)

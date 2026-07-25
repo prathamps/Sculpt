@@ -42,11 +42,17 @@ const joinedVersions = (socket: Socket): Set<string> => {
 	return socket.data.joinedVersions as Set<string>
 }
 
+const versionRoom = (imageVersionId: string): string =>
+	`imageVersion:${imageVersionId}`
+
+const viewersStillInRoom = (imageVersionId: string) =>
+	io.to(versionRoom(imageVersionId))
+
 const leaveVersionRoom = (socket: Socket, imageVersionId: string): void => {
-	socket.leave(`imageVersion:${imageVersionId}`)
+	socket.leave(versionRoom(imageVersionId))
 	joinedVersions(socket).delete(imageVersionId)
 	removeViewer(imageVersionId, socket.id)
-	io.to(`imageVersion:${imageVersionId}`).emit("presence:leave", {
+	viewersStillInRoom(imageVersionId).emit("presence:leave", {
 		socketId: socket.id,
 		imageVersionId,
 	})
@@ -83,7 +89,7 @@ const registerHandlers = (socket: Socket) => {
 			socket.emit("image_version_join_denied", { imageVersionId })
 			return
 		}
-		socket.join(`imageVersion:${imageVersionId}`)
+		socket.join(versionRoom(imageVersionId))
 		joinedVersions(socket).add(imageVersionId)
 		addViewer(imageVersionId, socket.id, presenceUser(user))
 		socket.emit("image_version_joined", {
@@ -94,7 +100,7 @@ const registerHandlers = (socket: Socket) => {
 			imageVersionId,
 			peers: getViewers(imageVersionId),
 		})
-		socket.to(`imageVersion:${imageVersionId}`).emit("presence:peer", {
+		socket.to(versionRoom(imageVersionId)).emit("presence:peer", {
 			socketId: socket.id,
 			imageVersionId,
 			user: presenceUser(user),
@@ -117,9 +123,9 @@ const registerHandlers = (socket: Socket) => {
 			) {
 				return
 			}
-			if (!socket.rooms.has(`imageVersion:${imageVersionId}`)) return
+			if (!socket.rooms.has(versionRoom(imageVersionId))) return
 			updateViewer(imageVersionId, socket.id, time)
-			socket.volatile.to(`imageVersion:${imageVersionId}`).emit("presence:peer", {
+			socket.volatile.to(versionRoom(imageVersionId)).emit("presence:peer", {
 				socketId: socket.id,
 				imageVersionId,
 				user: presenceUser(user),

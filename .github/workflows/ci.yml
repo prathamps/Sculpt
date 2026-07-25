@@ -39,7 +39,7 @@ jobs:
         run: npm test
 
   web:
-    name: Web · lint + build
+    name: Web · lint + typecheck + test + build
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -58,5 +58,102 @@ jobs:
         run: npm ci
       - name: Lint
         run: npm run lint --if-present
+      - name: Type-check
+        run: npx tsc --noEmit
+      - name: Test
+        run: npm test
       - name: Build
         run: npm run build
+
+  # The codebase carries zero comments by policy (see CLAUDE.md): intent lives
+  # in names, structure and test names. This gate keeps that from rotting.
+  no-comments:
+    name: Zero-comment policy
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Reject comments in application source
+        run: |
+          if grep -rnE '^[[:space:]]*(//|/\*)|[[:space:]]//[[:space:]]|\{/\*' \
+            --include='*.ts' --include='*.tsx' \
+            apps/api/src apps/web/src apps/api/prisma/schema.prisma \
+            | grep -v '://' ; then
+            echo "::error::Comments are not allowed — move the information into names, structure or test names (see CLAUDE.md)."
+            exit 1
+          fi
+          echo "No comments found."
+
+  # The suite that actually exercises uploads, viewers, realtime and the video
+  # proxy pipeline in a real browser. Unit tests cannot catch a broken viewer.
+  e2e:
+    name: Browser smoke suite
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: sculpt
+          POSTGRES_PASSWORD: sculpt
+          POSTGRES_DB: sculpt
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+      redis:
+        image: redis:7
+        ports: ["6379:6379"]
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      DATABASE_URL: postgresql://sculpt:sculpt@localhost:5432/sculpt
+      DIRECT_URL: postgresql://sculpt:sculpt@localhost:5432/sculpt
+      JWT_SECRET: ci-smoke-secret-not-for-production
+      REDIS_URL: redis://localhost:6379
+      FRONTEND_URL: http://localhost:3000
+      API_URL: http://localhost:3001
+      NEXT_PUBLIC_API_URL: http://localhost:3001
+      NEXT_PUBLIC_SOCKET_URL: http://localhost:3001
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install and build API
+        working-directory: apps/api
+        run: |
+          npm ci
+          npx prisma migrate deploy
+          npm run build
+      - name: Start API
+        working-directory: apps/api
+        run: nohup node dist/index.js > "$RUNNER_TEMP/api.log" 2>&1 &
+
+      - name: Install and build web
+        working-directory: apps/web
+        run: |
+          npm ci
+          npm run build
+      - name: Start web
+        working-directory: apps/web
+        run: nohup npx next start -p 3000 > "$RUNNER_TEMP/web.log" 2>&1 &
+
+      - name: Wait for both servers
+        run: npx --yes wait-on@7 http-get://localhost:3001/health http-get://localhost:3000 --timeout 180000
+
+      - name: Run smoke suite
+        working-directory: e2e
+        run: |
+          npm ci
+          npm run smoke
+
+      - name: Server logs on failure
+        if: failure()
+        run: |
+          echo "--- api ---"; cat "$RUNNER_TEMP/api.log" || true
+          echo "--- web ---"; cat "$RUNNER_TEMP/web.log" || true
