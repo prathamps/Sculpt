@@ -3,6 +3,12 @@ import { ValidationError } from "../../lib/errors"
 export interface UploadFileMeta {
 	duration: number | null
 	hasThumbnail: boolean
+	hasModelProxy: boolean
+}
+
+export interface CompanionFileCounts {
+	thumbnails: number
+	modelProxies: number
 }
 
 const sanitizeDuration = (value: unknown): number | null =>
@@ -13,18 +19,19 @@ const sanitizeDuration = (value: unknown): number | null =>
 export const parseFilesMeta = (
 	rawFilesMeta: unknown,
 	fileCount: number,
-	thumbnailCount: number,
+	companions: CompanionFileCounts,
 	fallbackDuration: number | null
 ): UploadFileMeta[] => {
 	if (rawFilesMeta === undefined || rawFilesMeta === null) {
-		if (thumbnailCount > 0) {
+		if (companions.thumbnails > 0 || companions.modelProxies > 0) {
 			throw new ValidationError(
-				"filesMeta is required when thumbnails are uploaded"
+				"filesMeta is required when thumbnails or converted models are uploaded"
 			)
 		}
 		return Array.from({ length: fileCount }, () => ({
 			duration: fallbackDuration,
 			hasThumbnail: false,
+			hasModelProxy: false,
 		}))
 	}
 
@@ -46,16 +53,25 @@ export const parseFilesMeta = (
 	}
 
 	const metas = parsed.map(
-		(entry: { duration?: unknown; hasThumbnail?: unknown }) => ({
+		(entry: {
+			duration?: unknown
+			hasThumbnail?: unknown
+			hasModelProxy?: unknown
+		}) => ({
 			duration: sanitizeDuration(entry?.duration),
 			hasThumbnail: entry?.hasThumbnail === true,
+			hasModelProxy: entry?.hasModelProxy === true,
 		})
 	)
 
-	const expectedThumbnails = metas.filter((m) => m.hasThumbnail).length
-	if (expectedThumbnails !== thumbnailCount) {
+	if (metas.filter((m) => m.hasThumbnail).length !== companions.thumbnails) {
 		throw new ValidationError(
 			"Uploaded thumbnails do not match filesMeta entries"
+		)
+	}
+	if (metas.filter((m) => m.hasModelProxy).length !== companions.modelProxies) {
+		throw new ValidationError(
+			"Uploaded converted models do not match filesMeta entries"
 		)
 	}
 

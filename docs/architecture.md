@@ -35,9 +35,19 @@ Interfaces exist only at seams where implementations genuinely swap:
 - **Email** (`modules/notifications/email.service.ts`): no-ops cleanly when SMTP is unconfigured.
 - **Presence** (`lib/presence.ts`): in-memory map is authoritative per instance, mirrored to Redis when available.
 
+### Renditions
+
+Uploads are accepted in formats browsers cannot display, then normalised server-side so review always works on something viewable. The original is stored as the version's `url`; the viewable derivative goes in `proxyUrl`, and every consumer prefers `proxyUrl || url`. `needsBrowserSafeImageRendition()` in the upload middleware decides which images need one (TIFF, PSD, TGA, EXR, DPX, JPEG 2000, PCX → PNG via `image-pipeline.ts`); every video gets one regardless of container (`video-pipeline.ts`). Formats with no decoder anywhere in the stack — HEIC/HEIF (the bundled ffmpeg has no HEIF demuxer), camera RAW, SVG (deliberately, as an XSS vector), STEP/IGES, SBSAR — are refused at the boundary, and the browser refuses them before uploading.
+
 ### Video proxy pipeline
 
 Uploaded videos are transcoded in the background to a web-friendly H.264/AAC MP4 capped at 1080p (`modules/media/video-pipeline.ts`, ffmpeg via `ffmpeg-static`). The upload request copies the staged file aside, stores the original, marks the version `proxyStatus: PENDING` and returns immediately; an in-process queue transcodes, probes the real duration with ffprobe, generates a poster frame when the client didn't supply one, stores the results through the storage port and marks the version `READY` (or `FAILED` — the player falls back to the original file). Completion is pushed to viewers over the version's socket room as `version-updated`. Jobs left `PENDING` by a crashed process are marked `FAILED` at boot.
+
+### 3D model ingest
+
+3D formats are normalised in the **browser**, not on the server: `lib/model-capture.ts` loads the upload with the matching three.js loader (FBX, OBJ, STL, PLY, DAE, 3MF, 3DS, USDZ, AMF, WRL), renders a transparent-PNG thumbnail from an offscreen WebGL canvas, and re-exports the scene as GLB with `GLTFExporter`. The original file is stored as the version's `url` and the GLB lands in `proxyUrl` — the same columns the video pipeline uses — so the viewer, pins and compare view only ever deal with GLB. three.js and every loader are dynamically imported so they stay out of the main bundle and never execute during server rendering. Formats requiring a CAD kernel (STEP, IGES) or a proprietary SDK (SBSAR) are not supported.
+
+Compressed glTF is handled in both the viewer and the thumbnail pass via `lib/gltf-decoders.ts`: **Draco** geometry, **KTX2/Basis** textures and **EXT_meshopt_compression**. The decoders ship inside the `three` package and are copied to `public/three/` by `npm run copy-decoders` (wired to `predev`/`prebuild`), so a self-hosted instance never fetches them from a CDN and works fully offline. `public/three/` is generated, not committed.
 
 ### Real-time
 

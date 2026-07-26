@@ -1,4 +1,6 @@
 import { loadPdfjsInBrowser } from "./pdf"
+import { extensionOf } from "./model-formats"
+import { UPLOAD_MIME_BY_EXTENSION } from "./upload-formats"
 
 const THUMBNAIL_MAX_WIDTH = 640
 const CAPTURE_TIMEOUT_MS = 10000
@@ -100,12 +102,11 @@ export function captureThumbnail(file: File): Promise<Blob | null> {
 	return Promise.resolve(null)
 }
 
-const GLB_MIME = "model/gltf-binary"
-
-const isGlbFilename = (name: string): boolean =>
-	name.toLowerCase().endsWith(".glb")
+export const thumbnailFileName = (thumbnail: Blob): string =>
+	thumbnail.type === "image/png" ? "thumbnail.png" : "thumbnail.jpg"
 
 export function withMimeTypeTheApiCanMap(file: File): File {
-	if (!isGlbFilename(file.name) || file.type === GLB_MIME) return file
-	return new File([file], file.name, { type: GLB_MIME })
+	const mapped = UPLOAD_MIME_BY_EXTENSION[extensionOf(file.name)]
+	if (!mapped || file.type === mapped) return file
+	return new File([file], file.name, { type: mapped })
 }

@@ -107,7 +107,7 @@ export function ComparePane({
 		if (version.mediaType === "MODEL") {
 			return (
 				<ModelAnnotationCanvas
-					modelUrl={mediaUrl(version.url)}
+					modelUrl={mediaUrl(version.proxyUrl || version.url)}
 					canComment={false}
 					pins={modelPins}
 				/>
@@ -156,7 +156,7 @@ export function ComparePane({
 		}
 		return (
 			<AnnotationCanvas
-				imageUrl={mediaUrl(version.url)}
+				imageUrl={mediaUrl(version.proxyUrl || version.url)}
 				tool="pencil"
 				color="#4783E8"
 				readOnly

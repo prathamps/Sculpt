@@ -99,6 +99,22 @@ function CardThumbnail({
 	}
 
 	if (mediaType === "MODEL") {
+		if (thumbnailUrl && !imageError) {
+			return (
+				<div className="relative h-full w-full">
+					<img
+						src={mediaUrl(thumbnailUrl)}
+						alt={file.name}
+						className="h-full w-full object-cover"
+						onError={() => setImageError(true)}
+					/>
+					<span className="absolute bottom-1.5 right-1.5 flex items-center gap-1 rounded bg-black/60 px-1.5 py-0.5 text-[10px] font-medium text-white">
+						<BoxIcon className="h-3 w-3" aria-hidden="true" />
+						3D
+					</span>
+				</div>
+			)
+		}
 		return (
 			<div className="flex h-full w-full flex-col items-center justify-center gap-1">
 				<BoxIcon className={cn(iconSize, "text-muted-foreground")} aria-hidden="true" />
@@ -132,9 +148,11 @@ function CardThumbnail({
 		)
 	}
 
+	const previewUrl = thumbnailUrl || file.latestVersion?.proxyUrl || fileUrl
+
 	return (
 		<img
-			src={imageError ? "/placeholder-image.svg" : mediaUrl(fileUrl)}
+			src={imageError ? "/placeholder-image.svg" : mediaUrl(previewUrl)}
 			alt={file.name}
 			className={cn(
 				"h-full w-full object-cover",

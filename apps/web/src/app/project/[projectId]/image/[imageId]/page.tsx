@@ -57,8 +57,15 @@ import { mediaUrl, roleAtLeast } from "@/lib/utils"
 import {
 	captureThumbnail,
 	getVideoDuration,
+	thumbnailFileName,
 	withMimeTypeTheApiCanMap,
 } from "@/lib/media-capture"
+import { prepareModelUpload } from "@/lib/model-capture"
+import { extensionOf, isModelFile } from "@/lib/model-formats"
+import {
+	FILE_INPUT_ACCEPT,
+	isNativelyPlayableVideo,
+} from "@/lib/upload-formats"
 import { useVersionComments } from "@/hooks/useVersionComments"
 import { useAnnotationHistory } from "@/hooks/useAnnotationHistory"
 import { usePresence } from "@/hooks/usePresence"
@@ -177,6 +184,23 @@ function ProjectFileViewPageInner() {
 	const isVideo = selectedVersion?.mediaType === "VIDEO"
 	const isPdf = selectedVersion?.mediaType === "PDF"
 	const isModel = selectedVersion?.mediaType === "MODEL"
+
+	const viewableModelUrl =
+		selectedVersion?.proxyUrl ||
+		(selectedVersion && extensionOf(selectedVersion.url) === "glb"
+			? selectedVersion.url
+			: null)
+
+	const playableVideoUrl =
+		selectedVersion?.proxyUrl ||
+		(selectedVersion && isNativelyPlayableVideo(selectedVersion.url)
+			? selectedVersion.url
+			: null)
+	const awaitingRendition =
+		!!selectedVersion &&
+		selectedVersion.proxyStatus === "PENDING" &&
+		!selectedVersion.proxyUrl &&
+		(isVideo ? !playableVideoUrl : selectedVersion.mediaType === "IMAGE")
 
 	const {
 		comments,
@@ -588,8 +612,16 @@ function ProjectFileViewPageInner() {
 				const duration = await getVideoDuration(fileToUpload)
 				if (duration != null) formData.append("duration", String(duration))
 			}
-			const thumbnail = await captureThumbnail(fileToUpload)
-			if (thumbnail) formData.append("thumbnail", thumbnail, "thumbnail.jpg")
+			const prepared = isModelFile(fileToUpload)
+				? await prepareModelUpload(fileToUpload)
+				: null
+			const thumbnail = prepared
+				? prepared.thumbnail
+				: await captureThumbnail(fileToUpload)
+			if (thumbnail) formData.append("thumbnail", thumbnail, thumbnailFileName(thumbnail))
+			if (prepared?.glb) {
+				formData.append("modelProxy", prepared.glb, "converted.glb")
+			}
 
 			const res = await fetch(`${URI}/api/images/${imageId}/versions`, {
 				method: "POST",
@@ -716,10 +748,10 @@ function ProjectFileViewPageInner() {
 						)}
 					</div>
 				)}
-				{isVideo && selectedVersion?.proxyStatus === "PENDING" && (
+				{selectedVersion?.proxyStatus === "PENDING" && (
 					<span className="flex items-center gap-1 text-xs text-muted-foreground">
 						<Loader2 className="h-3 w-3 animate-spin" aria-hidden="true" />
-						Optimizing video…
+						{isVideo ? "Optimizing video…" : "Preparing preview…"}
 					</span>
 				)}
 				{image && image.versions && image.versions.length >= 2 && (
@@ -841,10 +873,19 @@ function ProjectFileViewPageInner() {
 								</div>
 							) : selectedVersion ? (
 								isVideo ? (
+									!playableVideoUrl ? (
+										<div className="flex h-full w-full flex-col items-center justify-center gap-2">
+											<Loader2
+												className="h-6 w-6 animate-spin text-muted-foreground"
+												aria-hidden="true"
+											/>
+											<p className="text-sm text-muted-foreground">
+												Preparing this video for playback…
+											</p>
+										</div>
+									) : (
 									<VideoAnnotationCanvas
-										videoUrl={mediaUrl(
-											selectedVersion.proxyUrl || selectedVersion.url
-										)}
+										videoUrl={mediaUrl(playableVideoUrl)}
 										tool={tool}
 										color={color}
 										canDraw={canComment}
@@ -861,16 +902,28 @@ function ProjectFileViewPageInner() {
 										initialDuration={selectedVersion.duration}
 										annotations={canvasAnnotations}
 									/>
+									)
 								) : isModel ? (
-									<ModelAnnotationCanvas
-										modelUrl={mediaUrl(selectedVersion.url)}
-										canComment={canComment}
-										pins={modelPins}
-										pendingPin={pendingPin}
-										flyTo={modelFlyTo}
-										onPlacePin={handlePlacePin}
-										onSelectComment={handleSelectCommentById}
-									/>
+									viewableModelUrl ? (
+										<ModelAnnotationCanvas
+											modelUrl={mediaUrl(viewableModelUrl)}
+											canComment={canComment}
+											pins={modelPins}
+											pendingPin={pendingPin}
+											flyTo={modelFlyTo}
+											onPlacePin={handlePlacePin}
+											onSelectComment={handleSelectCommentById}
+										/>
+									) : (
+										<div className="flex h-full w-full items-center justify-center p-4 text-center">
+											<p className="max-w-sm text-sm text-muted-foreground">
+												This model has no viewable version. It was stored
+												before conversion succeeded — re-upload it, exporting
+												to GLB from your 3D tool if the original format keeps
+												failing.
+											</p>
+										</div>
+									)
 								) : isPdf ? (
 									<PdfAnnotationCanvas
 										pdfUrl={mediaUrl(selectedVersion.url)}
@@ -882,9 +935,21 @@ function ProjectFileViewPageInner() {
 										onAddAnnotation={handleAddAnnotation}
 										annotations={canvasAnnotations}
 									/>
+								) : awaitingRendition ? (
+									<div className="flex h-full w-full flex-col items-center justify-center gap-2">
+										<Loader2
+											className="h-6 w-6 animate-spin text-muted-foreground"
+											aria-hidden="true"
+										/>
+										<p className="text-sm text-muted-foreground">
+											Preparing a preview of this file…
+										</p>
+									</div>
 								) : (
 									<AnnotationCanvas
-										imageUrl={mediaUrl(selectedVersion.url)}
+										imageUrl={mediaUrl(
+											selectedVersion.proxyUrl || selectedVersion.url
+										)}
 										tool={tool}
 										color={color}
 										onAddAnnotation={handleAddAnnotation}
@@ -975,7 +1040,7 @@ function ProjectFileViewPageInner() {
 								type="file"
 								aria-label="Version file"
 								onChange={(e) => setUploadFile(e.target.files?.[0] || null)}
-								accept="image/*,video/*,application/pdf,.glb,model/gltf-binary"
+								accept={FILE_INPUT_ACCEPT}
 							/>
 						</div>
 						<div className="flex justify-end gap-2">

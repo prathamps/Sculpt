@@ -4,7 +4,10 @@
   "private": true,
   "license": "MIT",
   "scripts": {
+    "copy-decoders": "node scripts/copy-three-decoders.mjs",
+    "predev": "npm run copy-decoders",
     "dev": "next dev --turbopack",
+    "prebuild": "npm run copy-decoders",
     "build": "next build",
     "start": "next start",
     "lint": "next lint",

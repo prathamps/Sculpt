@@ -17,23 +17,55 @@ import {
 	X,
 	Loader2,
 	AlertCircle,
+	ChevronDown,
 } from "lucide-react"
 import { Progress } from "@/components/ui/progress"
 import {
 	captureThumbnail,
 	getVideoDuration,
+	thumbnailFileName,
 	withMimeTypeTheApiCanMap,
 } from "@/lib/media-capture"
+import {
+	PreparedModelUpload,
+	prepareModelUpload,
+} from "@/lib/model-capture"
+import { isModelFile, needsGlbConversion } from "@/lib/model-formats"
+import {
+	ACCEPTED_FORMAT_COUNT,
+	ACCEPTED_FORMAT_GROUPS,
+	FILE_INPUT_ACCEPT,
+	MAX_UPLOAD_MB,
+	isAcceptedUpload,
+	isTooLargeToConvertInBrowser,
+	isWithinUploadLimit,
+	oversizedUploadMessage,
+	rejectedUploadMessage,
+	unconvertibleModelMessage,
+} from "@/lib/upload-formats"
 
-const ACCEPTED_TYPES =
-	"image/*,video/mp4,video/webm,video/quicktime,application/pdf,.glb,model/gltf-binary"
+const refuseUnconvertedModel = (
+	file: File,
+	prepared: PreparedModelUpload | null
+): void => {
+	if (!prepared || !needsGlbConversion(file) || prepared.glb) return
+	throw new Error(
+		prepared.failureReason
+			? `${file.name} could not be converted for viewing: ${prepared.failureReason}. Try re-exporting it, or export to GLB directly.`
+			: `${file.name} could not be converted for viewing. Try exporting it to GLB from your 3D tool.`
+	)
+}
 
-const isAcceptedFile = (file: File) =>
-	file.type.startsWith("image/") ||
-	["video/mp4", "video/webm", "video/quicktime", "application/pdf"].includes(
-		file.type
-	) ||
-	file.name.toLowerCase().endsWith(".glb")
+const serverReason = async (res: Response): Promise<string> => {
+	const fallback = `Upload failed (${res.status}).`
+	try {
+		const body = await res.clone().json()
+		return typeof body?.message === "string" ? body.message : fallback
+	} catch {
+		const text = await res.text().catch(() => "")
+		return text.trim() ? text.trim().slice(0, 300) : fallback
+	}
+}
 
 interface ImageUploadModalProps {
 	projectId: string | null
@@ -58,15 +90,32 @@ export function ImageUploadModal({
 	const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
 		if (e.target.files) {
 			const selectedFiles = Array.from(e.target.files)
-			const validFiles = selectedFiles.filter(isAcceptedFile)
+			const wrongFormat = selectedFiles.filter((file) => !isAcceptedUpload(file))
+			const tooLarge = selectedFiles.filter(
+				(file) => isAcceptedUpload(file) && !isWithinUploadLimit(file)
+			)
+			const unconvertible = selectedFiles.filter(
+				(file) =>
+					isAcceptedUpload(file) &&
+					isWithinUploadLimit(file) &&
+					isTooLargeToConvertInBrowser(file)
+			)
+			const validFiles = selectedFiles.filter(
+				(file) =>
+					isAcceptedUpload(file) &&
+					isWithinUploadLimit(file) &&
+					!isTooLargeToConvertInBrowser(file)
+			)
 
-			if (validFiles.length !== selectedFiles.length) {
-				setError(
-					"Only image, video (MP4, WebM, MOV), PDF and GLB 3D model files are allowed."
-				)
-			} else {
-				setError("")
-			}
+			setError(
+				[
+					rejectedUploadMessage(wrongFormat),
+					oversizedUploadMessage(tooLarge),
+					unconvertibleModelMessage(unconvertible),
+				]
+					.filter(Boolean)
+					.join(" ")
+			)
 
 			if (imageId && validFiles.length > 1) {
 				setFiles([validFiles[0]])
@@ -118,9 +167,18 @@ export function ImageUploadModal({
 					const duration = await getVideoDuration(fileToUpload)
 					if (duration != null) formData.append("duration", String(duration))
 				}
-				const thumbnail = await captureThumbnail(fileToUpload)
+				const prepared = isModelFile(fileToUpload)
+					? await prepareModelUpload(fileToUpload)
+					: null
+				refuseUnconvertedModel(fileToUpload, prepared)
+				const thumbnail = prepared
+					? prepared.thumbnail
+					: await captureThumbnail(fileToUpload)
 				if (thumbnail) {
-					formData.append("thumbnail", thumbnail, "thumbnail.jpg")
+					formData.append("thumbnail", thumbnail, thumbnailFileName(thumbnail))
+				}
+				if (prepared?.glb) {
+					formData.append("modelProxy", prepared.glb, "converted.glb")
 				}
 
 				res = await fetch(`${URI}/api/images/${imageId}/versions`, {
@@ -129,19 +187,35 @@ export function ImageUploadModal({
 					credentials: "include",
 				})
 			} else {
-				const filesMeta: { duration: number | null; hasThumbnail: boolean }[] =
-					[]
+				const filesMeta: {
+					duration: number | null
+					hasThumbnail: boolean
+					hasModelProxy: boolean
+				}[] = []
 				for (const selected of files) {
 					const file = withMimeTypeTheApiCanMap(selected)
 					formData.append("images", file)
 					const duration = file.type.startsWith("video/")
 						? await getVideoDuration(file)
 						: null
-					const thumbnail = await captureThumbnail(file)
+					const prepared = isModelFile(file)
+						? await prepareModelUpload(file)
+						: null
+					refuseUnconvertedModel(file, prepared)
+					const thumbnail = prepared
+						? prepared.thumbnail
+						: await captureThumbnail(file)
 					if (thumbnail) {
-						formData.append("thumbnails", thumbnail, "thumbnail.jpg")
+						formData.append("thumbnails", thumbnail, thumbnailFileName(thumbnail))
 					}
-					filesMeta.push({ duration, hasThumbnail: !!thumbnail })
+					if (prepared?.glb) {
+						formData.append("modelProxies", prepared.glb, "converted.glb")
+					}
+					filesMeta.push({
+						duration,
+						hasThumbnail: !!thumbnail,
+						hasModelProxy: !!prepared?.glb,
+					})
 				}
 				formData.append("filesMeta", JSON.stringify(filesMeta))
 
@@ -153,7 +227,7 @@ export function ImageUploadModal({
 			}
 
 			if (!res.ok) {
-				throw new Error("Upload failed")
+				throw new Error(await serverReason(res))
 			}
 
 			setUploadProgress(100)
@@ -161,8 +235,12 @@ export function ImageUploadModal({
 				onUploadComplete()
 				onClose()
 			}, 500)
-		} catch {
-			setError("An error occurred during upload.")
+		} catch (uploadError) {
+			setError(
+				uploadError instanceof Error && uploadError.message
+					? uploadError.message
+					: "An error occurred during upload."
+			)
 			setUploadProgress(0)
 		} finally {
 			clearProgressSimulation()
@@ -207,21 +285,19 @@ export function ImageUploadModal({
 								htmlFor="dropzone-file"
 								className="flex flex-col items-center justify-center w-full h-52 border-2 border-dashed rounded-lg cursor-pointer bg-muted/40 hover:bg-muted/60 transition-colors"
 							>
-								<div className="flex flex-col items-center justify-center pt-5 pb-6">
-									<UploadCloud className="w-8 h-8 mb-3 text-primary/80" />
-									<p className="mb-2 text-sm text-foreground">
+								<div className="flex flex-col items-center justify-center gap-1.5 px-6 py-6 text-center">
+									<UploadCloud className="mb-1 h-8 w-8 text-primary/80" />
+									<p className="text-sm text-foreground">
 										<span className="font-semibold">Click to upload</span> or
 										drag and drop
 									</p>
 									<p className="text-xs text-muted-foreground">
-										Images (JPG, PNG, WebP), videos (MP4, WebM, MOV), PDFs or
-										3D models (GLB)
+										Images, video, PDFs and 3D models
 									</p>
-									{isVersionUpload && (
-										<p className="text-xs text-muted-foreground mt-1">
-											Only one file can be selected for a new version
-										</p>
-									)}
+									<p className="text-[11px] text-muted-foreground">
+										Up to {MAX_UPLOAD_MB} MB per file
+										{isVersionUpload ? " · one file per version" : ""}
+									</p>
 								</div>
 								<Input
 									id="dropzone-file"
@@ -229,14 +305,36 @@ export function ImageUploadModal({
 									multiple={!isVersionUpload}
 									className="hidden"
 									onChange={handleFileChange}
-									accept={ACCEPTED_TYPES}
+									accept={FILE_INPUT_ACCEPT}
 								/>
 							</label>
 						</div>
 
+						<details className="group rounded-md border border-border/50 bg-muted/20 px-3 py-2">
+							<summary className="flex cursor-pointer list-none items-center justify-between text-xs text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+								<span>Supported formats ({ACCEPTED_FORMAT_COUNT})</span>
+								<ChevronDown
+									className="h-3.5 w-3.5 transition-transform group-open:rotate-180"
+									aria-hidden="true"
+								/>
+							</summary>
+							<dl className="mt-2 space-y-1.5">
+								{ACCEPTED_FORMAT_GROUPS.map(({ label, formats }) => (
+									<div key={label}>
+										<dt className="text-[11px] font-medium text-foreground/70">
+											{label}
+										</dt>
+										<dd className="text-[11px] leading-snug text-muted-foreground">
+											{formats}
+										</dd>
+									</div>
+								))}
+							</dl>
+						</details>
+
 						{error && (
-							<div className="flex items-center gap-2 text-destructive text-sm">
-								<AlertCircle className="h-4 w-4" />
+							<div className="flex items-start gap-2 text-destructive text-sm">
+								<AlertCircle className="mt-0.5 h-4 w-4 flex-shrink-0" aria-hidden="true" />
 								<span>{error}</span>
 							</div>
 						)}

@@ -3,13 +3,17 @@ import { Request, Response } from "express"
 import fs from "fs"
 import * as imageService from "./images.service"
 import { CommentsService } from "../comments/comments.service"
-import { detectMediaType } from "../../middleware/upload.middleware"
+import {
+	detectMediaType,
+	needsBrowserSafeImageRendition,
+} from "../../middleware/upload.middleware"
 import { parseFilesMeta } from "./upload-meta"
 import {
 	discardStagedVideo,
 	enqueueVideoProxy,
 	stageVideoForProcessing,
 } from "./video-pipeline"
+import { enqueueImageRendition } from "./image-pipeline"
 import { storage } from "../../storage"
 import { AppError } from "../../lib/errors"
 import { recordAudit, requestIp } from "../audit/audit.service"
@@ -146,8 +150,9 @@ export const uploadImage = async (
 	const fields = (req.files ?? {}) as UploadFields
 	const files = fields.images ?? []
 	const thumbnails = fields.thumbnails ?? []
+	const modelProxies = fields.modelProxies ?? []
 	if (files.length === 0) {
-		await discardStagedFiles(thumbnails)
+		await discardStagedFiles([...thumbnails, ...modelProxies])
 		res.status(400).send("No files uploaded.")
 		return
 	}
@@ -157,11 +162,11 @@ export const uploadImage = async (
 		metas = parseFilesMeta(
 			req.body.filesMeta,
 			files.length,
-			thumbnails.length,
+			{ thumbnails: thumbnails.length, modelProxies: modelProxies.length },
 			req.body.duration ? Number(req.body.duration) : null
 		)
 	} catch (error) {
-		await discardStagedFiles([...files, ...thumbnails])
+		await discardStagedFiles([...files, ...thumbnails, ...modelProxies])
 		if (error instanceof AppError) {
 			res.status(error.statusCode).json({ message: error.message })
 			return
@@ -174,12 +179,14 @@ export const uploadImage = async (
 	try {
 		const imagePayloads = []
 		let thumbnailIndex = 0
+		let modelProxyIndex = 0
 		for (const [index, file] of files.entries()) {
 			const mediaType = detectMediaType(file.mimetype)
-			const transcodeSource =
-				mediaType === "VIDEO"
-					? await stageVideoForProcessing(file.path)
-					: null
+			const needsRendition =
+				mediaType === "VIDEO" || needsBrowserSafeImageRendition(file.mimetype)
+			const transcodeSource = needsRendition
+				? await stageVideoForProcessing(file.path)
+				: null
 			stagedVideoSources.push(transcodeSource)
 
 			const url = await storage.store({
@@ -200,6 +207,17 @@ export const uploadImage = async (
 				storedUrls.push(thumbnailUrl)
 			}
 
+			let modelProxyUrl: string | null = null
+			if (metas[index].hasModelProxy) {
+				const converted = modelProxies[modelProxyIndex++]
+				modelProxyUrl = await storage.store({
+					path: converted.path,
+					originalName: converted.originalname,
+					mimeType: converted.mimetype,
+				})
+				storedUrls.push(modelProxyUrl)
+			}
+
 			imagePayloads.push({
 				url,
 				name: file.originalname,
@@ -207,7 +225,12 @@ export const uploadImage = async (
 				mediaType,
 				duration: metas[index].duration,
 				thumbnailUrl,
-				proxyStatus: transcodeSource ? ProxyStatus.PENDING : null,
+				proxyUrl: modelProxyUrl,
+				proxyStatus: transcodeSource
+					? ProxyStatus.PENDING
+					: modelProxyUrl
+						? ProxyStatus.READY
+						: null,
 			})
 		}
 
@@ -215,12 +238,15 @@ export const uploadImage = async (
 		created.forEach((image, index) => {
 			const sourcePath = stagedVideoSources[index]
 			const firstVersion = image.versions[0]
-			if (sourcePath && firstVersion) {
+			if (!sourcePath || !firstVersion) return
+			if (imagePayloads[index].mediaType === "VIDEO") {
 				enqueueVideoProxy({
 					versionId: firstVersion.id,
 					sourcePath,
 					needsPoster: !imagePayloads[index].thumbnailUrl,
 				})
+			} else {
+				enqueueImageRendition({ versionId: firstVersion.id, sourcePath })
 			}
 		})
 
@@ -308,8 +334,11 @@ export const uploadImageVersion = async (
 	const fields = (req.files ?? {}) as UploadFields
 	const file = fields.image?.[0]
 	const thumbnail = fields.thumbnail?.[0]
+	const modelProxy = fields.modelProxy?.[0]
 	if (!file) {
-		if (thumbnail) await discardStagedFiles([thumbnail])
+		await discardStagedFiles(
+			[thumbnail, modelProxy].filter((f): f is Express.Multer.File => !!f)
+		)
 		res.status(400).send("No file uploaded.")
 		return
 	}
@@ -318,8 +347,11 @@ export const uploadImageVersion = async (
 	let transcodeSource: string | null = null
 	try {
 		const mediaType = detectMediaType(file.mimetype)
-		transcodeSource =
-			mediaType === "VIDEO" ? await stageVideoForProcessing(file.path) : null
+		const needsRendition =
+			mediaType === "VIDEO" || needsBrowserSafeImageRendition(file.mimetype)
+		transcodeSource = needsRendition
+			? await stageVideoForProcessing(file.path)
+			: null
 
 		const url = await storage.store({
 			path: file.path,
@@ -338,19 +370,41 @@ export const uploadImageVersion = async (
 			storedUrls.push(thumbnailUrl)
 		}
 
+		let modelProxyUrl: string | null = null
+		if (modelProxy) {
+			modelProxyUrl = await storage.store({
+				path: modelProxy.path,
+				originalName: modelProxy.originalname,
+				mimeType: modelProxy.mimetype,
+			})
+			storedUrls.push(modelProxyUrl)
+		}
+
 		const version = await imageService.addImageVersion(imageId, url, {
 			versionName: req.body.versionName,
 			mediaType,
 			duration: req.body.duration ? Number(req.body.duration) : null,
 			thumbnailUrl,
-			proxyStatus: transcodeSource ? ProxyStatus.PENDING : null,
+			proxyUrl: modelProxyUrl,
+			proxyStatus: transcodeSource
+				? ProxyStatus.PENDING
+				: modelProxyUrl
+					? ProxyStatus.READY
+					: null,
 		})
 		if (transcodeSource) {
-			enqueueVideoProxy({
-				versionId: version.id,
-				sourcePath: transcodeSource,
-				needsPoster: !thumbnailUrl,
-			})
+			if (mediaType === "VIDEO") {
+				enqueueVideoProxy({
+					versionId: version.id,
+					sourcePath: transcodeSource,
+					needsPoster: !thumbnailUrl,
+				})
+			} else {
+				enqueueImageRendition({
+					versionId: version.id,
+					sourcePath: transcodeSource,
+				})
+			}
 			transcodeSource = null
 		}
 

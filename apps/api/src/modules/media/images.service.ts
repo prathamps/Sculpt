@@ -9,6 +9,7 @@ interface ImagePayload {
 	mediaType?: MediaType
 	duration?: number | null
 	thumbnailUrl?: string | null
+	proxyUrl?: string | null
 	proxyStatus?: ProxyStatus | null
 }
 
@@ -17,6 +18,7 @@ interface VersionOptions {
 	mediaType?: MediaType
 	duration?: number | null
 	thumbnailUrl?: string | null
+	proxyUrl?: string | null
 	proxyStatus?: ProxyStatus | null
 }
 
@@ -37,6 +39,7 @@ export const addImagesToProject = async (
 							mediaType: img.mediaType ?? MediaType.IMAGE,
 							duration: img.duration ?? null,
 							thumbnailUrl: img.thumbnailUrl ?? null,
+							proxyUrl: img.proxyUrl ?? null,
 							proxyStatus: img.proxyStatus ?? null,
 						},
 					},
@@ -118,6 +121,7 @@ export const addImageVersion = async (
 			mediaType: options.mediaType ?? MediaType.IMAGE,
 			duration: options.duration ?? null,
 			thumbnailUrl: options.thumbnailUrl ?? null,
+			proxyUrl: options.proxyUrl ?? null,
 			proxyStatus: options.proxyStatus ?? null,
 		},
 	})

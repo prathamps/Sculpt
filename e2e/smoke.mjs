@@ -2,7 +2,14 @@ import { chromium } from "playwright-core"
 import { readFileSync } from "node:fs"
 import { fileURLToPath } from "node:url"
 import { dirname, join } from "node:path"
-import { PNG_1PX, buildCubeGlb, buildMinimalPdf } from "./fixtures.mjs"
+import { writeFileSync } from "node:fs"
+import { tmpdir } from "node:os"
+import {
+	PNG_1PX,
+	buildCubeGlb,
+	buildMinimalPdf,
+	buildTetrahedronStl,
+} from "./fixtures.mjs"
 
 const API = process.env.SCULPT_API_URL || "http://localhost:3001"
 const WEB = process.env.SCULPT_WEB_URL || "http://localhost:3000"
@@ -66,6 +73,8 @@ const fixtures = [
 	["sample-video.mp4", readFileSync(join(here, "fixtures/sample-video.mp4")), "video/mp4", "VIDEO"],
 	["sample-doc.pdf", buildMinimalPdf(), "application/pdf", "PDF"],
 	["sample-model.glb", buildCubeGlb(), "model/gltf-binary", "MODEL"],
+	["sample-video.mkv", readFileSync(join(here, "fixtures/sample-video.mkv")), "video/x-matroska", "VIDEO"],
+	["sample-image.tiff", readFileSync(join(here, "fixtures/sample-image.tiff")), "image/tiff", "IMAGE"],
 ]
 for (const [name, bytes, mime] of fixtures) {
 	uploadForm.append("images", new Blob([bytes], { type: mime }), name)
@@ -75,7 +84,11 @@ const uploadRes = await api(`/api/projects/${project.id}/images`, {
 	body: uploadForm,
 })
 const uploaded = uploadRes.ok ? await uploadRes.json() : []
-check("upload all four media types", uploadRes.status === 201 && uploaded.length === 4, `status=${uploadRes.status}`)
+check(
+	"upload every media type, including containers a browser cannot open",
+	uploadRes.status === 201 && uploaded.length === fixtures.length,
+	`status=${uploadRes.status}`
+)
 
 const byName = (name) => uploaded.find((image) => image.name === name)
 for (const [name, , , expectedType] of fixtures) {
@@ -237,6 +250,153 @@ if (readyVersion?.proxyUrl) {
 			.then(() => true, () => false)
 	)
 }
+
+const stlPath = join(tmpdir(), `sculpt-e2e-${stamp}.stl`)
+writeFileSync(stlPath, buildTetrahedronStl())
+await navigate(`${WEB}/project/${project.id}`, {
+	waitUntil: "domcontentloaded",
+	timeout: 120000,
+})
+await page.click('button:has-text("Upload")')
+await page.setInputFiles("#dropzone-file", stlPath)
+await page.click('button:has-text("Upload 1 file")')
+
+const convertedVersion = await (async () => {
+	const deadline = Date.now() + 90000
+	while (Date.now() < deadline) {
+		const res = await api(`/api/projects/${project.id}/images`)
+		const images = res.ok ? await res.json() : []
+		const stl = images.find((image) => image.name.endsWith(".stl"))
+		if (stl?.latestVersion) return stl.latestVersion
+		await new Promise((resolve) => setTimeout(resolve, 1500))
+	}
+	return null
+})()
+
+check("browser upload of an STL creates a version", !!convertedVersion)
+check(
+	"STL is stored as a MODEL",
+	convertedVersion?.mediaType === "MODEL",
+	`got=${convertedVersion?.mediaType}`
+)
+check(
+	"STL was converted to a GLB proxy in the browser",
+	convertedVersion?.proxyStatus === "READY" &&
+		!!convertedVersion?.proxyUrl &&
+		convertedVersion.proxyUrl.endsWith(".glb"),
+	`status=${convertedVersion?.proxyStatus} url=${convertedVersion?.proxyUrl}`
+)
+check(
+	"the original STL is still stored alongside the proxy",
+	!!convertedVersion?.url && convertedVersion.url.endsWith(".stl"),
+	`url=${convertedVersion?.url}`
+)
+check(
+	"a 3D thumbnail was rendered for the model",
+	!!convertedVersion?.thumbnailUrl,
+	`thumbnailUrl=${convertedVersion?.thumbnailUrl}`
+)
+if (convertedVersion?.thumbnailUrl) {
+	const thumbRes = await api(
+		convertedVersion.thumbnailUrl.startsWith("/")
+			? convertedVersion.thumbnailUrl
+			: `/${convertedVersion.thumbnailUrl}`
+	)
+	const bytes = thumbRes.ok
+		? Buffer.from(await thumbRes.arrayBuffer())
+		: Buffer.alloc(0)
+	check(
+		"the 3D thumbnail is a transparent PNG with pixels",
+		bytes.length > 1000 &&
+			bytes.subarray(0, 8).equals(
+				Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])
+			),
+		`bytes=${bytes.length}`
+	)
+}
+
+const renditionTargets = [
+	["sample-video.mkv", "a browser-playable MP4", ".mp4"],
+	["sample-image.tiff", "a browser-viewable PNG", ".png"],
+]
+for (const [name, description, expectedSuffix] of renditionTargets) {
+	const version = byName(name).latestVersion
+	const deadline = Date.now() + PROXY_READY_TIMEOUT_MS
+	let ready = null
+	while (Date.now() < deadline) {
+		const poll = await api(`/api/images/versions/${version.id}`)
+		const current = poll.ok ? await poll.json() : null
+		if (current?.proxyStatus === "READY") {
+			ready = current
+			break
+		}
+		if (current?.proxyStatus === "FAILED") break
+		await new Promise((resolve) => setTimeout(resolve, 2000))
+	}
+	check(
+		`${name} is converted to ${description}`,
+		!!ready?.proxyUrl && ready.proxyUrl.endsWith(expectedSuffix),
+		`status=${ready?.proxyStatus} url=${ready?.proxyUrl}`
+	)
+}
+
+const dracoForm = new FormData()
+dracoForm.append(
+	"images",
+	new Blob([readFileSync(join(here, "fixtures/draco-cube.glb"))], {
+		type: "model/gltf-binary",
+	}),
+	"draco-cube.glb"
+)
+const dracoRes = await api(`/api/projects/${project.id}/images`, {
+	method: "POST",
+	body: dracoForm,
+})
+const dracoImage = dracoRes.ok
+	? (await dracoRes.json()).find((image) => image.name === "draco-cube.glb")
+	: null
+check("draco-compressed GLB uploads", !!dracoImage, `status=${dracoRes.status}`)
+if (dracoImage) {
+	await navigate(`${WEB}/project/${project.id}/image/${dracoImage.id}`, {
+		waitUntil: "domcontentloaded",
+		timeout: 120000,
+	})
+	await page.waitForSelector("canvas", { timeout: 90000 })
+	await page.waitForTimeout(4000)
+	const viewerText = await page.locator("body").innerText()
+	check(
+		"draco-compressed GLB renders instead of the unsupported-compression notice",
+		!viewerText.includes("couldn't be loaded"),
+		viewerText.slice(0, 120)
+	)
+}
+
+const unsupportedPath = join(tmpdir(), `sculpt-e2e-${stamp}.heic`)
+writeFileSync(unsupportedPath, Buffer.from("not really a heic"))
+let uploadAttempts = 0
+const countUploadAttempts = (request) => {
+	if (request.url().includes("/images") && request.method() === "POST") {
+		uploadAttempts++
+	}
+}
+page.on("request", countUploadAttempts)
+await navigate(`${WEB}/project/${project.id}`, {
+	waitUntil: "domcontentloaded",
+	timeout: 120000,
+})
+await page.click('button:has-text("Upload")')
+await page.setInputFiles("#dropzone-file", unsupportedPath)
+const namedTheFile = await page
+	.waitForSelector(`text=/${stamp}\\.heic/`, { timeout: 10000 })
+	.then(() => true, () => false)
+check("an unsupported format is refused by name before uploading", namedTheFile)
+await page.waitForTimeout(1500)
+check(
+	"no request is sent for a format the API would reject",
+	uploadAttempts === 0,
+	`attempts=${uploadAttempts}`
+)
+page.off("request", countUploadAttempts)
 
 const deleteRes = await api(`/api/projects/${project.id}`, { method: "DELETE" })
 check("cleanup deletes the project", deleteRes.status === 200 || deleteRes.status === 204, `status=${deleteRes.status}`)

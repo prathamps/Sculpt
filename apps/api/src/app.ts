@@ -11,6 +11,7 @@ import notificationRoutes from "./modules/notifications/notifications.routes"
 import exportRoutes from "./modules/export/export.routes"
 import adminRoutes from "./modules/admin/admin.routes"
 import { isAllowedOrigin } from "./lib/cors"
+import { oversizedUploadMessage } from "./middleware/upload.middleware"
 import { uploadsDir } from "./storage"
 
 const pdfJsRangedFetchHeader = "Range"
@@ -86,7 +87,12 @@ export const createApp = (): express.Express => {
 		) => {
 			if (res.headersSent) return next(err)
 			if (isUploadRejection(err)) {
-				res.status(400).json({ message: err.message })
+				res.status(400).json({
+					message:
+						err.code === "LIMIT_FILE_SIZE"
+							? oversizedUploadMessage()
+							: err.message,
+				})
 				return
 			}
 			console.error(err)
