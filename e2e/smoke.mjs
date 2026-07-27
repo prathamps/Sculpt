@@ -398,6 +398,326 @@ check(
 )
 page.off("request", countUploadAttempts)
 
+
+const apiSend = (method, path, body) =>
+	api(path, {
+		method,
+		...(body === undefined
+			? {}
+			: {
+					headers: { "content-type": "application/json" },
+					body: JSON.stringify(body),
+				}),
+	})
+
+const imageForReview = byName("sample-image.png")
+const reviewVersionId = imageForReview?.latestVersion?.id
+
+const commentRes = await apiJson(
+	`/api/images/versions/${reviewVersionId}/comments`,
+	{ content: "the logo needs more contrast" }
+)
+const createdComment = commentRes.ok ? await commentRes.json() : null
+check("post a comment through the API", commentRes.status === 201 && !!createdComment?.id)
+
+const editRes = await apiSend("PUT", `/api/images/comments/${createdComment?.id}`, {
+	content: "the logo needs more contrast, especially on dark backgrounds",
+})
+check("edit your own comment", editRes.ok, `status=${editRes.status}`)
+
+const likeRes = await apiJson(`/api/images/comments/${createdComment?.id}/like`, {})
+const likeState = likeRes.ok ? await likeRes.json() : null
+check("like a comment", likeRes.ok && likeState?.liked === true && likeState?.count === 1)
+
+const unlikeRes = await apiJson(`/api/images/comments/${createdComment?.id}/like`, {})
+const unlikeState = unlikeRes.ok ? await unlikeRes.json() : null
+check(
+	"liking twice toggles back off rather than erroring",
+	unlikeRes.ok && unlikeState?.liked === false && unlikeState?.count === 0
+)
+
+const resolveRes = await apiJson(`/api/images/comments/${createdComment?.id}/resolve`, {})
+check("resolve a comment", resolveRes.ok)
+
+const emptyCommentRes = await apiJson(
+	`/api/images/versions/${reviewVersionId}/comments`,
+	{ content: "   " }
+)
+check("empty comments are rejected by validation", emptyCommentRes.status === 400, `status=${emptyCommentRes.status}`)
+
+const changesRes = await apiJson(`/api/images/versions/${reviewVersionId}/reviews`, {
+	decision: "CHANGES_REQUESTED",
+	note: "contrast",
+})
+const changesState = changesRes.ok ? await changesRes.json() : null
+check(
+	"requesting changes sets the version status",
+	changesRes.ok && changesState?.reviewStatus === "CHANGES_REQUESTED",
+	`got=${changesState?.reviewStatus}`
+)
+
+const approveRes = await apiJson(`/api/images/versions/${reviewVersionId}/reviews`, {
+	decision: "APPROVED",
+})
+const approveState = approveRes.ok ? await approveRes.json() : null
+check(
+	"changing your own decision to approved flips the status",
+	approveRes.ok && approveState?.reviewStatus === "APPROVED",
+	`got=${approveState?.reviewStatus}`
+)
+
+const reviewListRes = await api(`/api/images/versions/${reviewVersionId}/reviews`)
+const reviewList = reviewListRes.ok ? await reviewListRes.json() : null
+check(
+	"one decision per reviewer, not one per submission",
+	reviewListRes.ok && reviewList?.reviews?.length === 1,
+	`count=${reviewList?.reviews?.length}`
+)
+
+const badDecisionRes = await apiJson(`/api/images/versions/${reviewVersionId}/reviews`, {
+	decision: "LOOKS_FINE",
+})
+check("an unknown review decision is rejected", badDecisionRes.status === 400, `status=${badDecisionRes.status}`)
+
+const withdrawRes = await apiSend("DELETE", `/api/images/versions/${reviewVersionId}/reviews`)
+const withdrawState = withdrawRes.ok ? await withdrawRes.json() : null
+check(
+	"withdrawing the only decision returns the version to pending",
+	withdrawRes.ok && withdrawState?.reviewStatus === "PENDING",
+	`got=${withdrawState?.reviewStatus}`
+)
+
+const summaryRes = await api(`/api/projects/${project.id}/reviews/summary`)
+const summary = summaryRes.ok ? await summaryRes.json() : null
+check(
+	"project review summary counts every version",
+	summaryRes.ok && typeof summary?.PENDING === "number",
+	JSON.stringify(summary)
+)
+
+const dueRes = await apiSend("PATCH", `/api/images/versions/${reviewVersionId}/due-date`, {
+	dueAt: new Date(Date.now() + 86400000).toISOString(),
+})
+check("set a review due date", dueRes.ok, `status=${dueRes.status}`)
+
+const searchRes = await api(`/api/search?q=${encodeURIComponent("sample-image")}`)
+const searchResults = searchRes.ok ? await searchRes.json() : null
+check(
+	"search finds media by name",
+	searchRes.ok && searchResults?.media?.some((hit) => hit.label === "sample-image.png"),
+	JSON.stringify(searchResults?.media?.map((hit) => hit.label))
+)
+
+const commentSearchRes = await api(`/api/search?q=${encodeURIComponent("contrast")}`)
+const commentSearch = commentSearchRes.ok ? await commentSearchRes.json() : null
+check(
+	"search finds comments by content",
+	commentSearchRes.ok && commentSearch?.comments?.length > 0,
+	`count=${commentSearch?.comments?.length}`
+)
+
+const blankSearchRes = await api("/api/search?q=")
+check("a blank search term is rejected", blankSearchRes.status === 400, `status=${blankSearchRes.status}`)
+
+const shareRes = await apiJson(`/api/projects/${project.id}/share-links`, {
+	role: "VIEWER",
+	expiresInDays: 7,
+	maxUses: 5,
+})
+const shareLink = shareRes.ok ? await shareRes.json() : null
+check(
+	"create a share link with an expiry and a use cap",
+	shareRes.status === 201 && !!shareLink?.token && shareLink?.maxUses === 5
+)
+
+const ownerShareRes = await apiJson(`/api/projects/${project.id}/share-links`, {
+	role: "OWNER",
+})
+check("share links cannot grant OWNER", ownerShareRes.status === 400, `status=${ownerShareRes.status}`)
+
+const ownerFollowsOwnLinkRes = await apiJson(`/api/share/${shareLink?.token}`, {})
+check("following your own viewer link succeeds", ownerFollowsOwnLinkRes.ok, `status=${ownerFollowsOwnLinkRes.status}`)
+
+const roleAfterFollow = await api(`/api/projects/${project.id}/my-role`)
+const roleBody = roleAfterFollow.ok ? await roleAfterFollow.json() : null
+check(
+	"a share link never demotes an existing owner",
+	roleBody?.role === "OWNER",
+	`got=${roleBody?.role}`
+)
+
+const revokeShareRes = await apiSend(
+	"DELETE",
+	`/api/projects/${project.id}/share-links/${shareLink?.id}`
+)
+check("revoke a share link", revokeShareRes.status === 204, `status=${revokeShareRes.status}`)
+
+const revokedFollowRes = await apiJson(`/api/share/${shareLink?.token}`, {})
+check("a revoked share link stops working", revokedFollowRes.status === 404, `status=${revokedFollowRes.status}`)
+
+const outsiderEmail = `smoke-outsider-${stamp}@example.com`
+const ownerCookie = cookie
+cookie = ""
+await apiJson("/api/auth/register", { email: outsiderEmail, password, name: "Outsider" })
+await apiJson("/api/auth/login", { email: outsiderEmail, password })
+const outsiderCookie = cookie
+
+const outsiderProjectRes = await api(`/api/projects/${project.id}`)
+check(
+	"a non-member cannot read someone else's project",
+	outsiderProjectRes.status === 404 || outsiderProjectRes.status === 403,
+	`status=${outsiderProjectRes.status}`
+)
+
+const outsiderCommentsRes = await api(`/api/images/versions/${reviewVersionId}/comments`)
+check(
+	"a non-member cannot read comments on it",
+	outsiderCommentsRes.status === 403 || outsiderCommentsRes.status === 404,
+	`status=${outsiderCommentsRes.status}`
+)
+
+const outsiderUploadForm = new FormData()
+outsiderUploadForm.append(
+	"images",
+	new Blob([PNG_1PX], { type: "image/png" }),
+	"intruder.png"
+)
+const outsiderUploadRes = await api(`/api/projects/${project.id}/images`, {
+	method: "POST",
+	body: outsiderUploadForm,
+})
+check(
+	"a non-member is refused before any upload is accepted",
+	outsiderUploadRes.status === 403 || outsiderUploadRes.status === 404,
+	`status=${outsiderUploadRes.status}`
+)
+
+const outsiderReviewRes = await apiJson(
+	`/api/images/versions/${reviewVersionId}/reviews`,
+	{ decision: "APPROVED" }
+)
+check(
+	"a non-member cannot approve someone else's work",
+	outsiderReviewRes.status === 403 || outsiderReviewRes.status === 404,
+	`status=${outsiderReviewRes.status}`
+)
+
+const outsiderSearchRes = await api(`/api/search?q=${encodeURIComponent("sample-image")}`)
+const outsiderSearch = outsiderSearchRes.ok ? await outsiderSearchRes.json() : null
+check(
+	"search never leaks another team's media",
+	outsiderSearchRes.ok &&
+		(outsiderSearch?.media?.length ?? 0) === 0 &&
+		(outsiderSearch?.comments?.length ?? 0) === 0,
+	JSON.stringify(outsiderSearch)
+)
+
+const outsiderMediaRes = await api(`/${imageForReview?.latestVersion?.url ?? "uploads/none"}`)
+check(
+	"stored media is not readable by a non-member",
+	outsiderMediaRes.status === 403 || outsiderMediaRes.status === 404,
+	`status=${outsiderMediaRes.status}`
+)
+
+cookie = ownerCookie
+
+const inviteRes = await apiJson(`/api/projects/${project.id}/invite`, {
+	email: outsiderEmail,
+	role: "MEMBER",
+})
+const inviteBody = inviteRes.ok ? await inviteRes.json() : null
+check(
+	"inviting an existing account adds them straight away",
+	inviteRes.ok && inviteBody?.invitedExistingUser === true,
+	`status=${inviteRes.status}`
+)
+
+const strangerInviteRes = await apiJson(`/api/projects/${project.id}/invite`, {
+	email: `nobody-${stamp}@example.com`,
+	role: "VIEWER",
+})
+const strangerInvite = strangerInviteRes.ok ? await strangerInviteRes.json() : null
+check(
+	"inviting an unregistered address creates a pending invitation",
+	strangerInviteRes.ok && strangerInvite?.invitedExistingUser === false
+)
+
+const pendingRes = await api(`/api/projects/${project.id}/invitations`)
+const pending = pendingRes.ok ? await pendingRes.json() : []
+check(
+	"pending invitations are listable",
+	pendingRes.ok && pending.length === 1,
+	`count=${pending.length}`
+)
+
+const outsiderId = inviteBody?.project?.members?.find(
+	(member) => member.user.email === outsiderEmail
+)?.user?.id
+
+const roleChangeRes = await apiSend(
+	"PATCH",
+	`/api/projects/${project.id}/members/${outsiderId}/role`,
+	{ role: "EDITOR" }
+)
+check("an owner can change a member's role", roleChangeRes.ok, `status=${roleChangeRes.status}`)
+
+const selfDemoteRes = await apiSend(
+	"PATCH",
+	`/api/projects/${project.id}/members/${outsiderId}/role`,
+	{ role: "SUPREME_LEADER" }
+)
+check("an invalid role is rejected", selfDemoteRes.status === 400, `status=${selfDemoteRes.status}`)
+
+cookie = outsiderCookie
+const memberMediaRes = await api(`/${imageForReview?.latestVersion?.url ?? "uploads/none"}`)
+check(
+	"stored media becomes readable once you are a member",
+	memberMediaRes.ok,
+	`status=${memberMediaRes.status}`
+)
+cookie = ownerCookie
+
+const resetRequestRes = await apiJson("/api/auth/password-reset/request", {
+	email,
+})
+check(
+	"a password reset request is always accepted without leaking whether the account exists",
+	resetRequestRes.status === 202,
+	`status=${resetRequestRes.status}`
+)
+
+const unknownResetRes = await apiJson("/api/auth/password-reset/request", {
+	email: `definitely-not-a-user-${stamp}@example.com`,
+})
+check(
+	"an unknown address gets the same answer",
+	unknownResetRes.status === 202,
+	`status=${unknownResetRes.status}`
+)
+
+const badResetRes = await apiJson("/api/auth/password-reset/complete", {
+	token: "not-a-real-token",
+	password: "another-Password-1",
+})
+check("a forged reset token is refused", badResetRes.status === 400, `status=${badResetRes.status}`)
+
+const shortPasswordRes = await apiJson("/api/auth/register", {
+	email: `short-${stamp}@example.com`,
+	password: "x",
+})
+check(
+	"registration enforces the same password policy as changing one",
+	shortPasswordRes.status === 400,
+	`status=${shortPasswordRes.status}`
+)
+
+const healthBody = await (await api("/health")).json()
+check(
+	"health reports component status",
+	healthBody?.components?.database === "ok",
+	JSON.stringify(healthBody)
+)
+
 const deleteRes = await api(`/api/projects/${project.id}`, { method: "DELETE" })
 check("cleanup deletes the project", deleteRes.status === 200 || deleteRes.status === 204, `status=${deleteRes.status}`)
 

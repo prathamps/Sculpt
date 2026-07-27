@@ -4,6 +4,12 @@ import React, { useRef, useEffect, useState, useCallback } from "react"
 import { AnnotationTool } from "@/app/project/[projectId]/image/[imageId]/page"
 import { formatVideoTime, isEditableTarget } from "@/lib/utils"
 import { drawAnnotations } from "@/lib/annotation-drawing"
+import {
+	devicePixelRatio,
+	observeElementSize,
+	scaleContextToPixelRatio,
+	cssCanvasSize,
+} from "@/lib/canvas"
 import { isAnnotationVisibleAt } from "@/lib/annotation-visibility"
 import { Scrubber, ScrubberMarker, ScrubberPeer } from "./Scrubber"
 import {
@@ -57,6 +63,8 @@ interface VideoAnnotationCanvasProps {
 	canDraw?: boolean
 	enableShortcuts?: boolean
 }
+
+const PLAYHEAD_PUBLISH_INTERVAL_SECONDS = 0.1
 
 export function VideoAnnotationCanvas({
 	videoUrl,
@@ -137,12 +145,15 @@ export function VideoAnnotationCanvas({
 			width = height * videoAspect
 		}
 
+		const pixelRatio = devicePixelRatio()
+
 		;[drawingCanvasRef.current, previewCanvasRef.current].forEach((c) => {
 			if (c) {
-				c.width = width
-				c.height = height
+				c.width = Math.round(width * pixelRatio)
+				c.height = Math.round(height * pixelRatio)
 				c.style.width = `${width}px`
 				c.style.height = `${height}px`
+				scaleContextToPixelRatio(c, pixelRatio)
 			}
 		})
 		video.style.width = `${width}px`
@@ -164,11 +175,18 @@ export function VideoAnnotationCanvas({
 	useEffect(() => {
 		if (!isPlaying) return
 		let raf = 0
+		let lastPublishedTime = -1
 		const tick = () => {
 			const video = videoRef.current
 			if (video) {
 				playheadRef.current = video.currentTime
-				setCurrentTime(video.currentTime)
+				if (
+					Math.abs(video.currentTime - lastPublishedTime) >=
+					PLAYHEAD_PUBLISH_INTERVAL_SECONDS
+				) {
+					lastPublishedTime = video.currentTime
+					setCurrentTime(video.currentTime)
+				}
 				drawAll()
 			}
 			raf = requestAnimationFrame(tick)
@@ -188,14 +206,17 @@ export function VideoAnnotationCanvas({
 			currentPathRef.current = []
 			const preview = previewCanvasRef.current
 			const ctx = preview?.getContext("2d")
-			if (ctx && preview) ctx.clearRect(0, 0, preview.width, preview.height)
+			if (ctx && preview) {
+				const { width, height } = cssCanvasSize(preview)
+				ctx.clearRect(0, 0, width, height)
+			}
 		}
 	}, [seekRequest])
 
-	useEffect(() => {
-		window.addEventListener("resize", resize)
-		return () => window.removeEventListener("resize", resize)
-	}, [resize])
+	useEffect(
+		() => observeElementSize(containerRef.current, resize),
+		[resize]
+	)
 
 	const handleLoadedMetadata = () => {
 		const video = videoRef.current
@@ -300,15 +321,21 @@ export function VideoAnnotationCanvas({
 		return () => window.removeEventListener("keydown", onKeyDown)
 	}, [enableShortcuts, seekTo, stepFrame, togglePlay])
 
-	const getRelativePos = (e: React.MouseEvent): Point | null => {
+	const relativePointAt = (clientX: number, clientY: number): Point | null => {
 		const canvas = previewCanvasRef.current
 		if (!canvas) return null
 		const rect = canvas.getBoundingClientRect()
 		return {
-			x: Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width)),
-			y: Math.max(0, Math.min(1, (e.clientY - rect.top) / rect.height)),
+			x: Math.max(0, Math.min(1, (clientX - rect.left) / rect.width)),
+			y: Math.max(0, Math.min(1, (clientY - rect.top) / rect.height)),
 		}
 	}
+
+	const getRelativePos = (e: React.MouseEvent): Point | null =>
+		relativePointAt(e.clientX, e.clientY)
+
+	const pointFromTouch = (touch: React.Touch | undefined): Point | null =>
+		touch ? relativePointAt(touch.clientX, touch.clientY) : null
 
 	const handleMouseDown = (e: React.MouseEvent) => {
 		const pos = getRelativePos(e)
@@ -320,14 +347,12 @@ export function VideoAnnotationCanvas({
 		currentPathRef.current = [pos]
 	}
 
-	const handleMouseMove = (e: React.MouseEvent) => {
+	const extendTo = (pos: Point) => {
 		if (!isDrawingRef.current) return
-		const pos = getRelativePos(e)
-		if (!pos) return
 		const canvas = previewCanvasRef.current
 		const ctx = canvas?.getContext("2d")
 		if (!ctx || !canvas) return
-		const { width, height } = canvas
+		const { width, height } = cssCanvasSize(canvas)
 		ctx.clearRect(0, 0, width, height)
 		ctx.strokeStyle = color
 		ctx.lineWidth = 2
@@ -361,10 +386,14 @@ export function VideoAnnotationCanvas({
 		ctx.stroke()
 	}
 
-	const handleMouseUp = (e: React.MouseEvent) => {
+	const handleMouseMove = (e: React.MouseEvent) => {
+		const pos = getRelativePos(e)
+		if (pos) extendTo(pos)
+	}
+
+	const finishAt = (pos: Point | null) => {
 		if (!isDrawingRef.current) return
 		isDrawingRef.current = false
-		const pos = getRelativePos(e)
 		const start = startPosRef.current
 		if (!pos || !start) return
 		const finalPoints =
@@ -377,17 +406,41 @@ export function VideoAnnotationCanvas({
 				t: videoRef.current?.currentTime ?? currentTime,
 			})
 		}
-		const previewCtx = previewCanvasRef.current?.getContext("2d")
-		if (previewCtx && previewCanvasRef.current) {
-			previewCtx.clearRect(
-				0,
-				0,
-				previewCanvasRef.current.width,
-				previewCanvasRef.current.height
-			)
+		const previewCanvas = previewCanvasRef.current
+		const previewCtx = previewCanvas?.getContext("2d")
+		if (previewCtx && previewCanvas) {
+			const { width, height } = cssCanvasSize(previewCanvas)
+			previewCtx.clearRect(0, 0, width, height)
 		}
 		startPosRef.current = null
 		currentPathRef.current = []
+	}
+
+	const handleMouseUp = (e: React.MouseEvent) => finishAt(getRelativePos(e))
+
+	const handleTouchStart = (e: React.TouchEvent) => {
+		if (!canDraw) return
+		e.preventDefault()
+		const pos = pointFromTouch(e.touches[0])
+		if (!pos) return
+		videoRef.current?.pause()
+		setPlaying(false)
+		isDrawingRef.current = true
+		startPosRef.current = pos
+		currentPathRef.current = [pos]
+	}
+
+	const handleTouchMove = (e: React.TouchEvent) => {
+		if (!isDrawingRef.current) return
+		e.preventDefault()
+		const pos = pointFromTouch(e.touches[0])
+		if (pos) extendTo(pos)
+	}
+
+	const handleTouchEnd = (e: React.TouchEvent) => {
+		if (!isDrawingRef.current) return
+		e.preventDefault()
+		finishAt(pointFromTouch(e.changedTouches[0]))
 	}
 
 	const downloadFrame = () => {
@@ -463,6 +516,10 @@ export function VideoAnnotationCanvas({
 							onMouseMove={canDraw ? handleMouseMove : undefined}
 							onMouseUp={canDraw ? handleMouseUp : undefined}
 							onMouseLeave={canDraw ? handleMouseUp : undefined}
+							onTouchStart={canDraw ? handleTouchStart : undefined}
+							onTouchMove={canDraw ? handleTouchMove : undefined}
+							onTouchEnd={canDraw ? handleTouchEnd : undefined}
+							onTouchCancel={canDraw ? handleTouchEnd : undefined}
 							className={
 								canDraw
 									? "absolute left-0 top-0 cursor-crosshair"

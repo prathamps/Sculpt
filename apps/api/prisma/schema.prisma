@@ -34,6 +34,17 @@ enum ProxyStatus {
   FAILED
 }
 
+enum ReviewStatus {
+  PENDING
+  CHANGES_REQUESTED
+  APPROVED
+}
+
+enum ReviewDecision {
+  APPROVED
+  CHANGES_REQUESTED
+}
+
 model User {
   id            String          @id @default(cuid())
   email         String          @unique
@@ -43,14 +54,38 @@ model User {
   provider      String?
   providerId    String?
   avatarUrl     String?
+  tokenVersion  Int             @default(0)
+  emailNotifications Boolean    @default(true)
   memberships   ProjectMember[]
   notifications Notification[]
-  messages      Message[]
   comments      Comment[]
+  reviews       Review[]
   commentLikes  CommentLike[]
   auditLogs     AuditLog[]
+  passwordResetTokens PasswordResetToken[]
   createdAt     DateTime        @default(now())
   updatedAt     DateTime        @updatedAt
+}
+
+model PasswordResetToken {
+  tokenHash String   @id
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+  @@index([expiresAt])
+}
+
+model RevokedSession {
+  jti       String   @id
+  userId    String
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  @@index([expiresAt])
 }
 
 model AuditLog {
@@ -74,8 +109,9 @@ model Project {
   name       String
   members    ProjectMember[]
   images     Image[]
-  messages   Message[]
   shareLinks ShareLink[]
+  mediaAssets MediaAsset[]
+  invitations ProjectInvitation[]
   createdAt  DateTime        @default(now())
   updatedAt  DateTime        @updatedAt
 }
@@ -85,12 +121,22 @@ model ProjectMember {
   projectId String
   project   Project     @relation(fields: [projectId], references: [id], onDelete: Cascade)
   userId    String
-  user      User        @relation(fields: [userId], references: [id])
+  user      User        @relation(fields: [userId], references: [id], onDelete: Cascade)
   role      ProjectRole
   createdAt DateTime    @default(now())
   updatedAt DateTime    @updatedAt
 
   @@unique([projectId, userId])
+  @@index([userId])
+}
+
+model MediaAsset {
+  storedPath String   @id
+  projectId  String
+  project    Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  createdAt  DateTime @default(now())
+
+  @@index([projectId])
 }
 
 model Image {
@@ -101,6 +147,9 @@ model Image {
   versions    ImageVersion[]
   createdAt   DateTime       @default(now())
   updatedAt   DateTime       @updatedAt
+
+  @@index([projectId, updatedAt])
+  @@index([projectId, name])
 }
 
 model ImageVersion {
@@ -110,15 +159,38 @@ model ImageVersion {
   versionNumber Int     @default(1)
   mediaType   MediaType @default(IMAGE)
   duration    Float?
+  frameRate   Float?
   thumbnailUrl String?
   proxyUrl    String?
   proxyStatus ProxyStatus?
+  proxyOwner  String?
+  reviewStatus ReviewStatus @default(PENDING)
+  dueAt       DateTime?
   imageId     String
   image       Image     @relation(fields: [imageId], references: [id], onDelete: Cascade)
-  annotations Json[]
   comments    Comment[]
+  reviews     Review[]
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
+
+  @@unique([imageId, versionNumber])
+  @@index([imageId])
+  @@index([proxyStatus])
+}
+
+model Review {
+  id             String         @id @default(cuid())
+  imageVersionId String
+  imageVersion   ImageVersion   @relation(fields: [imageVersionId], references: [id], onDelete: Cascade)
+  userId         String
+  user           User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  decision       ReviewDecision
+  note           String?
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+
+  @@unique([imageVersionId, userId])
+  @@index([imageVersionId])
 }
 
 model Comment {
@@ -127,7 +199,7 @@ model Comment {
   imageVersionId String
   imageVersion   ImageVersion  @relation(fields: [imageVersionId], references: [id], onDelete: Cascade)
   userId         String
-  user           User          @relation(fields: [userId], references: [id])
+  user           User          @relation(fields: [userId], references: [id], onDelete: Cascade)
   parentId       String?       @map("parent_id")
   parent         Comment?      @relation("CommentToComment", fields: [parentId], references: [id], onDelete: Cascade)
   replies        Comment[]     @relation("CommentToComment")
@@ -140,6 +212,10 @@ model Comment {
   resolved       Boolean       @default(false)
   createdAt      DateTime      @default(now())
   updatedAt      DateTime      @updatedAt
+
+  @@index([imageVersionId, createdAt])
+  @@index([parentId])
+  @@index([userId])
 }
 
 model CommentLike {
@@ -151,16 +227,7 @@ model CommentLike {
   createdAt DateTime @default(now())
 
   @@unique([userId, commentId])
-}
-
-model Message {
-  id        String   @id @default(cuid())
-  content   String
-  projectId String
-  project   Project  @relation(fields: [projectId], references: [id])
-  userId    String
-  user      User     @relation(fields: [userId], references: [id])
-  createdAt DateTime @default(now())
+  @@index([commentId])
 }
 
 model Notification {
@@ -169,8 +236,11 @@ model Notification {
   read      Boolean  @default(false)
   metadata  Json?
   userId    String
-  user      User     @relation(fields: [userId], references: [id])
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   createdAt DateTime @default(now())
+
+  @@index([userId, createdAt])
+  @@index([userId, read])
 }
 
 model ShareLink {
@@ -179,5 +249,28 @@ model ShareLink {
   projectId String
   project   Project     @relation(fields: [projectId], references: [id], onDelete: Cascade)
   role      ProjectRole
+  expiresAt DateTime?
+  maxUses   Int?
+  useCount  Int         @default(0)
+  revokedAt DateTime?
   createdAt DateTime    @default(now())
+
+  @@index([projectId])
+}
+
+model ProjectInvitation {
+  id          String      @id @default(cuid())
+  projectId   String
+  project     Project     @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  email       String
+  role        ProjectRole
+  tokenHash   String      @unique
+  invitedById String?
+  expiresAt   DateTime
+  acceptedAt  DateTime?
+  createdAt   DateTime    @default(now())
+
+  @@unique([projectId, email])
+  @@index([email])
+  @@index([expiresAt])
 }

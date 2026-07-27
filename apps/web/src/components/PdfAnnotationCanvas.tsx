@@ -12,6 +12,7 @@ import { drawAnnotations } from "@/lib/annotation-drawing"
 import { Loader2, ChevronLeft, ChevronRight, ZoomIn, ZoomOut } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import { observeElementSize } from "@/lib/canvas"
 
 interface Point {
 	x: number
@@ -179,11 +180,13 @@ export function PdfAnnotationCanvas({
 		redrawAnnotations()
 	}, [redrawAnnotations])
 
-	useEffect(() => {
-		const onResize = () => setResizeNonce((n) => n + 1)
-		window.addEventListener("resize", onResize)
-		return () => window.removeEventListener("resize", onResize)
-	}, [])
+	useEffect(
+		() =>
+			observeElementSize(containerRef.current, () =>
+				setResizeNonce((n) => n + 1)
+			),
+		[]
+	)
 
 	const goToPage = (page: number) => {
 		if (!numPages) return
@@ -387,6 +390,36 @@ export function PdfAnnotationCanvas({
 						}
 						onMouseLeave={
 							canDraw ? (e) => finishDrawing(e.clientX, e.clientY) : undefined
+						}
+						onTouchStart={
+							canDraw
+								? (e) => {
+										const touch = e.touches[0]
+										if (!touch) return
+										e.preventDefault()
+										startDrawing(touch.clientX, touch.clientY)
+									}
+								: undefined
+						}
+						onTouchMove={
+							canDraw
+								? (e) => {
+										const touch = e.touches[0]
+										if (!touch) return
+										e.preventDefault()
+										continueDrawing(touch.clientX, touch.clientY)
+									}
+								: undefined
+						}
+						onTouchEnd={
+							canDraw
+								? (e) => {
+										const touch = e.changedTouches[0]
+										if (!touch) return
+										e.preventDefault()
+										finishDrawing(touch.clientX, touch.clientY)
+									}
+								: undefined
 						}
 						className={
 							canDraw

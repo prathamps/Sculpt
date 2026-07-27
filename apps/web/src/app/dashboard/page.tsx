@@ -10,7 +10,15 @@ import { Header } from "@/components/Header"
 import { Project } from "@/types"
 import { ProjectSettingsModal } from "@/components/ProjectSettingsModal"
 import { ConfirmationModal } from "@/components/ConfirmationModal"
-import { PlusIcon, Loader2Icon, FolderPlusIcon } from "lucide-react"
+import {
+	PlusIcon,
+	Loader2Icon,
+	FolderPlusIcon,
+	AlertTriangleIcon,
+} from "lucide-react"
+import { toast } from "sonner"
+import { Paginated, api } from "@/lib/api"
+import { describeError } from "@/lib/errors"
 
 export default function DashboardPage() {
 	const { loading, isAuthenticated } = useAuth()
@@ -21,21 +29,19 @@ export default function DashboardPage() {
 	const [projectToDelete, setProjectToDelete] = useState<Project | null>(null)
 	const [isDeleting, setIsDeleting] = useState(false)
 	const [isLoading, setIsLoading] = useState(true)
+	const [loadError, setLoadError] = useState<string | null>(null)
 
 	const handleRefreshProjects = useCallback(async () => {
 		if (!isAuthenticated) return
 		setIsLoading(true)
-		const URI = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001"
+		setLoadError(null)
 		try {
-			const res = await fetch(`${URI}/api/projects`, {
-				credentials: "include",
-			})
-			if (res.ok) {
-				const data: Project[] = await res.json()
-				setProjects(data)
-			}
+			const page = await api.get<Paginated<Project>>(
+				"/api/projects?pageSize=100"
+			)
+			setProjects(page.items)
 		} catch (error) {
-			console.error("Failed to fetch projects:", error)
+			setLoadError(describeError(error, "Could not load your projects."))
 		} finally {
 			setIsLoading(false)
 		}
@@ -52,22 +58,13 @@ export default function DashboardPage() {
 	const handleDeleteProject = async () => {
 		if (!projectToDelete) return
 		setIsDeleting(true)
-		const URI = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001"
 		try {
-			const res = await fetch(`${URI}/api/projects/${projectToDelete.id}`, {
-				method: "DELETE",
-				credentials: "include",
-			})
-
-			if (!res.ok) {
-				throw new Error("Failed to delete project")
-			}
-
-			handleRefreshProjects()
+			await api.delete(`/api/projects/${projectToDelete.id}`)
+			toast.success(`Deleted "${projectToDelete.name}".`)
+			await handleRefreshProjects()
 			setProjectToDelete(null)
 		} catch (error) {
-			console.error("Failed to delete project:", error)
-			alert("Failed to delete project.")
+			toast.error(describeError(error, "Could not delete the project."))
 		} finally {
 			setIsDeleting(false)
 		}
@@ -100,6 +97,23 @@ export default function DashboardPage() {
 					{isLoading ? (
 						<div className="flex h-40 items-center justify-center">
 							<Loader2Icon className="h-6 w-6 animate-spin text-muted-foreground" />
+						</div>
+					) : loadError ? (
+						<div className="flex flex-col items-center justify-center rounded-lg border border-dashed border-destructive/40 bg-destructive/5 p-12 text-center">
+							<div className="flex h-12 w-12 items-center justify-center rounded-full bg-destructive/10 text-destructive">
+								<AlertTriangleIcon className="h-6 w-6" aria-hidden="true" />
+							</div>
+							<h2 className="mt-4 text-xl font-medium">
+								We couldn&apos;t load your projects
+							</h2>
+							<p className="mt-2 max-w-sm text-muted-foreground">{loadError}</p>
+							<Button
+								variant="outline"
+								className="mt-6"
+								onClick={handleRefreshProjects}
+							>
+								Try again
+							</Button>
 						</div>
 					) : projects.length > 0 ? (
 						<div className="grid grid-cols-1 gap-4 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4">

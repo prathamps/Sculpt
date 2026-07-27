@@ -1,55 +1,65 @@
 "use client"
 
-import { useState, useCallback } from "react"
+import { useCallback, useMemo, useRef, useState } from "react"
 import { Annotation } from "@/types"
 
+interface HistoryState {
+	stack: Annotation[][]
+	index: number
+}
+
+const INITIAL_HISTORY: HistoryState = { stack: [[]], index: 0 }
+
 export function useAnnotationHistory() {
-	const [annotations, setAnnotations] = useState<Annotation[]>([])
+	const [history, setHistory] = useState<HistoryState>(INITIAL_HISTORY)
 	const [currentAnnotation, setCurrentAnnotation] =
 		useState<Annotation | null>(null)
-	const [history, setHistory] = useState<Annotation[][]>([[]])
-	const [historyIndex, setHistoryIndex] = useState(0)
+	const nextIdRef = useRef(0)
+
+	const annotations = useMemo(
+		() => history.stack[history.index] ?? [],
+		[history]
+	)
 
 	const addAnnotation = useCallback(
 		(newAnnotation: Omit<Annotation, "id">) => {
-			const annotationWithId = { ...newAnnotation, id: Date.now() }
+			nextIdRef.current += 1
+			const annotationWithId = { ...newAnnotation, id: nextIdRef.current }
+
 			setCurrentAnnotation(annotationWithId)
-			setAnnotations((prev) => {
-				const nextAnnotations = [...prev, annotationWithId]
-				setHistory((prevHistory) => {
-					const newHistory = prevHistory.slice(0, historyIndex + 1)
-					newHistory.push(nextAnnotations)
-					setHistoryIndex(newHistory.length - 1)
-					return newHistory
-				})
-				return nextAnnotations
+			setHistory((previous) => {
+				const base = previous.stack[previous.index] ?? []
+				const kept = previous.stack.slice(0, previous.index + 1)
+				return {
+					stack: [...kept, [...base, annotationWithId]],
+					index: kept.length,
+				}
 			})
+
 			return annotationWithId
 		},
-		[historyIndex]
+		[]
 	)
 
 	const undo = useCallback(() => {
-		if (historyIndex > 0) {
-			const newIndex = historyIndex - 1
-			setHistoryIndex(newIndex)
-			setAnnotations(history[newIndex] || [])
-		}
-	}, [history, historyIndex])
+		setHistory((previous) =>
+			previous.index > 0
+				? { ...previous, index: previous.index - 1 }
+				: previous
+		)
+	}, [])
 
 	const redo = useCallback(() => {
-		if (historyIndex < history.length - 1) {
-			const newIndex = historyIndex + 1
-			setHistoryIndex(newIndex)
-			setAnnotations(history[newIndex] || [])
-		}
-	}, [history, historyIndex])
+		setHistory((previous) =>
+			previous.index < previous.stack.length - 1
+				? { ...previous, index: previous.index + 1 }
+				: previous
+		)
+	}, [])
 
 	const clear = useCallback(() => {
-		setAnnotations([])
+		setHistory(INITIAL_HISTORY)
 		setCurrentAnnotation(null)
-		setHistory([[]])
-		setHistoryIndex(0)
 	}, [])
 
 	return {
@@ -60,7 +70,7 @@ export function useAnnotationHistory() {
 		undo,
 		redo,
 		clear,
-		canUndo: historyIndex > 0,
-		canRedo: historyIndex < history.length - 1,
+		canUndo: history.index > 0,
+		canRedo: history.index < history.stack.length - 1,
 	}
 }

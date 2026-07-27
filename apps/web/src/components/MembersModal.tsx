@@ -12,7 +12,6 @@ import {
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Project } from "@/types"
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { useAuth } from "@/context/AuthContext"
 import {
 	Trash2,
@@ -43,6 +42,7 @@ import {
 } from "@/components/ui/tooltip"
 import { Separator } from "@/components/ui/separator"
 import { cn } from "@/lib/utils"
+import { UserAvatar } from "@/components/UserAvatar"
 
 interface MembersModalProps {
 	isOpen: boolean
@@ -237,16 +237,12 @@ export function MembersModal({
 								className="flex items-center justify-between px-3 py-2.5 bg-card/50"
 							>
 								<div className="flex items-center gap-2.5">
-									<Avatar className="h-8 w-8">
-										<AvatarImage
-											src={`https://api.dicebear.com/7.x/micah/svg?seed=${member.user.email}`}
-											alt={member.user.name ?? member.user.email}
-										/>
-										<AvatarFallback>
-											{member.user.name?.charAt(0).toUpperCase() ??
-												member.user.email.charAt(0).toUpperCase()}
-										</AvatarFallback>
-									</Avatar>
+									<UserAvatar
+										className="h-8 w-8"
+										name={member.user.name}
+										email={member.user.email}
+										avatarUrl={member.user.avatarUrl}
+									/>
 									<div>
 										<p className="text-sm font-medium">
 											{member.user.name || "Unnamed user"}

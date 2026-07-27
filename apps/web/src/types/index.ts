@@ -2,6 +2,7 @@ export interface User {
 	id: string
 	name: string | null
 	email: string
+	avatarUrl?: string | null
 }
 
 export type ProjectRole = "OWNER" | "EDITOR" | "MEMBER" | "VIEWER"
@@ -51,11 +52,28 @@ export interface ImageVersion {
 	imageId: string
 	mediaType?: MediaType
 	duration?: number | null
+	frameRate?: number | null
 	thumbnailUrl?: string | null
 	proxyUrl?: string | null
 	proxyStatus?: ProxyStatus | null
+	reviewStatus?: ReviewStatus
+	dueAt?: string | null
 	createdAt: string
 	updatedAt: string
+}
+
+export type ReviewStatus = "PENDING" | "CHANGES_REQUESTED" | "APPROVED"
+
+export type ReviewDecisionValue = "APPROVED" | "CHANGES_REQUESTED"
+
+export interface Review {
+	id: string
+	imageVersionId: string
+	decision: ReviewDecisionValue
+	note?: string | null
+	createdAt: string
+	updatedAt: string
+	user: User
 }
 
 export interface Image {
@@ -66,6 +84,7 @@ export interface Image {
 	updatedAt: string
 	versions: ImageVersion[]
 	latestVersion?: ImageVersion
+	versionCount?: number
 	size?: number
 }
 

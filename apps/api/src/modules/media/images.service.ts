@@ -1,6 +1,11 @@
+import { Image, ImageVersion, MediaType, Prisma, ProxyStatus } from "@prisma/client"
 import { prisma } from "../../lib/prisma"
-import { Image, ImageVersion, MediaType, ProxyStatus } from "@prisma/client"
 import { storage } from "../../storage"
+import { ValidationError } from "../../lib/errors"
+import { forgetProjectAssets, recordProjectAssets } from "./media-access.service"
+
+const VERSION_NUMBER_CONFLICT = "P2002"
+const MAX_VERSION_NUMBER_ATTEMPTS = 5
 
 interface ImagePayload {
 	url: string
@@ -22,49 +27,61 @@ interface VersionOptions {
 	proxyStatus?: ProxyStatus | null
 }
 
+const assetUrlsOf = (
+	version: Pick<ImageVersion, "url" | "thumbnailUrl" | "proxyUrl">
+): string[] =>
+	[version.url, version.thumbnailUrl, version.proxyUrl].filter(
+		(url): url is string => !!url
+	)
+
 export const addImagesToProject = async (
 	images: ImagePayload[]
 ): Promise<(Image & { versions: ImageVersion[] })[]> => {
-	return Promise.all(
-		images.map((img) =>
-			prisma.image.create({
-				data: {
-					name: img.name,
-					projectId: img.projectId,
-					versions: {
-						create: {
-							url: img.url,
-							versionName: "Version 1",
-							versionNumber: 1,
-							mediaType: img.mediaType ?? MediaType.IMAGE,
-							duration: img.duration ?? null,
-							thumbnailUrl: img.thumbnailUrl ?? null,
-							proxyUrl: img.proxyUrl ?? null,
-							proxyStatus: img.proxyStatus ?? null,
+	if (images.length === 0) return []
+
+	const created = await prisma.$transaction((tx) =>
+		Promise.all(
+			images.map((image) =>
+				tx.image.create({
+					data: {
+						name: image.name,
+						projectId: image.projectId,
+						versions: {
+							create: {
+								url: image.url,
+								versionName: "Version 1",
+								versionNumber: 1,
+								mediaType: image.mediaType ?? MediaType.IMAGE,
+								duration: image.duration ?? null,
+								thumbnailUrl: image.thumbnailUrl ?? null,
+								proxyUrl: image.proxyUrl ?? null,
+								proxyStatus: image.proxyStatus ?? null,
+							},
 						},
 					},
-				},
-				include: { versions: true },
-			})
+					include: { versions: true },
+				})
+			)
 		)
 	)
+
+	await recordProjectAssets(
+		created.flatMap((image) => image.versions.flatMap(assetUrlsOf)),
+		images[0].projectId
+	)
+
+	return created
 }
 
 export const getImagesForProject = async (
 	projectId: string
 ): Promise<(Image & { latestVersion: ImageVersion | null })[]> => {
 	const images = await prisma.image.findMany({
-		where: {
-			projectId,
-		},
+		where: { projectId },
 		include: {
-			versions: {
-				orderBy: {
-					versionNumber: "desc",
-				},
-				take: 1,
-			},
+			versions: { orderBy: { versionNumber: "desc" }, take: 1 },
 		},
+		orderBy: { updatedAt: "desc" },
 	})
 
 	return images.map((image) => ({
@@ -75,56 +92,61 @@ export const getImagesForProject = async (
 
 export const getImageById = async (
 	id: string
-): Promise<(Image & { versions: ImageVersion[] }) | null> => {
-	return prisma.image.findUnique({
-		where: {
-			id,
-		},
-		include: {
-			versions: {
-				orderBy: {
-					versionNumber: "desc",
-				},
-			},
-		},
+): Promise<(Image & { versions: ImageVersion[] }) | null> =>
+	prisma.image.findUnique({
+		where: { id },
+		include: { versions: { orderBy: { versionNumber: "desc" } } },
 	})
-}
 
 export const getImageVersionById = async (
 	versionId: string
-): Promise<ImageVersion | null> => {
-	return prisma.imageVersion.findUnique({
-		where: {
-			id: versionId,
-		},
-	})
-}
+): Promise<ImageVersion | null> =>
+	prisma.imageVersion.findUnique({ where: { id: versionId } })
+
+const isVersionNumberConflict = (error: unknown): boolean =>
+	error instanceof Prisma.PrismaClientKnownRequestError &&
+	error.code === VERSION_NUMBER_CONFLICT
 
 export const addImageVersion = async (
 	imageId: string,
 	fileUrl: string,
 	options: VersionOptions = {}
 ): Promise<ImageVersion> => {
-	const latest = await prisma.imageVersion.findFirst({
-		where: { imageId },
-		orderBy: { versionNumber: "desc" },
-	})
+	for (let attempt = 0; attempt < MAX_VERSION_NUMBER_ATTEMPTS; attempt++) {
+		const latest = await prisma.imageVersion.findFirst({
+			where: { imageId },
+			orderBy: { versionNumber: "desc" },
+			select: { versionNumber: true },
+		})
+		const nextVersionNumber = (latest?.versionNumber ?? 0) + 1
 
-	const nextVersionNumber = latest ? latest.versionNumber + 1 : 1
+		try {
+			const version = await prisma.imageVersion.create({
+				data: {
+					url: fileUrl,
+					versionName: options.versionName || `Version ${nextVersionNumber}`,
+					versionNumber: nextVersionNumber,
+					imageId,
+					mediaType: options.mediaType ?? MediaType.IMAGE,
+					duration: options.duration ?? null,
+					thumbnailUrl: options.thumbnailUrl ?? null,
+					proxyUrl: options.proxyUrl ?? null,
+					proxyStatus: options.proxyStatus ?? null,
+				},
+				include: { image: { select: { projectId: true } } },
+			})
 
-	return prisma.imageVersion.create({
-		data: {
-			url: fileUrl,
-			versionName: options.versionName || `Version ${nextVersionNumber}`,
-			versionNumber: nextVersionNumber,
-			imageId,
-			mediaType: options.mediaType ?? MediaType.IMAGE,
-			duration: options.duration ?? null,
-			thumbnailUrl: options.thumbnailUrl ?? null,
-			proxyUrl: options.proxyUrl ?? null,
-			proxyStatus: options.proxyStatus ?? null,
-		},
-	})
+			await recordProjectAssets(assetUrlsOf(version), version.image.projectId)
+
+			return version
+		} catch (error) {
+			if (!isVersionNumberConflict(error)) throw error
+		}
+	}
+
+	throw new ValidationError(
+		"Another version was uploaded at the same time. Try again."
+	)
 }
 
 export const deleteImage = async (id: string): Promise<void> => {
@@ -135,17 +157,12 @@ export const deleteImage = async (id: string): Promise<void> => {
 
 	if (!image) return
 
+	const urls = image.versions.flatMap(assetUrlsOf)
+
 	await prisma.image.delete({ where: { id } })
-
-	await Promise.all(image.versions.flatMap(storedVersionFileRemovals))
+	await forgetProjectAssets(urls)
+	await Promise.all(urls.map((url) => storage.remove(url)))
 }
-
-const storedVersionFileRemovals = (
-	version: Pick<ImageVersion, "url" | "thumbnailUrl" | "proxyUrl">
-): Promise<void>[] =>
-	[version.url, version.thumbnailUrl, version.proxyUrl]
-		.filter((url): url is string => !!url)
-		.map((url) => storage.remove(url))
 
 export const deleteImageVersion = async (versionId: string): Promise<void> => {
 	const version = await prisma.imageVersion.findUnique({
@@ -159,29 +176,23 @@ export const deleteImageVersion = async (versionId: string): Promise<void> => {
 	})
 
 	if (versionCount <= 1) {
-		throw new Error("Cannot delete the only version of an image")
+		throw new ValidationError("Cannot delete the only version of an image")
 	}
 
+	const urls = assetUrlsOf(version)
+
 	await prisma.imageVersion.delete({ where: { id: versionId } })
-	await Promise.all(storedVersionFileRemovals(version))
+	await forgetProjectAssets(urls)
+	await Promise.all(urls.map((url) => storage.remove(url)))
 }
 
 export const updateImage = async (
 	id: string,
 	data: { name?: string }
-): Promise<Image> => {
-	return prisma.image.update({
-		where: { id },
-		data,
-	})
-}
+): Promise<Image> => prisma.image.update({ where: { id }, data })
 
 export const updateImageVersion = async (
 	versionId: string,
 	data: { versionName?: string }
-): Promise<ImageVersion> => {
-	return prisma.imageVersion.update({
-		where: { id: versionId },
-		data,
-	})
-}
+): Promise<ImageVersion> =>
+	prisma.imageVersion.update({ where: { id: versionId }, data })

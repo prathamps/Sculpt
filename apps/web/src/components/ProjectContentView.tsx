@@ -2,7 +2,6 @@
 
 import { Button } from "./ui/button"
 import { FileCard } from "./FileCard"
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Project, Image, MediaType } from "@/types"
 import { useRouter } from "next/navigation"
 import { useRovingGrid } from "@/hooks/useRovingGrid"
@@ -34,6 +33,7 @@ import {
 	DropdownMenuTrigger,
 } from "./ui/dropdown-menu"
 import { Input } from "./ui/input"
+import { UserAvatar } from "@/components/UserAvatar"
 
 interface ProjectContentViewProps {
 	project: Project | null
@@ -153,19 +153,14 @@ export function ProjectContentView({
 					<div className="mt-1 flex items-center">
 						<div className="flex -space-x-2 overflow-hidden">
 							{project.members.slice(0, 5).map((member) => (
-								<Avatar
+								<UserAvatar
 									key={member.user.id}
 									className="h-6 w-6 border-2 border-background"
-								>
-									<AvatarImage
-										src={`https://api.dicebear.com/7.x/micah/svg?seed=${member.user.email}`}
-										alt={member.user.name ?? member.user.email}
-									/>
-									<AvatarFallback className="text-xs">
-										{member.user.name?.charAt(0).toUpperCase() ??
-											member.user.email.charAt(0).toUpperCase()}
-									</AvatarFallback>
-								</Avatar>
+									fallbackClassName="text-xs"
+									name={member.user.name}
+									email={member.user.email}
+									avatarUrl={member.user.avatarUrl}
+								/>
 							))}
 							{project.members.length > 5 && (
 								<div className="flex h-6 w-6 items-center justify-center rounded-full border-2 border-background bg-muted text-xs">

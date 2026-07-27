@@ -1,6 +1,8 @@
 import http from "http"
 import { Server, Socket } from "socket.io"
-import { markOnline, markOffline } from "../lib/presence"
+import { createAdapter } from "@socket.io/redis-adapter"
+import { markOnline, markOffline, startPresenceHeartbeat } from "../lib/presence"
+import { redisClient } from "../lib/redis"
 import { isAllowedOrigin } from "../lib/cors"
 import { socketAuth, SocketUser } from "./socketAuth"
 import {
@@ -9,7 +11,8 @@ import {
 	removeViewer,
 	getViewers,
 } from "./viewerPresence"
-import { canViewVersion } from "../modules/projects/access"
+import { canViewVersion, isProjectMember } from "../modules/projects/access"
+import { logger } from "../lib/logger"
 
 export const io = new Server({
 	cors: {
@@ -58,23 +61,28 @@ const leaveVersionRoom = (socket: Socket, imageVersionId: string): void => {
 	})
 }
 
-const registerHandlers = (socket: Socket) => {
-	socket.on("join", (userId: string) => {
-		const id = socketUser(socket)?.id ?? userId
-		if (!id) return
-		socket.join(`user:${id}`)
-		socket.data.userId = id
-		markOnline(id, socket.id).catch((e) =>
-			console.error("presence markOnline error", e)
+export const registerHandlers = (socket: Socket) => {
+	socket.on("join", () => {
+		const user = socketUser(socket)
+		if (!user) return
+		socket.join(`user:${user.id}`)
+		socket.data.userId = user.id
+		markOnline(user.id, socket.id).catch((e) =>
+			logger.error("presence markOnline failed", e)
 		)
 		socket.emit("connection_confirmed", {
 			message: "Successfully connected to notification service",
-			userId: id,
+			userId: user.id,
 		})
 	})
 
-	socket.on("joinProject", (projectId: string) => {
-		if (!projectId) return
+	socket.on("joinProject", async (projectId: string) => {
+		if (!projectId || typeof projectId !== "string") return
+		const user = socketUser(socket)
+		if (!user || !(await isProjectMember(projectId, user.id))) {
+			socket.emit("project_join_denied", { projectId })
+			return
+		}
 		socket.join(`project:${projectId}`)
 		socket.emit("project_joined", {
 			projectId,
@@ -139,7 +147,7 @@ const registerHandlers = (socket: Socket) => {
 	})
 
 	socket.on("error", (error) => {
-		console.error("Socket error:", error)
+		logger.error("socket error", error, { socketId: socket.id })
 	})
 
 	socket.on("disconnect", () => {
@@ -149,14 +157,34 @@ const registerHandlers = (socket: Socket) => {
 		const userId = socket.data.userId as string | undefined
 		if (userId) {
 			markOffline(userId, socket.id).catch((e) =>
-				console.error("presence markOffline error", e)
+				logger.error("presence markOffline failed", e)
 			)
 		}
 	})
 }
 
-export const attachRealtime = (server: http.Server): void => {
+const attachRedisAdapter = async (): Promise<void> => {
+	if (!redisClient.isReady) {
+		logger.warn(
+			"Socket.IO is running without the Redis adapter — realtime events stay local to this instance"
+		)
+		return
+	}
+
+	try {
+		const subscriber = redisClient.duplicate()
+		await subscriber.connect()
+		io.adapter(createAdapter(redisClient, subscriber))
+		logger.info("Socket.IO Redis adapter attached")
+	} catch (error) {
+		logger.error("Could not attach the Socket.IO Redis adapter", error)
+	}
+}
+
+export const attachRealtime = async (server: http.Server): Promise<void> => {
+	await attachRedisAdapter()
 	io.use(socketAuth)
 	io.on("connection", registerHandlers)
 	io.attach(server)
+	startPresenceHeartbeat()
 }

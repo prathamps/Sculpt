@@ -1,12 +1,10 @@
-import { AuthenticatedUser } from "../../types"
 import { Request, Response } from "express"
-import fs from "fs"
 import * as imageService from "./images.service"
-import { CommentsService } from "../comments/comments.service"
 import {
 	detectMediaType,
 	needsBrowserSafeImageRendition,
 } from "../../middleware/upload.middleware"
+import { authorizedScope } from "../../middleware/authorize.middleware"
 import { parseFilesMeta } from "./upload-meta"
 import {
 	discardStagedVideo,
@@ -15,112 +13,10 @@ import {
 } from "./video-pipeline"
 import { enqueueImageRendition } from "./image-pipeline"
 import { storage } from "../../storage"
-import { AppError } from "../../lib/errors"
+import { NotFoundError, ValidationError } from "../../lib/errors"
+import { respondWithError } from "../../lib/http"
 import { recordAudit, requestIp } from "../audit/audit.service"
-import {
-	getImageProjectId,
-	getVersionProjectId,
-	getCommentProjectId,
-	getMemberRole,
-	roleMeets,
-} from "../projects/access"
-import { ProjectRole, ProxyStatus } from "@prisma/client"
-
-const requireUserId = (req: Request, res: Response): string | null => {
-	const userId = (req.user as AuthenticatedUser)?.id
-	if (!userId) {
-		res.status(401).json({ message: "Unauthorized" })
-		return null
-	}
-	return userId
-}
-
-const denyUnlessRole = async (
-	res: Response,
-	projectId: string | null,
-	userId: string,
-	minimum: ProjectRole
-): Promise<boolean> => {
-	if (!projectId) {
-		res.status(404).json({ message: "Not found" })
-		return false
-	}
-	const role = await getMemberRole(projectId, userId)
-	if (!role) {
-		res.status(403).json({ message: "You are not a member of this project" })
-		return false
-	}
-	if (!roleMeets(role, minimum)) {
-		res.status(403).json({ message: "Your project role does not allow this" })
-		return false
-	}
-	return true
-}
-
-const authorizeProject = async (
-	req: Request,
-	res: Response,
-	projectId: string,
-	minimum: ProjectRole = "VIEWER"
-): Promise<string | null> => {
-	const userId = requireUserId(req, res)
-	if (!userId) return null
-	return (await denyUnlessRole(res, projectId, userId, minimum)) ? userId : null
-}
-
-const authorizeImage = async (
-	req: Request,
-	res: Response,
-	imageId: string,
-	minimum: ProjectRole = "VIEWER"
-): Promise<string | null> => {
-	const userId = requireUserId(req, res)
-	if (!userId) return null
-	return (await denyUnlessRole(
-		res,
-		await getImageProjectId(imageId),
-		userId,
-		minimum
-	))
-		? userId
-		: null
-}
-
-const authorizeVersion = async (
-	req: Request,
-	res: Response,
-	versionId: string,
-	minimum: ProjectRole = "VIEWER"
-): Promise<string | null> => {
-	const userId = requireUserId(req, res)
-	if (!userId) return null
-	return (await denyUnlessRole(
-		res,
-		await getVersionProjectId(versionId),
-		userId,
-		minimum
-	))
-		? userId
-		: null
-}
-
-const authorizeComment = async (
-	req: Request,
-	res: Response,
-	commentId: string,
-	minimum: ProjectRole = "VIEWER"
-): Promise<string | null> => {
-	const userId = requireUserId(req, res)
-	if (!userId) return null
-	return (await denyUnlessRole(
-		res,
-		await getCommentProjectId(commentId),
-		userId,
-		minimum
-	))
-		? userId
-		: null
-}
+import { ProxyStatus } from "@prisma/client"
 
 const withLatestVersion = (
 	image: NonNullable<Awaited<ReturnType<typeof imageService.getImageById>>>
@@ -131,55 +27,73 @@ const withLatestVersion = (
 
 type UploadFields = Record<string, Express.Multer.File[] | undefined>
 
-const discardStagedFiles = async (
-	files: Express.Multer.File[]
-): Promise<void> => {
-	await Promise.all(
-		files.map((file) => fs.promises.unlink(file.path).catch(() => undefined))
-	)
+interface StoredMediaFiles {
+	url: string
+	thumbnailUrl: string | null
+	modelProxyUrl: string | null
+}
+
+const storeUploadedFile = async (
+	file: Express.Multer.File
+): Promise<string> =>
+	storage.store({
+		path: file.path,
+		originalName: file.originalname,
+		mimeType: file.mimetype,
+	})
+
+const proxyStatusFor = (
+	transcodeSource: string | null,
+	modelProxyUrl: string | null
+): ProxyStatus | null =>
+	transcodeSource
+		? ProxyStatus.PENDING
+		: modelProxyUrl
+			? ProxyStatus.READY
+			: null
+
+const scheduleRendition = (
+	versionId: string,
+	sourcePath: string,
+	mediaType: string,
+	hasPoster: boolean
+): void => {
+	if (mediaType === "VIDEO") {
+		enqueueVideoProxy({ versionId, sourcePath, needsPoster: !hasPoster })
+		return
+	}
+	enqueueImageRendition({ versionId, sourcePath })
 }
 
 export const uploadImage = async (
 	req: Request,
 	res: Response
 ): Promise<void> => {
-	const { projectId } = req.params
-	const userId = await authorizeProject(req, res, projectId, "EDITOR")
-	if (!userId) return
-
+	const { userId, projectId } = authorizedScope(res)
 	const fields = (req.files ?? {}) as UploadFields
 	const files = fields.images ?? []
 	const thumbnails = fields.thumbnails ?? []
 	const modelProxies = fields.modelProxies ?? []
-	if (files.length === 0) {
-		await discardStagedFiles([...thumbnails, ...modelProxies])
-		res.status(400).send("No files uploaded.")
-		return
-	}
 
-	let metas
+	const storedUrls: string[] = []
+	const stagedSources: (string | null)[] = []
+
 	try {
-		metas = parseFilesMeta(
+		if (files.length === 0) {
+			throw new ValidationError("No files uploaded.")
+		}
+
+		const metas = parseFilesMeta(
 			req.body.filesMeta,
 			files.length,
 			{ thumbnails: thumbnails.length, modelProxies: modelProxies.length },
 			req.body.duration ? Number(req.body.duration) : null
 		)
-	} catch (error) {
-		await discardStagedFiles([...files, ...thumbnails, ...modelProxies])
-		if (error instanceof AppError) {
-			res.status(error.statusCode).json({ message: error.message })
-			return
-		}
-		throw error
-	}
 
-	const storedUrls: string[] = []
-	const stagedVideoSources: (string | null)[] = []
-	try {
 		const imagePayloads = []
 		let thumbnailIndex = 0
 		let modelProxyIndex = 0
+
 		for (const [index, file] of files.entries()) {
 			const mediaType = detectMediaType(file.mimetype)
 			const needsRendition =
@@ -187,67 +101,54 @@ export const uploadImage = async (
 			const transcodeSource = needsRendition
 				? await stageVideoForProcessing(file.path)
 				: null
-			stagedVideoSources.push(transcodeSource)
+			stagedSources.push(transcodeSource)
 
-			const url = await storage.store({
-				path: file.path,
-				originalName: file.originalname,
-				mimeType: file.mimetype,
-			})
-			storedUrls.push(url)
+			const stored: StoredMediaFiles = {
+				url: await storeUploadedFile(file),
+				thumbnailUrl: null,
+				modelProxyUrl: null,
+			}
+			storedUrls.push(stored.url)
 
-			let thumbnailUrl: string | null = null
 			if (metas[index].hasThumbnail) {
-				const thumbnail = thumbnails[thumbnailIndex++]
-				thumbnailUrl = await storage.store({
-					path: thumbnail.path,
-					originalName: thumbnail.originalname,
-					mimeType: thumbnail.mimetype,
-				})
-				storedUrls.push(thumbnailUrl)
+				stored.thumbnailUrl = await storeUploadedFile(
+					thumbnails[thumbnailIndex++]
+				)
+				storedUrls.push(stored.thumbnailUrl)
 			}
 
-			let modelProxyUrl: string | null = null
 			if (metas[index].hasModelProxy) {
-				const converted = modelProxies[modelProxyIndex++]
-				modelProxyUrl = await storage.store({
-					path: converted.path,
-					originalName: converted.originalname,
-					mimeType: converted.mimetype,
-				})
-				storedUrls.push(modelProxyUrl)
+				stored.modelProxyUrl = await storeUploadedFile(
+					modelProxies[modelProxyIndex++]
+				)
+				storedUrls.push(stored.modelProxyUrl)
 			}
 
 			imagePayloads.push({
-				url,
+				url: stored.url,
 				name: file.originalname,
 				projectId,
 				mediaType,
 				duration: metas[index].duration,
-				thumbnailUrl,
-				proxyUrl: modelProxyUrl,
-				proxyStatus: transcodeSource
-					? ProxyStatus.PENDING
-					: modelProxyUrl
-						? ProxyStatus.READY
-						: null,
+				thumbnailUrl: stored.thumbnailUrl,
+				proxyUrl: stored.modelProxyUrl,
+				proxyStatus: proxyStatusFor(transcodeSource, stored.modelProxyUrl),
 			})
 		}
 
 		const created = await imageService.addImagesToProject(imagePayloads)
+
 		created.forEach((image, index) => {
-			const sourcePath = stagedVideoSources[index]
+			const sourcePath = stagedSources[index]
 			const firstVersion = image.versions[0]
 			if (!sourcePath || !firstVersion) return
-			if (imagePayloads[index].mediaType === "VIDEO") {
-				enqueueVideoProxy({
-					versionId: firstVersion.id,
-					sourcePath,
-					needsPoster: !imagePayloads[index].thumbnailUrl,
-				})
-			} else {
-				enqueueImageRendition({ versionId: firstVersion.id, sourcePath })
-			}
+			scheduleRendition(
+				firstVersion.id,
+				sourcePath,
+				imagePayloads[index].mediaType,
+				!!imagePayloads[index].thumbnailUrl
+			)
+			stagedSources[index] = null
 		})
 
 		await recordAudit({
@@ -255,71 +156,19 @@ export const uploadImage = async (
 			targetType: "project",
 			targetId: projectId,
 			actorId: userId,
-			metadata: { files: imagePayloads.map((p) => p.name) },
+			metadata: { files: imagePayloads.map((payload) => payload.name) },
 			ipAddress: requestIp(req),
 		})
 
-		if (created.length > 0) {
-			const newImages = await imageService.getImagesForProject(projectId)
-			res.status(201).json(newImages)
-		} else {
-			res.status(201).json({ count: 0 })
-		}
+		res.status(201).json(await imageService.getImagesForProject(projectId))
 	} catch (error) {
 		await Promise.all(storedUrls.map((url) => storage.remove(url)))
 		await Promise.all(
-			stagedVideoSources
+			stagedSources
 				.filter((source): source is string => !!source)
 				.map(discardStagedVideo)
 		)
-		res.status(500).json({ message: "Error uploading image", error })
-	}
-}
-
-export const getProjectImages = async (
-	req: Request,
-	res: Response
-): Promise<void> => {
-	try {
-		const { projectId } = req.params
-		if (!(await authorizeProject(req, res, projectId))) return
-		const images = await imageService.getImagesForProject(projectId)
-		res.status(200).json(images)
-	} catch (error) {
-		res.status(500).json({ message: "Error fetching images", error })
-	}
-}
-
-export const getImage = async (req: Request, res: Response): Promise<void> => {
-	try {
-		const { id } = req.params
-		if (!(await authorizeImage(req, res, id))) return
-		const image = await imageService.getImageById(id)
-		if (!image) {
-			res.status(404).json({ message: "Image not found" })
-			return
-		}
-		res.status(200).json(withLatestVersion(image))
-	} catch (error) {
-		res.status(500).json({ message: "Error fetching image", error })
-	}
-}
-
-export const getImageVersion = async (
-	req: Request,
-	res: Response
-): Promise<void> => {
-	try {
-		const { versionId } = req.params
-		if (!(await authorizeVersion(req, res, versionId))) return
-		const version = await imageService.getImageVersionById(versionId)
-		if (!version) {
-			res.status(404).json({ message: "Image version not found" })
-			return
-		}
-		res.status(200).json(version)
-	} catch (error) {
-		res.status(500).json({ message: "Error fetching image version", error })
+		respondWithError(res, error, "upload media")
 	}
 }
 
@@ -327,25 +176,21 @@ export const uploadImageVersion = async (
 	req: Request,
 	res: Response
 ): Promise<void> => {
+	const { userId } = authorizedScope(res)
 	const { imageId } = req.params
-	const userId = await authorizeImage(req, res, imageId, "EDITOR")
-	if (!userId) return
-
 	const fields = (req.files ?? {}) as UploadFields
 	const file = fields.image?.[0]
 	const thumbnail = fields.thumbnail?.[0]
 	const modelProxy = fields.modelProxy?.[0]
-	if (!file) {
-		await discardStagedFiles(
-			[thumbnail, modelProxy].filter((f): f is Express.Multer.File => !!f)
-		)
-		res.status(400).send("No file uploaded.")
-		return
-	}
 
 	const storedUrls: string[] = []
 	let transcodeSource: string | null = null
+
 	try {
+		if (!file) {
+			throw new ValidationError("No file uploaded.")
+		}
+
 		const mediaType = detectMediaType(file.mimetype)
 		const needsRendition =
 			mediaType === "VIDEO" || needsBrowserSafeImageRendition(file.mimetype)
@@ -353,30 +198,18 @@ export const uploadImageVersion = async (
 			? await stageVideoForProcessing(file.path)
 			: null
 
-		const url = await storage.store({
-			path: file.path,
-			originalName: file.originalname,
-			mimeType: file.mimetype,
-		})
+		const url = await storeUploadedFile(file)
 		storedUrls.push(url)
 
 		let thumbnailUrl: string | null = null
 		if (thumbnail) {
-			thumbnailUrl = await storage.store({
-				path: thumbnail.path,
-				originalName: thumbnail.originalname,
-				mimeType: thumbnail.mimetype,
-			})
+			thumbnailUrl = await storeUploadedFile(thumbnail)
 			storedUrls.push(thumbnailUrl)
 		}
 
 		let modelProxyUrl: string | null = null
 		if (modelProxy) {
-			modelProxyUrl = await storage.store({
-				path: modelProxy.path,
-				originalName: modelProxy.originalname,
-				mimeType: modelProxy.mimetype,
-			})
+			modelProxyUrl = await storeUploadedFile(modelProxy)
 			storedUrls.push(modelProxyUrl)
 		}
 
@@ -386,25 +219,11 @@ export const uploadImageVersion = async (
 			duration: req.body.duration ? Number(req.body.duration) : null,
 			thumbnailUrl,
 			proxyUrl: modelProxyUrl,
-			proxyStatus: transcodeSource
-				? ProxyStatus.PENDING
-				: modelProxyUrl
-					? ProxyStatus.READY
-					: null,
+			proxyStatus: proxyStatusFor(transcodeSource, modelProxyUrl),
 		})
+
 		if (transcodeSource) {
-			if (mediaType === "VIDEO") {
-				enqueueVideoProxy({
-					versionId: version.id,
-					sourcePath: transcodeSource,
-					needsPoster: !thumbnailUrl,
-				})
-			} else {
-				enqueueImageRendition({
-					versionId: version.id,
-					sourcePath: transcodeSource,
-				})
-			}
+			scheduleRendition(version.id, transcodeSource, mediaType, !!thumbnailUrl)
 			transcodeSource = null
 		}
 
@@ -418,15 +237,48 @@ export const uploadImageVersion = async (
 		})
 
 		const image = await imageService.getImageById(imageId)
-		if (!image) {
-			res.status(404).json({ message: "Image not found" })
-			return
-		}
+		if (!image) throw new NotFoundError("Image not found")
 		res.status(201).json(withLatestVersion(image))
 	} catch (error) {
 		await Promise.all(storedUrls.map((url) => storage.remove(url)))
 		if (transcodeSource) await discardStagedVideo(transcodeSource)
-		res.status(500).json({ message: "Error uploading image version", error })
+		respondWithError(res, error, "upload media version")
+	}
+}
+
+export const getProjectImages = async (
+	req: Request,
+	res: Response
+): Promise<void> => {
+	try {
+		const { projectId } = authorizedScope(res)
+		const images = await imageService.getImagesForProject(projectId)
+		res.status(200).json(images)
+	} catch (error) {
+		respondWithError(res, error, "list project media")
+	}
+}
+
+export const getImage = async (req: Request, res: Response): Promise<void> => {
+	try {
+		const image = await imageService.getImageById(req.params.id)
+		if (!image) throw new NotFoundError("Image not found")
+		res.status(200).json(withLatestVersion(image))
+	} catch (error) {
+		respondWithError(res, error, "fetch image")
+	}
+}
+
+export const getImageVersion = async (
+	req: Request,
+	res: Response
+): Promise<void> => {
+	try {
+		const version = await imageService.getImageVersionById(req.params.versionId)
+		if (!version) throw new NotFoundError("Image version not found")
+		res.status(200).json(version)
+	} catch (error) {
+		respondWithError(res, error, "fetch image version")
 	}
 }
 
@@ -435,20 +287,18 @@ export const deleteImage = async (
 	res: Response
 ): Promise<void> => {
 	try {
-		const { id } = req.params
-		const userId = await authorizeImage(req, res, id, "EDITOR")
-		if (!userId) return
-		await imageService.deleteImage(id)
+		const { userId } = authorizedScope(res)
+		await imageService.deleteImage(req.params.id)
 		await recordAudit({
 			action: "media.deleted",
 			targetType: "image",
-			targetId: id,
+			targetId: req.params.id,
 			actorId: userId,
 			ipAddress: requestIp(req),
 		})
 		res.status(204).send()
 	} catch (error) {
-		res.status(500).json({ message: "Error deleting image", error })
+		respondWithError(res, error, "delete image")
 	}
 }
 
@@ -457,27 +307,18 @@ export const deleteImageVersion = async (
 	res: Response
 ): Promise<void> => {
 	try {
-		const { versionId } = req.params
-		const userId = await authorizeVersion(req, res, versionId, "EDITOR")
-		if (!userId) return
-		await imageService.deleteImageVersion(versionId)
+		const { userId } = authorizedScope(res)
+		await imageService.deleteImageVersion(req.params.versionId)
 		await recordAudit({
 			action: "media.version_deleted",
 			targetType: "image_version",
-			targetId: versionId,
+			targetId: req.params.versionId,
 			actorId: userId,
 			ipAddress: requestIp(req),
 		})
 		res.status(204).send()
 	} catch (error) {
-		if (
-			error instanceof Error &&
-			error.message === "Cannot delete the only version of an image"
-		) {
-			res.status(400).json({ message: error.message })
-		} else {
-			res.status(500).json({ message: "Error deleting image version", error })
-		}
+		respondWithError(res, error, "delete image version")
 	}
 }
 
@@ -486,22 +327,20 @@ export const updateImage = async (
 	res: Response
 ): Promise<void> => {
 	try {
-		const { id } = req.params
-		const userId = await authorizeImage(req, res, id, "EDITOR")
-		if (!userId) return
+		const { userId } = authorizedScope(res)
 		const { name } = req.body
-		const updatedImage = await imageService.updateImage(id, { name })
+		const updated = await imageService.updateImage(req.params.id, { name })
 		await recordAudit({
 			action: "media.updated",
 			targetType: "image",
-			targetId: id,
+			targetId: req.params.id,
 			actorId: userId,
 			metadata: { name },
 			ipAddress: requestIp(req),
 		})
-		res.status(200).json(updatedImage)
+		res.status(200).json(updated)
 	} catch (error) {
-		res.status(500).json({ message: "Error updating image", error })
+		respondWithError(res, error, "rename image")
 	}
 }
 
@@ -510,133 +349,12 @@ export const updateImageVersion = async (
 	res: Response
 ): Promise<void> => {
 	try {
-		const { versionId } = req.params
-		if (!(await authorizeVersion(req, res, versionId, "EDITOR"))) return
-		const { versionName } = req.body
-		const updatedVersion = await imageService.updateImageVersion(versionId, {
-			versionName,
-		})
-		res.status(200).json(updatedVersion)
-	} catch (error) {
-		res.status(500).json({ message: "Error updating image version", error })
-	}
-}
-
-export const addComment = async (
-	req: Request,
-	res: Response
-): Promise<void> => {
-	try {
-		const { imageVersionId } = req.params
-		const userId = await authorizeVersion(req, res, imageVersionId, "MEMBER")
-		if (!userId) return
-
-		const {
-			content,
-			parentId,
-			annotation,
-			timestamp,
-			timestampEnd,
-			page,
-			modelAnchor,
-		} = req.body
-
-		const comment = await CommentsService.createComment({
-			content,
-			imageVersionId,
-			userId,
-			parentId: parentId || null,
-			annotation: annotation || null,
-			timestamp: typeof timestamp === "number" ? timestamp : null,
-			timestampEnd: typeof timestampEnd === "number" ? timestampEnd : null,
-			page: typeof page === "number" ? page : null,
-			modelAnchor: modelAnchor ?? null,
-		})
-		res.status(201).json(comment)
-	} catch (error) {
-		if (error instanceof AppError) {
-			res.status(error.statusCode).json({ message: error.message })
-		} else {
-			res.status(500).json({ message: "Error adding comment", error })
-		}
-	}
-}
-
-export const getComments = async (
-	req: Request,
-	res: Response
-): Promise<void> => {
-	try {
-		const { imageVersionId } = req.params
-		const userId = await authorizeVersion(req, res, imageVersionId)
-		if (!userId) return
-		const comments = await CommentsService.getCommentsByImageVersionId(
-			imageVersionId,
-			userId
+		const updated = await imageService.updateImageVersion(
+			req.params.versionId,
+			{ versionName: req.body.versionName }
 		)
-		res.status(200).json(comments)
+		res.status(200).json(updated)
 	} catch (error) {
-		res.status(500).json({ message: "Error fetching comments", error })
-	}
-}
-
-export const deleteComment = async (
-	req: Request,
-	res: Response
-): Promise<void> => {
-	try {
-		const userId = await authorizeComment(req, res, req.params.commentId, "MEMBER")
-		if (!userId) return
-
-		await CommentsService.deleteComment(req.params.commentId, userId)
-		res.status(204).send()
-	} catch (error) {
-		if (error instanceof AppError) {
-			res.status(error.statusCode).json({ message: error.message })
-		} else {
-			res.status(500).json({ message: "Error deleting comment", error })
-		}
-	}
-}
-
-export const toggleLikeComment = async (
-	req: Request,
-	res: Response
-): Promise<void> => {
-	try {
-		const userId = await authorizeComment(req, res, req.params.commentId, "MEMBER")
-		if (!userId) return
-
-		const result = await CommentsService.toggleLike(
-			req.params.commentId,
-			userId
-		)
-		res.status(200).json(result)
-	} catch (error) {
-		res.status(500).json({ message: "Error toggling comment like", error })
-	}
-}
-
-export const toggleResolveComment = async (
-	req: Request,
-	res: Response
-): Promise<void> => {
-	try {
-		const userId = await authorizeComment(req, res, req.params.commentId, "MEMBER")
-		if (!userId) return
-
-		const result = await CommentsService.toggleResolved(
-			req.params.commentId,
-			userId
-		)
-		res.status(200).json(result)
-	} catch (error) {
-		if (error instanceof AppError) {
-			res.status(error.statusCode).json({ message: error.message })
-		} else {
-			res
-				.status(500)
-				.json({ message: "Error toggling comment resolved status", error })
-		}
+		respondWithError(res, error, "rename image version")
 	}
 }

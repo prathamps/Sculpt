@@ -1,21 +1,29 @@
 import safeRedis from "./redis"
+import { logger } from "./logger"
 
-const REDIS_MIRROR_KEY = "online_users"
+const PRESENCE_TTL_SECONDS = 90
+const PRESENCE_HEARTBEAT_MS = 30000
 
-const authoritativeLocalSocketsByUserId = new Map<string, Set<string>>()
+const presenceKey = (userId: string): string => `presence:user:${userId}`
+
+const localSocketsByUserId = new Map<string, Set<string>>()
 
 export const markOnline = async (
 	userId: string,
 	socketId: string
 ): Promise<void> => {
 	if (!userId) return
-	let set = authoritativeLocalSocketsByUserId.get(userId)
-	if (!set) {
-		set = new Set()
-		authoritativeLocalSocketsByUserId.set(userId, set)
+
+	let sockets = localSocketsByUserId.get(userId)
+	if (!sockets) {
+		sockets = new Set()
+		localSocketsByUserId.set(userId, sockets)
 	}
-	set.add(socketId)
-	await safeRedis.sAdd(REDIS_MIRROR_KEY, userId)
+	sockets.add(socketId)
+
+	const key = presenceKey(userId)
+	await safeRedis.sAdd(key, socketId)
+	await safeRedis.expire(key, PRESENCE_TTL_SECONDS)
 }
 
 export const markOffline = async (
@@ -23,18 +31,37 @@ export const markOffline = async (
 	socketId: string
 ): Promise<void> => {
 	if (!userId) return
-	const set = authoritativeLocalSocketsByUserId.get(userId)
-	if (!set) return
-	set.delete(socketId)
-	if (set.size === 0) {
-		authoritativeLocalSocketsByUserId.delete(userId)
-		await safeRedis.sRem(REDIS_MIRROR_KEY, userId)
+
+	const sockets = localSocketsByUserId.get(userId)
+	if (sockets) {
+		sockets.delete(socketId)
+		if (sockets.size === 0) localSocketsByUserId.delete(userId)
+	}
+
+	const key = presenceKey(userId)
+	await safeRedis.sRem(key, socketId)
+	if ((await safeRedis.sCard(key)) === 0) {
+		await safeRedis.del(key)
 	}
 }
 
-export const isUserOnline = (userId: string): boolean => {
-	return authoritativeLocalSocketsByUserId.has(userId)
+export const isUserOnline = async (userId: string): Promise<boolean> => {
+	if (localSocketsByUserId.has(userId)) return true
+	return Number(await safeRedis.exists(presenceKey(userId))) > 0
 }
 
-export const getOnlineUserIds = (): string[] =>
-	Array.from(authoritativeLocalSocketsByUserId.keys())
+export const startPresenceHeartbeat = (): NodeJS.Timeout => {
+	const refresh = async () => {
+		for (const userId of localSocketsByUserId.keys()) {
+			await safeRedis.expire(presenceKey(userId), PRESENCE_TTL_SECONDS)
+		}
+	}
+
+	const timer = setInterval(() => {
+		refresh().catch((error) =>
+			logger.error("Presence heartbeat failed", error)
+		)
+	}, PRESENCE_HEARTBEAT_MS)
+	timer.unref()
+	return timer
+}

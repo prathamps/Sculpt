@@ -74,9 +74,11 @@ export const buildImageReport = async (
 	let resolvedComments = 0
 
 	const versions: ReportVersion[] = image.versions.map((version) => {
+		let versionAnnotations = 0
 		const comments: ReportComment[] = version.comments.map((c) => {
 			totalComments += 1
 			if (c.resolved) resolvedComments += 1
+			versionAnnotations += countAnnotations(c.annotation)
 			return {
 				id: c.id,
 				author: c.user?.name || c.user?.email || "Unknown",
@@ -99,9 +101,7 @@ export const buildImageReport = async (
 			versionNumber: version.versionNumber,
 			mediaType: version.mediaType,
 			url: version.url,
-			annotationCount: Array.isArray(version.annotations)
-				? version.annotations.length
-				: 0,
+			annotationCount: versionAnnotations,
 			comments,
 		}
 	})
@@ -124,12 +124,15 @@ export const buildImageReport = async (
 	}
 }
 
+const SPREADSHEET_FORMULA_PREFIX = /^[=+\-@\t\r]/
+
 const csvEscape = (value: unknown): string => {
-	const s = value === null || value === undefined ? "" : String(value)
-	if (/[",\n]/.test(s)) {
-		return `"${s.replace(/"/g, '""')}"`
+	const raw = value === null || value === undefined ? "" : String(value)
+	const neutralized = SPREADSHEET_FORMULA_PREFIX.test(raw) ? `'${raw}` : raw
+	if (/[",\n\r\t]/.test(neutralized)) {
+		return `"${neutralized.replace(/"/g, '""')}"`
 	}
-	return s
+	return neutralized
 }
 
 export const buildImageReportCsv = (report: ImageReport): string => {

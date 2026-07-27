@@ -29,6 +29,10 @@ import { Card, CardContent } from "./ui/card"
 import { MoreVertical } from "lucide-react"
 import { formatBytes } from "@/lib/utils"
 import { Button } from "./ui/button"
+import { ConfirmationModal } from "./ConfirmationModal"
+import { api } from "@/lib/api"
+import { describeError } from "@/lib/errors"
+import { toast } from "sonner"
 
 interface FileCardProps {
 	file: File
@@ -171,26 +175,39 @@ export function FileCard({
 	linkTabIndex,
 }: FileCardProps) {
 	const [isRenameModalOpen, setRenameModalOpen] = useState(false)
+	const [isConfirmingDelete, setConfirmingDelete] = useState(false)
+	const [isDeleting, setIsDeleting] = useState(false)
 	const mediaType: MediaType = file.latestVersion?.mediaType ?? "IMAGE"
 	const fileCreatedAt = new Date(file.createdAt)
 	const formattedDate = formatDistanceToNow(fileCreatedAt, { addSuffix: true })
-	const URI = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001"
+	const versionCount = file.versionCount ?? 1
 
 	const handleDelete = async () => {
+		setIsDeleting(true)
 		try {
-			const res = await fetch(`${URI}/api/images/${file.id}`, {
-				method: "DELETE",
-				credentials: "include",
-			})
-			if (res.ok) {
-				onProjectChanged()
-			} else {
-				alert("Failed to delete file.")
-			}
-		} catch {
-			alert("An error occurred while deleting the file.")
+			await api.delete(`/api/images/${file.id}`)
+			toast.success(`Deleted "${file.name}".`)
+			setConfirmingDelete(false)
+			onProjectChanged()
+		} catch (error) {
+			toast.error(describeError(error, "Could not delete this file."))
+		} finally {
+			setIsDeleting(false)
 		}
 	}
+
+	const deleteConfirmation = (
+		<ConfirmationModal
+			isOpen={isConfirmingDelete}
+			onClose={() => setConfirmingDelete(false)}
+			onConfirm={handleDelete}
+			title="Delete file"
+			description={`Delete "${file.name}"? This removes ${
+				versionCount === 1 ? "its version" : `all ${versionCount} versions`
+			}, every comment and annotation on it. This cannot be undone.`}
+			isConfirming={isDeleting}
+		/>
+	)
 
 	if (viewMode === "list") {
 		return (
@@ -261,7 +278,7 @@ export function FileCard({
 								</DropdownMenuItem>
 								<DropdownMenuSeparator />
 								<DropdownMenuItem
-									onClick={handleDelete}
+									onClick={() => setConfirmingDelete(true)}
 									className="text-destructive"
 								>
 									<Trash2Icon className="mr-2 h-4 w-4" />
@@ -277,6 +294,7 @@ export function FileCard({
 					file={file}
 					onFileRenamed={onProjectChanged}
 				/>
+				{deleteConfirmation}
 			</>
 		)
 	}
@@ -332,7 +350,7 @@ export function FileCard({
 									Rename
 								</DropdownMenuItem>
 								<DropdownMenuItem
-									onClick={handleDelete}
+									onClick={() => setConfirmingDelete(true)}
 									className="text-destructive focus:text-destructive"
 								>
 									<Trash2Icon className="mr-2 h-4 w-4" />
@@ -349,6 +367,7 @@ export function FileCard({
 				file={file}
 				onFileRenamed={onProjectChanged}
 			/>
+			{deleteConfirmation}
 		</>
 	)
 }

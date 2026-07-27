@@ -16,8 +16,9 @@ import { useAuth } from "@/context/AuthContext"
 import { useSocket } from "@/context/SocketContext"
 import { useRouter } from "next/navigation"
 import { cn } from "@/lib/utils"
-
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001"
+import { api } from "@/lib/api"
+import { describeError } from "@/lib/errors"
+import { toast } from "sonner"
 
 interface Notification {
 	id: string
@@ -36,7 +37,7 @@ interface Notification {
 
 export function NotificationDropdown() {
 	const { user } = useAuth()
-	const { socket, isConnected } = useSocket()
+	const { socket, isConnected, reconnectCount } = useSocket()
 	const router = useRouter()
 	const [notifications, setNotifications] = useState<Notification[]>([])
 	const [hasUnread, setHasUnread] = useState(false)
@@ -47,30 +48,24 @@ export function NotificationDropdown() {
 
 		const fetchNotifications = async () => {
 			try {
-				const response = await fetch(`${API_URL}/api/notifications`, {
-					credentials: "include",
-				})
-
-				if (response.ok) {
-					const data = await response.json()
-					setNotifications(data)
-					setHasUnread(data.some((n: Notification) => !n.read))
-				}
-			} catch (error) {
-				console.error("Failed to fetch notifications:", error)
+				const page = await api.get<{
+					notifications: Notification[]
+					unread: number
+				}>("/api/notifications")
+				setNotifications(page.notifications)
+				setHasUnread(page.unread > 0)
+			} catch {
+				/* the bell simply stays empty until the next poll or socket event */
 			}
 		}
 
-		fetchNotifications()
-	}, [user])
+		void fetchNotifications()
+	}, [user, reconnectCount])
 
 	useEffect(() => {
 		if (!socket || !isConnected || !user) return
 
-		console.log("Setting up notification listeners for user", user.id)
-
 		const handleNotification = (notification: Notification) => {
-			console.log("New notification received:", notification)
 			setNotifications((prev) => {
 				if (prev.some((n) => n.id === notification.id)) {
 					return prev
@@ -86,7 +81,6 @@ export function NotificationDropdown() {
 			metadata?: Notification["metadata"]
 		}) => {
 			if (data.type === "notification") {
-				console.log("Project notification received:", data)
 				const notification: Notification = {
 					id: `project-${Date.now()}`,
 					content: data.content,
@@ -128,26 +122,20 @@ export function NotificationDropdown() {
 			}
 
 			if (!notification.id.startsWith("project-")) {
-				await fetch(`${API_URL}/api/notifications/${notification.id}/read`, {
-					method: "PUT",
-					credentials: "include",
-				})
+				await api.put(`/api/notifications/${notification.id}/read`)
 			}
-		} catch (error) {
-			console.error("Failed to mark notification as read:", error)
+		} catch {
+			/* navigation already happened; the unread badge self-corrects on reload */
 		}
 	}
 
 	const markAllAsRead = async () => {
 		try {
-			await fetch(`${API_URL}/api/notifications/read-all`, {
-				method: "PUT",
-				credentials: "include",
-			})
+			await api.put("/api/notifications/read-all")
 			setNotifications(notifications.map((n) => ({ ...n, read: true })))
 			setHasUnread(false)
 		} catch (error) {
-			console.error("Failed to mark all notifications as read:", error)
+			toast.error(describeError(error, "Could not mark notifications as read."))
 		}
 	}
 

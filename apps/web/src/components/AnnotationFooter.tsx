@@ -4,13 +4,16 @@ import { useState } from "react"
 import { Send, Undo, Redo, Trash2, X, FileText, MapPin } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { AnnotationToolbar } from "./AnnotationToolbar"
 import { AnnotationTool } from "@/app/project/[projectId]/image/[imageId]/page"
 import { cn, formatVideoTime } from "@/lib/utils"
 import { useAuth } from "@/context/AuthContext"
 import { Annotation, ModelAnchor } from "@/types"
 import { Clock } from "lucide-react"
+import { UserAvatar } from "@/components/UserAvatar"
+import { toast } from "sonner"
+import { api } from "@/lib/api"
+import { describeError } from "@/lib/errors"
 
 export interface ComposeRange {
 	start: number | null
@@ -67,7 +70,6 @@ export function AnnotationFooter({
 	const [comment, setComment] = useState("")
 	const [isSending, setIsSending] = useState(false)
 	const { user } = useAuth()
-	const URI = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001"
 
 	const isVideoContext = typeof livePlayheadSeconds === "number"
 	const isModelContext = modelAnchor !== undefined
@@ -90,35 +92,21 @@ export function AnnotationFooter({
 					? [currentAnnotation]
 					: undefined
 
-			const res = await fetch(
-				`${URI}/api/images/versions/${imageVersionId}/comments`,
-				{
-					method: "POST",
-					headers: {
-						"Content-Type": "application/json",
-					},
-					credentials: "include",
-					body: JSON.stringify({
-						content: comment,
-						annotation: annotationsToSend,
-						...(typeof anchorStart === "number"
-							? { timestamp: anchorStart }
-							: {}),
-						...(hasRange ? { timestampEnd: anchorEnd } : {}),
-						...(typeof page === "number" ? { page } : {}),
-						...(modelAnchor ? { modelAnchor } : {}),
-					}),
-				}
-			)
+			await api.post(`/api/images/versions/${imageVersionId}/comments`, {
+				content: comment,
+				annotation: annotationsToSend,
+				...(typeof anchorStart === "number" ? { timestamp: anchorStart } : {}),
+				...(hasRange ? { timestampEnd: anchorEnd } : {}),
+				...(typeof page === "number" ? { page } : {}),
+				...(modelAnchor ? { modelAnchor } : {}),
+			})
 
-			if (res.ok) {
-				setComment("")
-				onClear()
-				onClearRange?.()
-				onCommentAdded()
-			}
+			setComment("")
+			onClear()
+			onClearRange?.()
+			onCommentAdded()
 		} catch (error) {
-			console.error("Failed to send comment:", error)
+			toast.error(describeError(error, "Could not post your comment."))
 		} finally {
 			setIsSending(false)
 		}
@@ -127,15 +115,12 @@ export function AnnotationFooter({
 	return (
 		<div className="space-y-3 border-t border-border/40 bg-card p-4">
 			<div className="flex items-start gap-2">
-				<Avatar className="h-8 w-8 flex-shrink-0">
-					<AvatarImage
-						src={`https://api.dicebear.com/7.x/micah/svg?seed=${
-							user?.email || "user"
-						}`}
-						alt={user?.name || "User"}
-					/>
-					<AvatarFallback>{user?.name?.charAt(0) || "U"}</AvatarFallback>
-				</Avatar>
+				<UserAvatar
+					className="h-8 w-8 flex-shrink-0"
+					name={user?.name}
+					email={user?.email}
+					avatarUrl={user?.avatarUrl}
+				/>
 				<div className="relative flex-1">
 					<label htmlFor="comment-input" className="sr-only">
 						Add a comment

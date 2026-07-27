@@ -37,7 +37,6 @@ import {
 	Eye,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import {
 	DropdownMenu,
 	DropdownMenuContent,
@@ -69,6 +68,8 @@ import {
 import { useVersionComments } from "@/hooks/useVersionComments"
 import { useAnnotationHistory } from "@/hooks/useAnnotationHistory"
 import { usePresence } from "@/hooks/usePresence"
+import { ReviewPanel } from "@/components/ReviewPanel"
+import { UserAvatar } from "@/components/UserAvatar"
 import {
 	useVersionProcessingUpdates,
 	VersionProcessingUpdate,
@@ -130,7 +131,7 @@ const annotationsOf = (comment: Comment): Annotation[] =>
 
 function ProjectFileViewPageInner() {
 	const params = useParams()
-	const { isAuthenticated, loading } = useAuth()
+	const { isAuthenticated, loading, user } = useAuth()
 	const router = useRouter()
 	const pathname = usePathname()
 	const searchParams = useSearchParams()
@@ -554,10 +555,13 @@ function ProjectFileViewPageInner() {
 	)
 
 	const viewerStrip = useMemo(() => {
-		const byUser = new Map<string, { name: string }>()
+		const byUser = new Map<string, { name: string; avatarUrl?: string | null }>()
 		peers.forEach((p) => {
 			if (!byUser.has(p.user.id)) {
-				byUser.set(p.user.id, { name: p.user.name || "Someone" })
+				byUser.set(p.user.id, {
+					name: p.user.name || "Someone",
+					avatarUrl: p.user.avatarUrl ?? null,
+				})
 			}
 		})
 		return Array.from(byUser.values())
@@ -727,19 +731,17 @@ function ProjectFileViewPageInner() {
 						} viewing this version`}
 					>
 						{viewerStrip.slice(0, 5).map((viewer, i) => (
-							<Avatar
+							<span
 								key={`${viewer.name}-${i}`}
-								className="h-6 w-6 border-2 border-background"
 								title={`${viewer.name} is viewing`}
 							>
-								<AvatarImage
-									src={`https://api.dicebear.com/7.x/micah/svg?seed=${viewer.name}`}
-									alt=""
+								<UserAvatar
+									className="h-6 w-6 border-2 border-background"
+									fallbackClassName="text-[10px]"
+									name={viewer.name}
+									avatarUrl={viewer.avatarUrl}
 								/>
-								<AvatarFallback className="text-[10px]">
-									{viewer.name.charAt(0).toUpperCase()}
-								</AvatarFallback>
-							</Avatar>
+							</span>
 						))}
 						{viewerStrip.length > 5 && (
 							<div className="flex h-6 w-6 items-center justify-center rounded-full border-2 border-background bg-muted text-[10px]">
@@ -900,6 +902,7 @@ function ProjectFileViewPageInner() {
 										}}
 										seekRequest={seekRequest}
 										initialDuration={selectedVersion.duration}
+										frameRate={selectedVersion.frameRate ?? undefined}
 										annotations={canvasAnnotations}
 									/>
 									)
@@ -1012,6 +1015,16 @@ function ProjectFileViewPageInner() {
 							onGoToPage={isPdf ? handlePdfPageChange : undefined}
 							currentPage={isPdf ? currentPdfPage : null}
 							canReply={canComment}
+							reviewPanel={
+								selectedVersion ? (
+									<ReviewPanel
+										key={selectedVersion.id}
+										imageVersionId={selectedVersion.id}
+										canDecide={canComment}
+										currentUser={user}
+									/>
+								) : null
+							}
 						/>
 					)}
 				</div>

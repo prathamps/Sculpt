@@ -175,5 +175,8 @@ export const changeUserPassword = async (
 	if (!valid) throw new ForbiddenError("Your current password is incorrect.")
 
 	const hashed = await bcrypt.hash(newPassword, 10)
-	await prisma.user.update({ where: { id: userId }, data: { password: hashed } })
+	await prisma.user.update({
+		where: { id: userId },
+		data: { password: hashed, tokenVersion: { increment: 1 } },
+	})
 }

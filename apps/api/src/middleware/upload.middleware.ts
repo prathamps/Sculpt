@@ -1,8 +1,10 @@
 import multer from "multer"
 import path from "path"
 import fs from "fs"
-import { Request } from "express"
+import { randomBytes } from "crypto"
+import { Request, RequestHandler } from "express"
 import { uploadsDir } from "../storage"
+import { logger } from "../lib/logger"
 
 const stagingDir = path.join(uploadsDir, ".staging")
 
@@ -94,7 +96,7 @@ const staging = multer.diskStorage({
 		cb(null, stagingDir)
 	},
 	filename: (_req, file, cb) => {
-		const uniqueSuffix = Date.now() + "-" + Math.round(Math.random() * 1e9)
+		const uniqueSuffix = `${Date.now()}-${randomBytes(16).toString("hex")}`
 		cb(
 			null,
 			file.fieldname + "-" + uniqueSuffix + extensionFromDeclaredMime(file.mimetype)
@@ -132,6 +134,69 @@ export const upload = multer({
 	fileFilter: allowedMediaOnly,
 	limits: { fileSize: maxUploadMb * 1024 * 1024 },
 })
+
+const stagedFilesOf = (req: Request): Express.Multer.File[] => {
+	const files = req.files
+	if (!files) return []
+	if (Array.isArray(files)) return files
+	return Object.values(files).flat()
+}
+
+export const discardStagedUploadsWhenRequestEnds: RequestHandler = (
+	req,
+	res,
+	next
+) => {
+	let swept = false
+	const sweep = () => {
+		if (swept) return
+		swept = true
+		void Promise.all(
+			stagedFilesOf(req).map((file) =>
+				fs.promises.unlink(file.path).catch(() => undefined)
+			)
+		)
+	}
+	res.on("close", sweep)
+	res.on("finish", sweep)
+	next()
+}
+
+const STAGING_MAX_AGE_MS = 6 * 3600000
+const STAGING_REAP_INTERVAL_MS = 3600000
+
+export const reapAbandonedStagedUploads = async (): Promise<number> => {
+	const entries = await fs.promises.readdir(stagingDir).catch(() => [])
+	const cutoff = Date.now() - STAGING_MAX_AGE_MS
+	let removed = 0
+
+	for (const entry of entries) {
+		const fullPath = path.join(stagingDir, entry)
+		const stat = await fs.promises.stat(fullPath).catch(() => null)
+		if (!stat?.isFile() || stat.mtimeMs > cutoff) continue
+		await fs.promises.unlink(fullPath).catch(() => undefined)
+		removed++
+	}
+
+	return removed
+}
+
+export const startStagingReaper = (): NodeJS.Timeout => {
+	const reap = () =>
+		reapAbandonedStagedUploads()
+			.then((removed) => {
+				if (removed > 0) {
+					logger.warn("Reaped abandoned staged uploads", { removed })
+				}
+			})
+			.catch((error) => logger.error("Staging reaper failed", error))
+
+	void reap()
+
+	const timer = setInterval(reap, STAGING_REAP_INTERVAL_MS)
+	timer.unref()
+	return timer
+}
 
 export const detectMediaType = (
 	mimetype: string

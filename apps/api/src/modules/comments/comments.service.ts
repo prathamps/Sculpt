@@ -5,6 +5,7 @@ import { Comment, CommentLike, MediaType, User } from "@prisma/client"
 import { io } from "../../realtime/socket"
 import { NotificationService } from "../notifications/notification.service"
 import { ForbiddenError, NotFoundError, ValidationError } from "../../lib/errors"
+import { logger } from "../../lib/logger"
 
 type CommentWithLikesAndUser = Comment & {
 	likes: CommentLike[]
@@ -184,14 +185,10 @@ export class CommentsService {
 			isLikedByCurrentUser: false,
 		}
 
-		try {
-			io.to(`imageVersion:${data.imageVersionId}`).emit(
-				"new-comment",
-				commentWithExtras
-			)
-		} catch (socketError) {
-			console.error(`Socket error when emitting new comment: ${socketError}`)
-		}
+		io.to(`imageVersion:${data.imageVersionId}`).emit(
+			"new-comment",
+			commentWithExtras
+		)
 
 		await this.handleCommentNotifications(comment, data.userId)
 
@@ -202,58 +199,32 @@ export class CommentsService {
 		imageVersionId: string,
 		currentUserId?: string
 	): Promise<CommentWithLikesAndUser[]> {
-		try {
-			const comments = await prisma.comment.findMany({
-				where: {
-					imageVersionId,
-					parentId: null,
+		const comments = await prisma.comment.findMany({
+			where: { imageVersionId, parentId: null },
+			include: {
+				user: true,
+				likes: true,
+				replies: {
+					include: { user: true, likes: true },
+					orderBy: { createdAt: "asc" },
 				},
-				include: {
-					user: true,
-					likes: true,
-					replies: {
-						include: {
-							user: true,
-							likes: true,
-						},
-					},
-				},
-				orderBy: {
-					createdAt: "desc",
-				},
-			})
+			},
+			orderBy: { createdAt: "desc" },
+		})
 
-			const transformedComments = comments.map((comment) => {
-				const likeCount = comment.likes.length
-				const isLikedByCurrentUser = currentUserId
-					? comment.likes.some((like) => like.userId === currentUserId)
-					: false
+		const likedByCaller = (likes: { userId: string }[]): boolean =>
+			!!currentUserId && likes.some((like) => like.userId === currentUserId)
 
-				const transformedReplies = comment.replies?.map((reply) => {
-					const replyLikeCount = reply.likes.length
-					const replyIsLikedByCurrentUser = currentUserId
-						? reply.likes.some((like) => like.userId === currentUserId)
-						: false
-
-					return {
-						...reply,
-						likeCount: replyLikeCount,
-						isLikedByCurrentUser: replyIsLikedByCurrentUser,
-					}
-				})
-
-				return {
-					...comment,
-					likeCount,
-					isLikedByCurrentUser,
-					replies: transformedReplies,
-				}
-			})
-			return transformedComments
-		} catch (error) {
-			console.error("Error getting comments:", error)
-			throw error
-		}
+		return comments.map((comment) => ({
+			...comment,
+			likeCount: comment.likes.length,
+			isLikedByCurrentUser: likedByCaller(comment.likes),
+			replies: comment.replies?.map((reply) => ({
+				...reply,
+				likeCount: reply.likes.length,
+				isLikedByCurrentUser: likedByCaller(reply.likes),
+			})),
+		}))
 	}
 
 	static async updateComment(
@@ -264,174 +235,107 @@ export class CommentsService {
 		},
 		userId: string
 	): Promise<Comment> {
-		try {
-			const existingComment = await prisma.comment.findFirst({
-				where: {
-					id: commentId,
-					userId,
-				},
-			})
+		const existingComment = await prisma.comment.findFirst({
+			where: { id: commentId, userId },
+		})
 
-			if (!existingComment) {
-				throw new Error(
-					"Comment not found or you don't have permission to update it"
-				)
-			}
-
-			const updatedComment = await prisma.comment.update({
-				where: {
-					id: commentId,
-				},
-				data: {
-					content: data.content,
-					resolved:
-						data.resolved !== undefined
-							? data.resolved
-							: existingComment.resolved,
-				},
-				include: {
-					user: true,
-					likes: true,
-				},
-			})
-
-			console.log(
-				`Emitting comment-updated event to imageVersion:${existingComment.imageVersionId}`
+		if (!existingComment) {
+			throw new ForbiddenError(
+				"Comment not found or you don't have permission to update it"
 			)
-			io.to(`imageVersion:${existingComment.imageVersionId}`).emit(
-				"comment-updated",
-				{
-					...updatedComment,
-					imageVersionId: existingComment.imageVersionId,
-				}
-			)
-
-			return updatedComment
-		} catch (error) {
-			console.error("Error updating comment:", error)
-			throw error
 		}
+
+		const updatedComment = await prisma.comment.update({
+			where: { id: commentId },
+			data: {
+				content: data.content,
+				resolved: data.resolved ?? existingComment.resolved,
+			},
+			include: { user: true, likes: true },
+		})
+
+		io.to(`imageVersion:${existingComment.imageVersionId}`).emit(
+			"comment-updated",
+			{
+				...updatedComment,
+				imageVersionId: existingComment.imageVersionId,
+			}
+		)
+
+		return updatedComment
 	}
 
 	static async deleteComment(commentId: string, userId: string): Promise<void> {
-		try {
-			const comment = await prisma.comment.findFirst({
-				where: {
-					id: commentId,
-					userId,
-				},
-				select: {
-					id: true,
-					imageVersionId: true,
-				},
-			})
+		const comment = await prisma.comment.findFirst({
+			where: { id: commentId, userId },
+			select: { id: true, imageVersionId: true },
+		})
 
-			if (!comment) {
-				throw new ForbiddenError(
-					"Comment not found or you don't have permission to delete it"
-				)
-			}
-
-			await prisma.comment.delete({
-				where: {
-					id: commentId,
-				},
-			})
-
-			console.log(
-				`Emitting comment-deleted event to imageVersion:${comment.imageVersionId}`
+		if (!comment) {
+			throw new ForbiddenError(
+				"Comment not found or you don't have permission to delete it"
 			)
-			io.to(`imageVersion:${comment.imageVersionId}`).emit("comment-deleted", {
-				id: commentId,
-				imageVersionId: comment.imageVersionId,
-			})
-		} catch (error) {
-			console.error("Error deleting comment:", error)
-			throw error
 		}
+
+		await prisma.comment.delete({ where: { id: commentId } })
+
+		io.to(`imageVersion:${comment.imageVersionId}`).emit("comment-deleted", {
+			id: commentId,
+			imageVersionId: comment.imageVersionId,
+		})
 	}
 
 	static async toggleLike(
 		commentId: string,
 		userId: string
 	): Promise<{ liked: boolean; count: number }> {
-		try {
-			const existingLike = await prisma.commentLike.findFirst({
-				where: {
-					commentId,
-					userId,
-				},
+		const comment = await prisma.comment.findUnique({
+			where: { id: commentId },
+			select: { userId: true, imageVersionId: true },
+		})
+		if (!comment) throw new NotFoundError("Comment not found")
+
+		const { liked, count } = await prisma.$transaction(async (tx) => {
+			const removed = await tx.commentLike.deleteMany({
+				where: { commentId, userId },
 			})
 
-			let liked: boolean
-
-			if (existingLike) {
-				await prisma.commentLike.delete({
-					where: {
-						id: existingLike.id,
-					},
-				})
-				liked = false
-			} else {
-				await prisma.commentLike.create({
-					data: {
-						commentId,
-						userId,
-					},
-				})
-
-				const comment = await prisma.comment.findUnique({
-					where: { id: commentId },
-					select: { userId: true, imageVersionId: true },
-				})
-
-				liked = true
-
-				if (comment && comment.userId !== userId) {
-					await NotificationService.createNotification({
-						userId: comment.userId,
-						content: "Someone liked your comment",
-						metadata: {
-							type: "like",
-							commentId,
-							imageVersionId: comment.imageVersionId,
-						},
-					})
-				}
+			if (removed.count === 0) {
+				await tx.commentLike.create({ data: { commentId, userId } })
 			}
 
-			const likeCount = await prisma.commentLike.count({
-				where: {
-					commentId,
-				},
-			})
-
-			const commentData = await prisma.comment.findUnique({
-				where: { id: commentId },
-				select: { imageVersionId: true },
-			})
-
-			if (commentData) {
-				console.log(
-					`Emitting comment-like-updated event to imageVersion:${commentData.imageVersionId}`
-				)
-				io.to(`imageVersion:${commentData.imageVersionId}`).emit(
-					"comment-like-updated",
-					{
-						id: commentId,
-						liked,
-						count: likeCount,
-						userId,
-						imageVersionId: commentData.imageVersionId,
-					}
-				)
+			return {
+				liked: removed.count === 0,
+				count: await tx.commentLike.count({ where: { commentId } }),
 			}
+		})
 
-			return { liked, count: likeCount }
-		} catch (error) {
-			console.error("Error toggling comment like:", error)
-			throw error
+		io.to(`imageVersion:${comment.imageVersionId}`).emit(
+			"comment-like-updated",
+			{
+				id: commentId,
+				liked,
+				count,
+				userId,
+				imageVersionId: comment.imageVersionId,
+			}
+		)
+
+		if (liked && comment.userId !== userId) {
+			await NotificationService.createNotification({
+				userId: comment.userId,
+				content: "Someone liked your comment",
+				metadata: {
+					type: "like",
+					commentId,
+					imageVersionId: comment.imageVersionId,
+				},
+			}).catch((error) =>
+				logger.error("Comment like notification failed", error)
+			)
 		}
+
+		return { liked, count }
 	}
 
 	static async toggleResolved(
@@ -467,8 +371,6 @@ export class CommentsService {
 		currentUserId: string
 	): Promise<void> {
 		try {
-			console.log(`Creating notifications for comment ${comment.id}`)
-
 			if (comment.parentId) {
 				const parentComment = await prisma.comment.findUnique({
 					where: { id: comment.parentId },
@@ -476,10 +378,6 @@ export class CommentsService {
 				})
 
 				if (parentComment && parentComment.userId !== currentUserId) {
-					console.log(
-						`Creating reply notification for user ${parentComment.userId}`
-					)
-
 					await NotificationService.createNotification({
 						userId: parentComment.userId,
 						content: `${
@@ -493,30 +391,18 @@ export class CommentsService {
 					})
 				}
 			} else {
-				console.log(
-					`Finding image version for comment: ${comment.imageVersionId}`
-				)
-
 				const imageVersion = await prisma.imageVersion.findUnique({
 					where: { id: comment.imageVersionId },
 					select: { imageId: true },
 				})
 
 				if (imageVersion) {
-					console.log(
-						`Found image version with image ID: ${imageVersion.imageId}`
-					)
-
 					const image = await prisma.image.findUnique({
 						where: { id: imageVersion.imageId },
 						select: { projectId: true, name: true },
 					})
 
 					if (image) {
-						console.log(
-							`Found image ${image.name} in project: ${image.projectId}`
-						)
-
 						await NotificationService.createProjectNotification({
 							projectId: image.projectId,
 							content: `${comment.user.name || "Someone"} commented on image "${
@@ -531,15 +417,13 @@ export class CommentsService {
 								projectId: image.projectId,
 							},
 						})
-
-						console.log(
-							`Created project notification for project ${image.projectId}`
-						)
 					}
 				}
 			}
 		} catch (error) {
-			console.error("Error creating comment notifications:", error)
+			logger.error("Comment notification fan-out failed", error, {
+				commentId: comment.id,
+			})
 		}
 	}
 }

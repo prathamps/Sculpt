@@ -1,4 +1,7 @@
-import { useState } from "react"
+import { useEffect, useState } from "react"
+import { toast } from "sonner"
+import { api } from "@/lib/api"
+import { describeError } from "@/lib/errors"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { Button } from "@/components/ui/button"
 import {
@@ -48,38 +51,33 @@ export function CommentCard({
 	const { user } = useAuth()
 	const [isDeleting, setIsDeleting] = useState(false)
 	const [isLiking, setIsLiking] = useState(false)
-	const [likeCount, setLikeCount] = useState(comment.likeCount || 0)
-	const [isLiked, setIsLiked] = useState(comment.isLikedByCurrentUser || false)
+	const [pendingLike, setPendingLike] = useState<{
+		count: number
+		liked: boolean
+	} | null>(null)
 	const [isReplying, setIsReplying] = useState(false)
 	const [replyContent, setReplyContent] = useState("")
 	const [isSubmittingReply, setIsSubmittingReply] = useState(false)
+
+	const likeCount = pendingLike?.count ?? comment.likeCount ?? 0
+	const isLiked = pendingLike?.liked ?? comment.isLikedByCurrentUser ?? false
+
+	useEffect(() => {
+		setPendingLike(null)
+	}, [comment.likeCount, comment.isLikedByCurrentUser])
 
 	const timestamp = formatDistanceToNow(new Date(comment.createdAt), {
 		addSuffix: true,
 	})
 
 	const isAuthor = user?.id === comment.userId
-	const URI = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001"
+
 	const toggleResolved = async () => {
 		try {
-			const res = await fetch(
-				`${URI}/api/images/comments/${comment.id}/resolve`,
-				{
-					method: "POST",
-					credentials: "include",
-					headers: {
-						"Content-Type": "application/json",
-					},
-				}
-			)
-
-			if (res.ok) {
-				if (onCommentUpdate) {
-					onCommentUpdate()
-				}
-			}
+			await api.post(`/api/images/comments/${comment.id}/resolve`)
+			onCommentUpdate?.()
 		} catch (error) {
-			console.error("Error updating resolved status:", error)
+			toast.error(describeError(error, "Could not update the comment."))
 		}
 	}
 
@@ -88,21 +86,12 @@ export function CommentCard({
 
 		setIsLiking(true)
 		try {
-			const res = await fetch(`${URI}/api/images/comments/${comment.id}/like`, {
-				method: "POST",
-				credentials: "include",
-				headers: {
-					"Content-Type": "application/json",
-				},
-			})
-
-			if (res.ok) {
-				const data = await res.json()
-				setLikeCount(data.count)
-				setIsLiked(data.liked)
-			}
+			const result = await api.post<{ liked: boolean; count: number }>(
+				`/api/images/comments/${comment.id}/like`
+			)
+			setPendingLike({ count: result.count, liked: result.liked })
 		} catch (error) {
-			console.error("Error toggling like:", error)
+			toast.error(describeError(error, "Could not update your like."))
 		} finally {
 			setIsLiking(false)
 		}
@@ -113,18 +102,10 @@ export function CommentCard({
 
 		setIsDeleting(true)
 		try {
-			const res = await fetch(`${URI}/api/images/comments/${comment.id}`, {
-				method: "DELETE",
-				credentials: "include",
-			})
-
-			if (res.ok) {
-				if (onCommentUpdate) {
-					onCommentUpdate()
-				}
-			}
+			await api.delete(`/api/images/comments/${comment.id}`)
+			onCommentUpdate?.()
 		} catch (error) {
-			console.error("Error deleting comment:", error)
+			toast.error(describeError(error, "Could not delete the comment."))
 		} finally {
 			setIsDeleting(false)
 		}
@@ -161,30 +142,15 @@ export function CommentCard({
 
 		setIsSubmittingReply(true)
 		try {
-			const response = await fetch(
-				`${URI}/api/images/versions/${comment.imageVersionId}/comments`,
-				{
-					method: "POST",
-					credentials: "include",
-					headers: {
-						"Content-Type": "application/json",
-					},
-					body: JSON.stringify({
-						content: replyContent,
-						parentId: comment.id,
-					}),
-				}
+			await api.post(
+				`/api/images/versions/${comment.imageVersionId}/comments`,
+				{ content: replyContent, parentId: comment.id }
 			)
-
-			if (response.ok) {
-				setReplyContent("")
-				setIsReplying(false)
-				if (onCommentUpdate) {
-					onCommentUpdate()
-				}
-			}
+			setReplyContent("")
+			setIsReplying(false)
+			onCommentUpdate?.()
 		} catch (error) {
-			console.error("Error submitting reply:", error)
+			toast.error(describeError(error, "Could not post your reply."))
 		} finally {
 			setIsSubmittingReply(false)
 		}

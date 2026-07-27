@@ -1,97 +1,65 @@
 import { Response } from "express"
-import { NotificationService } from "./notification.service"
-import { io } from "../../realtime/socket"
 import { AuthenticatedRequest } from "../../types"
+import { respondWithError } from "../../lib/http"
+import {
+	NOTIFICATION_PAGE_SIZE,
+	NotificationService,
+} from "./notification.service"
+
+const requireUserId = (req: AuthenticatedRequest, res: Response): string | null => {
+	const userId = req.user?.id
+	if (!userId) {
+		res.status(401).json({ message: "Unauthorized" })
+		return null
+	}
+	return userId
+}
 
 export class NotificationsController {
 	static async getUserNotifications(req: AuthenticatedRequest, res: Response) {
 		try {
-			const userId = req.user?.id
-			if (!userId) {
-				return res.status(401).json({ message: "Unauthorized" })
+			const userId = requireUserId(req, res)
+			if (!userId) return
+
+			const { page, pageSize } = res.locals.query as {
+				page?: number
+				pageSize?: number
 			}
 
-			const notifications = await NotificationService.getUserNotifications(
-				userId
-			)
-			return res.status(200).json(notifications)
+			const result = await NotificationService.getUserNotifications(userId, {
+				page: page ?? 1,
+				pageSize: pageSize ?? NOTIFICATION_PAGE_SIZE,
+			})
+			res.status(200).json(result)
 		} catch (error) {
-			console.error("Error fetching notifications:", error)
-			return res.status(500).json({ message: "Internal server error" })
+			respondWithError(res, error, "list notifications")
 		}
 	}
 
 	static async markAsRead(req: AuthenticatedRequest, res: Response) {
 		try {
-			const userId = req.user?.id
-			if (!userId) {
-				return res.status(401).json({ message: "Unauthorized" })
-			}
-
-			const notificationId = req.params.notificationId || req.params.id
-			if (!notificationId) {
-				return res.status(400).json({ message: "Notification ID is required" })
-			}
+			const userId = requireUserId(req, res)
+			if (!userId) return
 
 			const notification = await NotificationService.markAsRead(
-				notificationId,
+				req.params.notificationId,
 				userId
 			)
-			return res.status(200).json(notification)
+			res.status(200).json(notification)
 		} catch (error) {
-			console.error("Error marking notification as read:", error)
-			return res.status(500).json({ message: "Internal server error" })
+			respondWithError(res, error, "mark notification read")
 		}
 	}
 
 	static async markAllAsRead(req: AuthenticatedRequest, res: Response) {
 		try {
-			const userId = req.user?.id
-			if (!userId) {
-				return res.status(401).json({ message: "Unauthorized" })
-			}
+			const userId = requireUserId(req, res)
+			if (!userId) return
 
-			await NotificationService.markAllAsRead(userId)
-			return res
-				.status(200)
-				.json({ message: "All notifications marked as read" })
+			const updated = await NotificationService.markAllAsRead(userId)
+			res.status(200).json({ updated })
 		} catch (error) {
-			console.error("Error marking all notifications as read:", error)
-			return res.status(500).json({ message: "Internal server error" })
-		}
-	}
-
-	static async sendTestNotification(req: AuthenticatedRequest, res: Response) {
-		try {
-			const user = req.user
-
-			if (!user) {
-				return res.status(401).send("Unauthorized: Login required")
-			}
-
-			console.log(`Creating test notification for user ${user.id}`)
-
-			const testNotification = {
-				id: `test-${Date.now()}`,
-				userId: user.id,
-				content: "This is a test notification",
-				createdAt: new Date(),
-				read: false,
-				metadata: {
-					type: "test",
-					projectId: "test-project-id",
-					imageId: "test-image-id",
-				},
-			}
-
-			io.to(`user:${user.id}`).emit("notification", testNotification)
-
-			console.log(`Test notification emitted to user:${user.id}`)
-
-			return res.status(200).json({ message: "Test notification sent" })
-		} catch (error) {
-			console.error("Error sending test notification:", error)
-			return res.status(500).send("Server error")
+			respondWithError(res, error, "mark all notifications read")
 		}
 	}
 }

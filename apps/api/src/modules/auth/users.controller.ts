@@ -1,8 +1,16 @@
 import { Response } from "express"
 import { AuthenticatedRequest } from "../../types"
 import { updateUserProfile, changeUserPassword } from "./auth.service"
-import { AppError } from "../../lib/errors"
+import { deleteAccount, exportAccountData } from "./account.service"
+import { prisma } from "../../lib/prisma"
+import { respondWithError } from "../../lib/http"
 import { recordAudit, requestIp } from "../audit/audit.service"
+import {
+	SESSION_COOKIE,
+	clearSessionCookie,
+	setSessionCookie,
+} from "../../lib/cookies"
+import { USER_SESSION_LIFETIME_MS, issueSession } from "./session.service"
 
 export const updateProfile = async (
 	req: AuthenticatedRequest,
@@ -20,11 +28,23 @@ export const updateProfile = async (
 		})
 		res.status(200).json(user)
 	} catch (error) {
-		if (error instanceof AppError) {
-			res.status(error.statusCode).json({ message: error.message })
-			return
-		}
-		res.status(500).json({ message: "Error updating profile" })
+		respondWithError(res, error, "update profile")
+	}
+}
+
+export const updateNotificationPreferences = async (
+	req: AuthenticatedRequest,
+	res: Response
+): Promise<void> => {
+	try {
+		const user = await prisma.user.update({
+			where: { id: req.user!.id },
+			data: { emailNotifications: req.body.emailNotifications },
+			select: { id: true, emailNotifications: true },
+		})
+		res.status(200).json(user)
+	} catch (error) {
+		respondWithError(res, error, "update notification preferences")
 	}
 }
 
@@ -33,21 +53,80 @@ export const changePassword = async (
 	res: Response
 ): Promise<void> => {
 	try {
+		const userId = req.user!.id
 		const { currentPassword, newPassword } = req.body
-		await changeUserPassword(req.user!.id, currentPassword, newPassword)
+		await changeUserPassword(userId, currentPassword, newPassword)
+
+		const refreshed = await prisma.user.findUniqueOrThrow({
+			where: { id: userId },
+			select: { id: true, tokenVersion: true },
+		})
+		const { token } = issueSession(refreshed, "user")
+		setSessionCookie(res, SESSION_COOKIE, token, USER_SESSION_LIFETIME_MS)
+
 		await recordAudit({
 			action: "user.password_changed",
 			targetType: "user",
-			targetId: req.user!.id,
-			actorId: req.user!.id,
+			targetId: userId,
+			actorId: userId,
 			ipAddress: requestIp(req),
 		})
-		res.status(200).json({ message: "Password updated successfully" })
+		res.status(200).json({
+			message: "Password updated. Other devices have been signed out.",
+		})
 	} catch (error) {
-		if (error instanceof AppError) {
-			res.status(error.statusCode).json({ message: error.message })
-			return
-		}
-		res.status(500).json({ message: "Error changing password" })
+		respondWithError(res, error, "change password")
+	}
+}
+
+export const exportMyData = async (
+	req: AuthenticatedRequest,
+	res: Response
+): Promise<void> => {
+	try {
+		const userId = req.user!.id
+		const data = await exportAccountData(userId)
+
+		await recordAudit({
+			action: "user.data_exported",
+			targetType: "user",
+			targetId: userId,
+			actorId: userId,
+			ipAddress: requestIp(req),
+		})
+
+		res.setHeader("Content-Type", "application/json")
+		res.setHeader(
+			"Content-Disposition",
+			'attachment; filename="sculpt-account-export.json"'
+		)
+		res.status(200).send(JSON.stringify(data, null, 2))
+	} catch (error) {
+		respondWithError(res, error, "export account data")
+	}
+}
+
+export const deleteMyAccount = async (
+	req: AuthenticatedRequest,
+	res: Response
+): Promise<void> => {
+	try {
+		const userId = req.user!.id
+		await deleteAccount(userId, {
+			password: req.body.password,
+			transferOrDelete: req.body.deleteOwnedProjects === true,
+		})
+
+		await recordAudit({
+			action: "user.account_deleted",
+			targetType: "user",
+			targetId: userId,
+			ipAddress: requestIp(req),
+		})
+
+		clearSessionCookie(res, SESSION_COOKIE)
+		res.status(204).send()
+	} catch (error) {
+		respondWithError(res, error, "delete account")
 	}
 }

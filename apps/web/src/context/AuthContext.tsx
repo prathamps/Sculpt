@@ -2,6 +2,7 @@
 
 import {
 	createContext,
+	useCallback,
 	useContext,
 	useState,
 	useEffect,
@@ -9,6 +10,7 @@ import {
 	useMemo,
 } from "react"
 import { useRouter } from "next/navigation"
+import { api } from "@/lib/api"
 
 interface User {
 	id: string
@@ -16,6 +18,7 @@ interface User {
 	email: string
 	role: "USER" | "ADMIN"
 	avatarUrl?: string | null
+	emailNotifications?: boolean
 }
 
 interface AuthContextType {
@@ -29,76 +32,48 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined)
 
-const URI = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001"
-
 export const AuthProvider = ({ children }: { children: ReactNode }) => {
 	const [user, setUser] = useState<User | null>(null)
 	const [loading, setLoading] = useState(true)
 	const router = useRouter()
 
-	useEffect(() => {
-		const fetchUser = async () => {
-			try {
-				const res = await fetch(`${URI}/api/users/profile`, {
-					credentials: "include",
-				})
-				if (res.ok) {
-					const data = await res.json()
-					setUser(data)
-				} else {
-					setUser(null)
-				}
-			} catch {
-				setUser(null)
-			} finally {
-				setLoading(false)
-			}
-		}
-		fetchUser()
-	}, [])
-
-	const login = () => {
-		const fetchUser = async () => {
-			try {
-				const res = await fetch(`${URI}/api/users/profile`, {
-					credentials: "include",
-				})
-				if (res.ok) {
-					const data = await res.json()
-					setUser(data)
-					router.push("/dashboard")
-				} else {
-					setUser(null)
-				}
-			} catch {
-				setUser(null)
-			}
-		}
-		fetchUser()
-	}
-
-	const refresh = async () => {
+	const loadUser = useCallback(async (): Promise<User | null> => {
 		try {
-			const res = await fetch(`${URI}/api/users/profile`, {
-				credentials: "include",
-			})
-			setUser(res.ok ? await res.json() : null)
+			const profile = await api.get<User>("/api/users/profile")
+			setUser(profile)
+			return profile
 		} catch {
 			setUser(null)
+			return null
 		}
-	}
+	}, [])
 
-	const logout = () => {
-		const clearCookieAndRedirect = async () => {
-			await fetch(`${URI}/api/auth/logout`, {
-				method: "POST",
-				credentials: "include",
-			})
+	useEffect(() => {
+		void loadUser().finally(() => setLoading(false))
+	}, [loadUser])
+
+	const login = useCallback(() => {
+		void loadUser().then((profile) => {
+			if (profile) router.push("/dashboard")
+		})
+	}, [loadUser, router])
+
+	const refresh = useCallback(async () => {
+		await loadUser()
+	}, [loadUser])
+
+	const logout = useCallback((): void => {
+		const endSession = async (): Promise<void> => {
+			try {
+				await api.post("/api/auth/logout")
+			} catch {
+				/* the cookie is cleared locally regardless */
+			}
 			setUser(null)
 			router.push("/login")
 		}
-		clearCookieAndRedirect()
-	}
+		void endSession()
+	}, [router])
 
 	const value = useMemo(
 		() => ({

@@ -1,7 +1,7 @@
 import { prisma } from "../../lib/prisma"
 import { ProjectRole } from "@prisma/client"
 
-const ROLE_RANK: Record<ProjectRole, number> = {
+export const ROLE_RANK: Record<ProjectRole, number> = {
 	VIEWER: 0,
 	MEMBER: 1,
 	EDITOR: 2,

@@ -12,6 +12,7 @@ const createStorage = (): StoragePort => {
 			region: process.env.S3_REGION || "us-east-1",
 			endpoint: process.env.S3_ENDPOINT || undefined,
 			publicBaseUrl: process.env.S3_PUBLIC_URL || undefined,
+			private: process.env.S3_PRIVATE === "true",
 		})
 	}
 	return new LocalStorage(uploadsDir)

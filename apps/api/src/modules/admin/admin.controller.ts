@@ -9,14 +9,26 @@ import {
 } from "./admin.service"
 import { loginAdmin } from "../auth/auth.service"
 import { UserRole } from "@prisma/client"
-import jwt from "jsonwebtoken"
 import {
 	listAuditLogs,
 	recordAudit,
 	requestIp,
 } from "../audit/audit.service"
-
-const ADMIN_SESSION_HOURS = 8
+import {
+	ADMIN_SESSION_COOKIE,
+	clearSessionCookie,
+	setSessionCookie,
+} from "../../lib/cookies"
+import { verifySessionToken } from "../../lib/tokens"
+import {
+	ADMIN_SESSION_LIFETIME_MS,
+	issueSession,
+	revokeSession,
+} from "../auth/session.service"
+import { respondWithError } from "../../lib/http"
+import { NotFoundError } from "../../lib/errors"
+import { paginated, requestedPage } from "../../lib/pagination"
+import { logger } from "../../lib/logger"
 
 export const adminLogin = async (req: Request, res: Response) => {
 	try {
@@ -39,18 +51,13 @@ export const adminLogin = async (req: Request, res: Response) => {
 				.json({ message: "Access denied: Admin privileges required" })
 		}
 
-		const token = jwt.sign(
-			{ id: admin.id },
-			process.env.JWT_SECRET || "your_jwt_secret",
-			{ expiresIn: `${ADMIN_SESSION_HOURS}h` }
+		const { token } = issueSession(admin, "admin")
+		setSessionCookie(
+			res,
+			ADMIN_SESSION_COOKIE,
+			token,
+			ADMIN_SESSION_LIFETIME_MS
 		)
-
-		res.cookie("admin_token", token, {
-			httpOnly: true,
-			secure: process.env.NODE_ENV === "production",
-			sameSite: "none",
-			maxAge: ADMIN_SESSION_HOURS * 3600000,
-		})
 
 		await recordAudit({
 			action: "admin.login_succeeded",
@@ -86,18 +93,36 @@ export const adminProfile = async (req: Request, res: Response) => {
 	})
 }
 
-export const adminLogout = (_req: Request, res: Response) => {
-	res.clearCookie("admin_token")
+export const adminLogout = async (req: Request, res: Response) => {
+	const claims = verifySessionToken(
+		req.cookies?.[ADMIN_SESSION_COOKIE],
+		"admin"
+	)
+	clearSessionCookie(res, ADMIN_SESSION_COOKIE)
+
+	if (claims) {
+		await revokeSession(claims)
+		await recordAudit({
+			action: "admin.logged_out",
+			targetType: "user",
+			targetId: claims.id,
+			actorId: claims.id,
+			ipAddress: requestIp(req),
+		})
+	}
+
 	return res.status(200).json({ message: "Admin logged out successfully" })
 }
 
-export const getUsers = async (_req: Request, res: Response) => {
+export const getUsers = async (req: Request, res: Response) => {
 	try {
-		const users = await getAllUsers()
-		return res.status(200).json(users)
+		const page = requestedPage(req.query)
+		const search =
+			typeof req.query.search === "string" ? req.query.search.trim() : undefined
+		const { users, total } = await getAllUsers(page, search || undefined)
+		return res.status(200).json(paginated(users, total, page))
 	} catch (error) {
-		console.error("Error fetching users:", error)
-		return res.status(500).json({ message: "Error fetching users" })
+		return respondWithError(res, error, "list users")
 	}
 }
 
@@ -121,51 +146,41 @@ export const changeUserRole = async (req: Request, res: Response) => {
 		})
 		return res.status(200).json(updatedUser)
 	} catch (error) {
-		console.error("Error updating user role:", error)
-		return res.status(500).json({ message: "Error updating user role" })
+		return respondWithError(res, error, "change user role")
 	}
 }
 
-export const getProjects = async (_req: Request, res: Response) => {
+export const getProjects = async (req: Request, res: Response) => {
 	try {
-		const projects = await getAllProjects()
-		return res.status(200).json(projects)
+		const page = requestedPage(req.query)
+		const { projects, total } = await getAllProjects(page)
+		return res.status(200).json(paginated(projects, total, page))
 	} catch (error) {
-		console.error("Error fetching projects:", error)
-		return res.status(500).json({ message: "Error fetching projects" })
+		return respondWithError(res, error, "list projects")
 	}
 }
 
 export const getProject = async (req: Request, res: Response) => {
 	try {
-		const { projectId } = req.params
-		const project = await getProjectById(projectId)
-
-		if (!project) {
-			return res.status(404).json({ message: "Project not found" })
-		}
-
+		const project = await getProjectById(req.params.projectId)
+		if (!project) throw new NotFoundError("Project not found")
 		return res.status(200).json(project)
 	} catch (error) {
-		console.error("Error fetching project:", error)
-		return res.status(500).json({ message: "Error fetching project" })
+		return respondWithError(res, error, "fetch project")
 	}
 }
 
 export const getStats = async (_req: Request, res: Response) => {
 	try {
-		const stats = await getDashboardStats()
-		return res.status(200).json(stats)
+		return res.status(200).json(await getDashboardStats())
 	} catch (error) {
-		console.error("Error fetching statistics:", error)
-		return res.status(500).json({ message: "Error fetching statistics" })
+		return respondWithError(res, error, "fetch admin statistics")
 	}
 }
 
 export const getAuditLogs = async (req: Request, res: Response) => {
 	try {
-		const page = Math.max(1, Number(req.query.page) || 1)
-		const pageSize = Math.min(100, Math.max(1, Number(req.query.pageSize) || 25))
+		const { page, pageSize } = requestedPage(req.query)
 		const result = await listAuditLogs({
 			page,
 			pageSize,
@@ -175,7 +190,6 @@ export const getAuditLogs = async (req: Request, res: Response) => {
 		})
 		return res.status(200).json(result)
 	} catch (error) {
-		console.error("Error fetching audit logs:", error)
-		return res.status(500).json({ message: "Error fetching audit logs" })
+		return respondWithError(res, error, "list audit logs")
 	}
 }
