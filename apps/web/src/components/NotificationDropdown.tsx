@@ -17,7 +17,7 @@ import { useSocket } from "@/context/SocketContext"
 import { useRouter } from "next/navigation"
 import { cn } from "@/lib/utils"
 import { api } from "@/lib/api"
-import { describeError } from "@/lib/errors"
+import { describeError, ignoreFailure } from "@/lib/errors"
 import { toast } from "sonner"
 
 interface Notification {
@@ -46,20 +46,15 @@ export function NotificationDropdown() {
 	useEffect(() => {
 		if (!user) return
 
-		const fetchNotifications = async () => {
-			try {
-				const page = await api.get<{
-					notifications: Notification[]
-					unread: number
-				}>("/api/notifications")
+		void api
+			.get<{ notifications: Notification[]; unread: number }>(
+				"/api/notifications"
+			)
+			.then((page) => {
 				setNotifications(page.notifications)
 				setHasUnread(page.unread > 0)
-			} catch {
-				/* the bell simply stays empty until the next poll or socket event */
-			}
-		}
-
-		void fetchNotifications()
+			})
+			.catch(ignoreFailure)
 	}, [user, reconnectCount])
 
 	useEffect(() => {
@@ -98,7 +93,6 @@ export function NotificationDropdown() {
 		socket.on("project-update", handleProjectUpdate)
 
 		return () => {
-			console.log("Removing notification listeners")
 			socket.off("notification", handleNotification)
 			socket.off("project-update", handleProjectUpdate)
 		}
@@ -122,10 +116,12 @@ export function NotificationDropdown() {
 			}
 
 			if (!notification.id.startsWith("project-")) {
-				await api.put(`/api/notifications/${notification.id}/read`)
+				await api
+					.put(`/api/notifications/${notification.id}/read`)
+					.catch(ignoreFailure)
 			}
-		} catch {
-			/* navigation already happened; the unread badge self-corrects on reload */
+		} finally {
+			setIsOpen(false)
 		}
 	}
 

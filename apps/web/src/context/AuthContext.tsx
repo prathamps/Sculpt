@@ -11,6 +11,7 @@ import {
 } from "react"
 import { useRouter } from "next/navigation"
 import { api } from "@/lib/api"
+import { ignoreFailure } from "@/lib/errors"
 
 interface User {
 	id: string
@@ -64,11 +65,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
 	const logout = useCallback((): void => {
 		const endSession = async (): Promise<void> => {
-			try {
-				await api.post("/api/auth/logout")
-			} catch {
-				/* the cookie is cleared locally regardless */
-			}
+			await api.post("/api/auth/logout").catch(ignoreFailure)
 			setUser(null)
 			router.push("/login")
 		}

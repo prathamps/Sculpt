@@ -31,20 +31,20 @@ const FALLBACK_MESSAGES: Record<number, string> = {
 	500: "Something went wrong on the server. Try again shortly.",
 }
 
-const messageFor = async (response: Response): Promise<string> => {
+const jsonMessageOrNull = async (response: Response): Promise<string | null> => {
 	try {
 		const body = await response.json()
-		if (body && typeof body.message === "string" && body.message) {
-			return body.message
-		}
+		return typeof body?.message === "string" && body.message ? body.message : null
 	} catch {
-		/* body was empty or not JSON */
+		return null
 	}
-	return (
-		FALLBACK_MESSAGES[response.status] ||
-		`Request failed with status ${response.status}.`
-	)
 }
+
+const statusFallbackMessage = (status: number): string =>
+	FALLBACK_MESSAGES[status] || `Request failed with status ${status}.`
+
+const messageFor = async (response: Response): Promise<string> =>
+	(await jsonMessageOrNull(response)) ?? statusFallbackMessage(response.status)
 
 export interface RequestOptions {
 	method?: string
@@ -117,6 +117,16 @@ export interface UploadProgress {
 	percent: number
 }
 
+const uploadFailureMessage = (rawBody: string, status: number): string => {
+	try {
+		const parsed = JSON.parse(rawBody)
+		if (typeof parsed?.message === "string" && parsed.message) return parsed.message
+	} catch {
+		return statusFallbackMessage(status)
+	}
+	return statusFallbackMessage(status)
+}
+
 export const uploadWithProgress = <T>(
 	path: string,
 	formData: FormData,
@@ -148,14 +158,9 @@ export const uploadWithProgress = <T>(
 				return
 			}
 
-			let message = FALLBACK_MESSAGES[request.status] || "Upload failed."
-			try {
-				const parsed = JSON.parse(raw)
-				if (parsed?.message) message = parsed.message
-			} catch {
-				/* keep the fallback */
-			}
-			reject(new ApiError(request.status, message))
+			reject(
+				new ApiError(request.status, uploadFailureMessage(raw, request.status))
+			)
 		}
 
 		request.onerror = () =>
