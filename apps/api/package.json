@@ -1,7 +1,7 @@
 {
   "name": "api",
   "version": "1.0.0",
-  "description": "Sculpt API \u00e2\u20ac\u201d real-time visual collaboration backend",
+  "description": "Sculpt API â€” real-time visual collaboration backend",
   "main": "index.js",
   "scripts": {
     "dev": "ts-node-dev --respawn --transpile-only src/index.ts",
@@ -36,7 +36,6 @@
     "passport-google-oauth20": "^2.0.0",
     "passport-jwt": "^4.0.1",
     "prisma": "^6.10.0",
-    "rate-limit-redis": "^6.0.0",
     "redis": "^5.5.6",
     "socket.io": "^4.8.1",
     "zod": "^4.4.3"

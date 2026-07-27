@@ -252,6 +252,65 @@ describe("CommentsService.createComment anchors", () => {
 	})
 })
 
+describe("CommentsService.createComment parent threading", () => {
+	beforeEach(() => {
+		vi.clearAllMocks()
+		mocked.comment.create.mockResolvedValue({
+			id: "c1",
+			imageVersionId: "v1",
+			parentId: "p1",
+			user: { name: "A" },
+		} as never)
+		mocked.image.findUnique.mockResolvedValue(null)
+		mocked.imageVersion.findUnique.mockResolvedValue({
+			mediaType: "IMAGE",
+			duration: null,
+		} as never)
+	})
+
+	const createReply = (parentId: string) =>
+		CommentsService.createComment({
+			content: "hi",
+			imageVersionId: "v1",
+			userId: "u1",
+			parentId,
+		})
+
+	it("rejects a parent that belongs to another image version", async () => {
+		mocked.comment.findUnique.mockResolvedValue({
+			imageVersionId: "other-version",
+		} as never)
+
+		await expect(createReply("p1")).rejects.toBeInstanceOf(NotFoundError)
+		expect(mocked.comment.create).not.toHaveBeenCalled()
+	})
+
+	it("rejects an unknown parent", async () => {
+		mocked.comment.findUnique.mockResolvedValue(null)
+
+		await expect(createReply("ghost")).rejects.toBeInstanceOf(NotFoundError)
+		expect(mocked.comment.create).not.toHaveBeenCalled()
+	})
+
+	it("accepts a parent from the same image version", async () => {
+		mocked.comment.findUnique.mockResolvedValue({
+			imageVersionId: "v1",
+			userId: "author",
+		} as never)
+
+		await createReply("p1")
+
+		expect(mocked.comment.findUnique).toHaveBeenCalledWith(
+			expect.objectContaining({ where: { id: "p1" } })
+		)
+		expect(mocked.comment.create).toHaveBeenCalledWith(
+			expect.objectContaining({
+				data: expect.objectContaining({ parentId: "p1" }),
+			})
+		)
+	})
+})
+
 describe("CommentsService.toggleResolved", () => {
 	beforeEach(() => vi.clearAllMocks())
 

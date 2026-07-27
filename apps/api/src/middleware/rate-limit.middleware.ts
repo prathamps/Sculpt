@@ -1,16 +1,69 @@
-import rateLimit, { Options, RateLimitRequestHandler } from "express-rate-limit"
-import { RedisStore } from "rate-limit-redis"
+import rateLimit, {
+	ClientRateLimitInfo,
+	MemoryStore,
+	Options,
+	RateLimitRequestHandler,
+	Store,
+} from "express-rate-limit"
 import { redisClient } from "../lib/redis"
 import { logger } from "../lib/logger"
 
-const sharedStore = (prefix: string): Options["store"] | undefined => {
-	if (!redisClient.isReady) return undefined
-	return new RedisStore({
-		prefix,
-		sendCommand: (...args: string[]) =>
-			redisClient.sendCommand(args) as Promise<never>,
-	})
+export class RedisWithMemoryFallbackStore implements Store {
+	private readonly memoryStore = new MemoryStore()
+	private windowMs = 60000
+
+	constructor(
+		private readonly keyPrefix: string,
+		private readonly redisIsReady: () => boolean = () => redisClient.isReady
+	) {}
+
+	init(options: Options): void {
+		this.windowMs = options.windowMs
+		this.memoryStore.init(options)
+	}
+
+	private redisKey(key: string): string {
+		return this.keyPrefix + key
+	}
+
+	async increment(key: string): Promise<ClientRateLimitInfo> {
+		if (this.redisIsReady()) {
+			try {
+				const redisKey = this.redisKey(key)
+				const totalHits = Number(await redisClient.incr(redisKey))
+				let ttlMs = Number(await redisClient.pTTL(redisKey))
+				if (ttlMs < 0) {
+					await redisClient.pExpire(redisKey, this.windowMs)
+					ttlMs = this.windowMs
+				}
+				return { totalHits, resetTime: new Date(Date.now() + ttlMs) }
+			} catch (error) {
+				logger.warn("Rate-limit Redis increment failed, using memory store", {
+					detail: error instanceof Error ? error.message : undefined,
+				})
+			}
+		}
+		return this.memoryStore.increment(key)
+	}
+
+	async decrement(key: string): Promise<void> {
+		if (this.redisIsReady()) {
+			await redisClient.decr(this.redisKey(key)).catch(() => undefined)
+			return
+		}
+		await this.memoryStore.decrement(key)
+	}
+
+	async resetKey(key: string): Promise<void> {
+		await this.memoryStore.resetKey(key)
+		if (this.redisIsReady()) {
+			await redisClient.del(this.redisKey(key)).catch(() => undefined)
+		}
+	}
 }
+
+const sharedStore = (prefix: string): Options["store"] =>
+	new RedisWithMemoryFallbackStore(prefix)
 
 const limiter = (
 	prefix: string,

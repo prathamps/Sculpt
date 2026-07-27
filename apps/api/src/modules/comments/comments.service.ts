@@ -161,6 +161,16 @@ export class CommentsService {
 			modelAnchor: data.modelAnchor ?? null,
 		})
 
+		if (data.parentId) {
+			const parent = await prisma.comment.findUnique({
+				where: { id: data.parentId },
+				select: { imageVersionId: true },
+			})
+			if (!parent || parent.imageVersionId !== data.imageVersionId) {
+				throw new NotFoundError("Parent comment not found")
+			}
+		}
+
 		const comment = await prisma.comment.create({
 			data: {
 				content: data.content,

@@ -10,6 +10,15 @@ vi.mock("../modules/projects/access", () => ({
 	isProjectMember: vi.fn(),
 }))
 
+vi.mock("../lib/logger", () => ({
+	logger: {
+		error: vi.fn(),
+		warn: vi.fn(),
+		info: vi.fn(),
+		debug: vi.fn(),
+	},
+}))
+
 vi.mock("./viewerPresence", () => ({
 	addViewer: vi.fn(),
 	updateViewer: vi.fn(),
@@ -20,6 +29,7 @@ vi.mock("./viewerPresence", () => ({
 import { Socket } from "socket.io"
 import { canViewVersion, isProjectMember } from "../modules/projects/access"
 import { markOnline } from "../lib/presence"
+import { logger } from "../lib/logger"
 import { registerHandlers } from "./socket"
 
 const mockedAccess = vi.mocked({ canViewVersion, isProjectMember })
@@ -116,6 +126,20 @@ describe("joinProject", () => {
 		expect(fake.joined).toEqual(["project:p1"])
 	})
 
+	it("logs instead of crashing when the membership check rejects", async () => {
+		mockedAccess.isProjectMember.mockRejectedValue(new Error("db down"))
+		const fake = fakeSocket(member)
+
+		await expect(fake.fire("joinProject", "p1")).resolves.toBeUndefined()
+
+		expect(fake.joined).toEqual([])
+		expect(vi.mocked(logger.error)).toHaveBeenCalledWith(
+			"socket handler failed",
+			expect.any(Error),
+			{ event: "joinProject" }
+		)
+	})
+
 	it("ignores a non-string project id", async () => {
 		const fake = fakeSocket(member)
 
@@ -146,5 +170,19 @@ describe("joinImageVersion", () => {
 		await fake.fire("joinImageVersion", "v1")
 
 		expect(fake.joined).toEqual(["imageVersion:v1"])
+	})
+
+	it("logs instead of crashing when the view check rejects", async () => {
+		mockedAccess.canViewVersion.mockRejectedValue(new Error("db down"))
+		const fake = fakeSocket(member)
+
+		await expect(fake.fire("joinImageVersion", "v1")).resolves.toBeUndefined()
+
+		expect(fake.joined).toEqual([])
+		expect(vi.mocked(logger.error)).toHaveBeenCalledWith(
+			"socket handler failed",
+			expect.any(Error),
+			{ event: "joinImageVersion" }
+		)
 	})
 })

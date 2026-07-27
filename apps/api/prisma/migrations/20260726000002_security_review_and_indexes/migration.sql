@@ -95,11 +95,32 @@ FROM (
 WHERE stored_path <> ''
 ON CONFLICT ("storedPath") DO NOTHING;
 
-DELETE FROM "ImageVersion" a
-USING "ImageVersion" b
-WHERE a."imageId" = b."imageId"
-  AND a."versionNumber" = b."versionNumber"
-  AND a."createdAt" > b."createdAt";
+WITH duplicate_versions AS (
+    SELECT "id", "imageId",
+        ROW_NUMBER() OVER (
+            PARTITION BY "imageId", "versionNumber"
+            ORDER BY "createdAt", "id"
+        ) AS position_in_group
+    FROM "ImageVersion"
+),
+image_max_numbers AS (
+    SELECT "imageId", MAX("versionNumber") AS max_number
+    FROM "ImageVersion"
+    GROUP BY "imageId"
+),
+renumbered AS (
+    SELECT d."id",
+        m.max_number + ROW_NUMBER() OVER (
+            PARTITION BY d."imageId" ORDER BY d."id"
+        ) AS new_number
+    FROM duplicate_versions d
+    JOIN image_max_numbers m ON m."imageId" = d."imageId"
+    WHERE d.position_in_group > 1
+)
+UPDATE "ImageVersion" v
+SET "versionNumber" = r.new_number
+FROM renumbered r
+WHERE v."id" = r."id";
 
 ALTER TABLE "ImageVersion" DROP COLUMN IF EXISTS "annotations";
 

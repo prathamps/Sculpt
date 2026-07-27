@@ -51,6 +51,16 @@ const versionRoom = (imageVersionId: string): string =>
 const viewersStillInRoom = (imageVersionId: string) =>
 	io.to(versionRoom(imageVersionId))
 
+export const guardedHandler =
+	<TArgs extends unknown[]>(
+		event: string,
+		handler: (...args: TArgs) => Promise<void>
+	) =>
+	(...args: TArgs): Promise<void> =>
+		handler(...args).catch((error) =>
+			logger.error("socket handler failed", error, { event })
+		)
+
 const leaveVersionRoom = (socket: Socket, imageVersionId: string): void => {
 	socket.leave(versionRoom(imageVersionId))
 	joinedVersions(socket).delete(imageVersionId)
@@ -76,45 +86,51 @@ export const registerHandlers = (socket: Socket) => {
 		})
 	})
 
-	socket.on("joinProject", async (projectId: string) => {
-		if (!projectId || typeof projectId !== "string") return
-		const user = socketUser(socket)
-		if (!user || !(await isProjectMember(projectId, user.id))) {
-			socket.emit("project_join_denied", { projectId })
-			return
-		}
-		socket.join(`project:${projectId}`)
-		socket.emit("project_joined", {
-			projectId,
-			message: `Successfully joined project room ${projectId}`,
+	socket.on(
+		"joinProject",
+		guardedHandler("joinProject", async (projectId: string) => {
+			if (!projectId || typeof projectId !== "string") return
+			const user = socketUser(socket)
+			if (!user || !(await isProjectMember(projectId, user.id))) {
+				socket.emit("project_join_denied", { projectId })
+				return
+			}
+			socket.join(`project:${projectId}`)
+			socket.emit("project_joined", {
+				projectId,
+				message: `Successfully joined project room ${projectId}`,
+			})
 		})
-	})
+	)
 
-	socket.on("joinImageVersion", async (imageVersionId: string) => {
-		if (!imageVersionId || typeof imageVersionId !== "string") return
-		const user = socketUser(socket)
-		if (!user || !(await canViewVersion(user.id, imageVersionId))) {
-			socket.emit("image_version_join_denied", { imageVersionId })
-			return
-		}
-		socket.join(versionRoom(imageVersionId))
-		joinedVersions(socket).add(imageVersionId)
-		addViewer(imageVersionId, socket.id, presenceUser(user))
-		socket.emit("image_version_joined", {
-			imageVersionId,
-			message: `Successfully joined image version room ${imageVersionId}`,
+	socket.on(
+		"joinImageVersion",
+		guardedHandler("joinImageVersion", async (imageVersionId: string) => {
+			if (!imageVersionId || typeof imageVersionId !== "string") return
+			const user = socketUser(socket)
+			if (!user || !(await canViewVersion(user.id, imageVersionId))) {
+				socket.emit("image_version_join_denied", { imageVersionId })
+				return
+			}
+			socket.join(versionRoom(imageVersionId))
+			joinedVersions(socket).add(imageVersionId)
+			addViewer(imageVersionId, socket.id, presenceUser(user))
+			socket.emit("image_version_joined", {
+				imageVersionId,
+				message: `Successfully joined image version room ${imageVersionId}`,
+			})
+			socket.emit("presence:state", {
+				imageVersionId,
+				peers: getViewers(imageVersionId),
+			})
+			socket.to(versionRoom(imageVersionId)).emit("presence:peer", {
+				socketId: socket.id,
+				imageVersionId,
+				user: presenceUser(user),
+				time: 0,
+			})
 		})
-		socket.emit("presence:state", {
-			imageVersionId,
-			peers: getViewers(imageVersionId),
-		})
-		socket.to(versionRoom(imageVersionId)).emit("presence:peer", {
-			socketId: socket.id,
-			imageVersionId,
-			user: presenceUser(user),
-			time: 0,
-		})
-	})
+	)
 
 	socket.on(
 		"presence:update",
