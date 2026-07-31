@@ -1,11 +1,20 @@
 import { JsonValue } from "@prisma/client/runtime/library";
 import { prisma } from "../../lib/prisma"
-import { Comment, CommentLike, MediaType, User } from "@prisma/client"
+import {
+	Comment,
+	CommentAttachment,
+	CommentLike,
+	MediaType,
+	User,
+} from "@prisma/client"
+import { MAX_ATTACHMENTS_PER_COMMENT } from "../../middleware/upload.middleware"
 
 import { ProjectRole } from "@prisma/client"
 import { io, internalVersionRoom } from "../../realtime/socket"
 import { NotificationService } from "../notifications/notification.service"
 import { getVersionProjectId, roleMeets } from "../projects/access"
+import { storage } from "../../storage"
+import { forgetProjectAssets } from "../media/media-access.service"
 
 export const INTERNAL_COMMENT_MIN_ROLE: ProjectRole = "EDITOR"
 
@@ -272,6 +281,52 @@ export class CommentsService {
 		return comment
 	}
 
+	static async attachToComment(
+		commentId: string,
+		userId: string,
+		files: { url: string; fileName: string; mimeType: string }[]
+	): Promise<CommentAttachment[]> {
+		const comment = await prisma.comment.findUnique({
+			where: { id: commentId },
+			select: {
+				userId: true,
+				imageVersionId: true,
+				internal: true,
+				_count: { select: { attachments: true } },
+			},
+		})
+
+		if (!comment) throw new NotFoundError("Comment not found")
+		if (comment.userId !== userId) {
+			throw new ForbiddenError("Only the comment author can attach files")
+		}
+		if (comment._count.attachments + files.length > MAX_ATTACHMENTS_PER_COMMENT) {
+			throw new ValidationError(
+				`A comment can hold at most ${MAX_ATTACHMENTS_PER_COMMENT} attachments`
+			)
+		}
+
+		await prisma.commentAttachment.createMany({
+			data: files.map((file) => ({ ...file, commentId })),
+		})
+
+		const attachments = await prisma.commentAttachment.findMany({
+			where: { commentId },
+			orderBy: { createdAt: "asc" },
+		})
+
+		io.to(commentRoom(comment.imageVersionId, comment.internal)).emit(
+			"comment-updated",
+			{
+				id: commentId,
+				imageVersionId: comment.imageVersionId,
+				attachments,
+			}
+		)
+
+		return attachments
+	}
+
 	static async getCommentsByImageVersionId(
 		imageVersionId: string,
 		currentUserId?: string,
@@ -286,9 +341,15 @@ export class CommentsService {
 				user: true,
 				likes: true,
 				mentions: MENTION_INCLUDE,
+				attachments: true,
 				replies: {
 					where: visibility,
-					include: { user: true, likes: true, mentions: MENTION_INCLUDE },
+					include: {
+						user: true,
+						likes: true,
+						mentions: MENTION_INCLUDE,
+						attachments: true,
+					},
 					orderBy: { createdAt: "asc" },
 				},
 			},
@@ -353,7 +414,12 @@ export class CommentsService {
 	static async deleteComment(commentId: string, userId: string): Promise<void> {
 		const comment = await prisma.comment.findFirst({
 			where: { id: commentId, userId },
-			select: { id: true, imageVersionId: true, internal: true },
+			select: {
+				id: true,
+				imageVersionId: true,
+				internal: true,
+				attachments: { select: { url: true } },
+			},
 		})
 
 		if (!comment) {
@@ -363,6 +429,14 @@ export class CommentsService {
 		}
 
 		await prisma.comment.delete({ where: { id: commentId } })
+
+		const attachmentUrls = comment.attachments.map(
+			(attachment) => attachment.url
+		)
+		if (attachmentUrls.length > 0) {
+			await forgetProjectAssets(attachmentUrls)
+			await Promise.all(attachmentUrls.map((url) => storage.remove(url)))
+		}
 
 		io.to(commentRoom(comment.imageVersionId, comment.internal)).emit(
 			"comment-deleted",

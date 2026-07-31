@@ -2,6 +2,12 @@ import { Request, Response } from "express"
 import { CommentsService } from "./comments.service"
 import { authorizedScope } from "../../middleware/authorize.middleware"
 import { respondWithError } from "../../lib/http"
+import { ValidationError } from "../../lib/errors"
+import { storage } from "../../storage"
+import {
+	forgetProjectAssets,
+	recordProjectAssets,
+} from "../media/media-access.service"
 
 export const listComments = async (
 	req: Request,
@@ -57,6 +63,48 @@ export const createComment = async (
 		res.status(201).json(comment)
 	} catch (error) {
 		respondWithError(res, error, "create comment")
+	}
+}
+
+export const attachToComment = async (
+	req: Request,
+	res: Response
+): Promise<void> => {
+	const stored: string[] = []
+	try {
+		const { userId, projectId } = authorizedScope(res)
+		const files = Array.isArray(req.files) ? req.files : []
+		if (files.length === 0) {
+			throw new ValidationError("Choose at least one file to attach")
+		}
+
+		const uploaded = []
+		for (const file of files) {
+			const url = await storage.store({
+				path: file.path,
+				originalName: file.originalname,
+				mimeType: file.mimetype,
+			})
+			stored.push(url)
+			uploaded.push({
+				url,
+				fileName: file.originalname,
+				mimeType: file.mimetype,
+			})
+		}
+
+		await recordProjectAssets(stored, projectId)
+
+		const attachments = await CommentsService.attachToComment(
+			req.params.commentId,
+			userId,
+			uploaded
+		)
+		res.status(201).json(attachments)
+	} catch (error) {
+		await forgetProjectAssets(stored)
+		await Promise.all(stored.map((url) => storage.remove(url)))
+		respondWithError(res, error, "attach files to comment")
 	}
 }
 

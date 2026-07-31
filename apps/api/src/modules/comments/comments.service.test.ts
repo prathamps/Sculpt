@@ -19,6 +19,10 @@ vi.mock("../../lib/prisma", () => ({
 		projectMember: {
 			findMany: vi.fn(),
 		},
+		commentAttachment: {
+			createMany: vi.fn(),
+			findMany: vi.fn(),
+		},
 	},
 }))
 
@@ -526,6 +530,78 @@ describe("CommentsService internal comments", () => {
 				where: { imageVersionId: "v1", parentId: null },
 			})
 		)
+	})
+})
+
+describe("CommentsService.attachToComment", () => {
+	const file = {
+		url: "uploads/ref.png",
+		fileName: "ref.png",
+		mimeType: "image/png",
+	}
+
+	beforeEach(() => {
+		vi.clearAllMocks()
+		mocked.commentAttachment.findMany.mockResolvedValue([file] as never)
+	})
+
+	const existing = (attachments: number, userId = "author") => ({
+		userId,
+		imageVersionId: "v1",
+		internal: false,
+		_count: { attachments },
+	})
+
+	it("rejects an unknown comment", async () => {
+		mocked.comment.findUnique.mockResolvedValue(null)
+
+		await expect(
+			CommentsService.attachToComment("ghost", "author", [file])
+		).rejects.toBeInstanceOf(NotFoundError)
+	})
+
+	it("lets only the author attach files", async () => {
+		mocked.comment.findUnique.mockResolvedValue(existing(0) as never)
+
+		await expect(
+			CommentsService.attachToComment("c1", "someone-else", [file])
+		).rejects.toBeInstanceOf(ForbiddenError)
+		expect(mocked.commentAttachment.createMany).not.toHaveBeenCalled()
+	})
+
+	it("refuses to exceed the per-comment attachment cap", async () => {
+		mocked.comment.findUnique.mockResolvedValue(existing(2) as never)
+
+		await expect(
+			CommentsService.attachToComment("c1", "author", [file, file])
+		).rejects.toBeInstanceOf(ValidationError)
+		expect(mocked.commentAttachment.createMany).not.toHaveBeenCalled()
+	})
+
+	it("stores attachments and announces them to the thread", async () => {
+		mocked.comment.findUnique.mockResolvedValue(existing(0) as never)
+
+		const result = await CommentsService.attachToComment("c1", "author", [file])
+
+		expect(mocked.commentAttachment.createMany).toHaveBeenCalledWith({
+			data: [{ ...file, commentId: "c1" }],
+		})
+		expect(result).toEqual([file])
+		expect(emitMock).toHaveBeenCalledWith(
+			"comment-updated",
+			expect.objectContaining({ id: "c1", attachments: [file] })
+		)
+	})
+
+	it("keeps internal attachments in the internal room", async () => {
+		mocked.comment.findUnique.mockResolvedValue({
+			...existing(0),
+			internal: true,
+		} as never)
+
+		await CommentsService.attachToComment("c1", "author", [file])
+
+		expect(io.to).toHaveBeenCalledWith("imageVersion:v1:internal")
 	})
 })
 

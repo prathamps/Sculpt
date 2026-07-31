@@ -1,7 +1,19 @@
 "use client"
 
-import { useState } from "react"
-import { Send, Undo, Redo, Trash2, X, FileText, MapPin, Lock } from "lucide-react"
+import { useRef, useState } from "react"
+import {
+	Send,
+	Undo,
+	Redo,
+	Trash2,
+	X,
+	FileText,
+	MapPin,
+	Lock,
+	Paperclip,
+} from "lucide-react"
+
+const MAX_ATTACHMENTS = 3
 import { Button } from "@/components/ui/button"
 import { MentionTextarea } from "@/components/MentionTextarea"
 import { useMentionDraft } from "@/hooks/useMentionDraft"
@@ -73,6 +85,8 @@ export function AnnotationFooter({
 	const [comment, setComment] = useState("")
 	const [isInternal, setIsInternal] = useState(false)
 	const [isSending, setIsSending] = useState(false)
+	const [pendingFiles, setPendingFiles] = useState<File[]>([])
+	const fileInputRef = useRef<HTMLInputElement>(null)
 	const { user } = useAuth()
 	const { addMention, mentionIdsIn, resetMentions } = useMentionDraft()
 
@@ -97,18 +111,37 @@ export function AnnotationFooter({
 					? [currentAnnotation]
 					: undefined
 
-			await api.post(`/api/images/versions/${imageVersionId}/comments`, {
-				content: comment,
-				annotation: annotationsToSend,
-				mentionedUserIds: mentionIdsIn(comment),
-				...(isInternal ? { internal: true } : {}),
-				...(typeof anchorStart === "number" ? { timestamp: anchorStart } : {}),
-				...(hasRange ? { timestampEnd: anchorEnd } : {}),
-				...(typeof page === "number" ? { page } : {}),
-				...(modelAnchor ? { modelAnchor } : {}),
-			})
+			const created = await api.post<{ id: string }>(
+				`/api/images/versions/${imageVersionId}/comments`,
+				{
+					content: comment,
+					annotation: annotationsToSend,
+					mentionedUserIds: mentionIdsIn(comment),
+					...(isInternal ? { internal: true } : {}),
+					...(typeof anchorStart === "number" ? { timestamp: anchorStart } : {}),
+					...(hasRange ? { timestampEnd: anchorEnd } : {}),
+					...(typeof page === "number" ? { page } : {}),
+					...(modelAnchor ? { modelAnchor } : {}),
+				}
+			)
+
+			if (pendingFiles.length > 0 && created?.id) {
+				const attachments = new FormData()
+				pendingFiles.forEach((file) => attachments.append("files", file))
+				try {
+					await api.post(
+						`/api/images/comments/${created.id}/attachments`,
+						attachments
+					)
+				} catch (error) {
+					toast.error(
+						describeError(error, "Your comment posted, but the files did not.")
+					)
+				}
+			}
 
 			setComment("")
+			setPendingFiles([])
 			resetMentions()
 			onClear()
 			onClearRange?.()
@@ -157,8 +190,57 @@ export function AnnotationFooter({
 				</div>
 			</div>
 
+			{pendingFiles.length > 0 && (
+				<ul className="flex flex-wrap gap-1.5 pl-10">
+					{pendingFiles.map((file, index) => (
+						<li
+							key={`${file.name}-${index}`}
+							className="flex items-center gap-1 rounded-full border border-border/50 px-2 py-0.5 text-[11px] text-muted-foreground"
+						>
+							<Paperclip className="h-3 w-3" aria-hidden="true" />
+							<span className="max-w-[140px] truncate">{file.name}</span>
+							<button
+								className="rounded-full text-muted-foreground hover:text-destructive focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+								onClick={() =>
+									setPendingFiles((files) =>
+										files.filter((_, i) => i !== index)
+									)
+								}
+								aria-label={`Remove ${file.name}`}
+							>
+								<X className="h-3 w-3" aria-hidden="true" />
+							</button>
+						</li>
+					))}
+				</ul>
+			)}
+
 			<div className="flex items-center justify-between">
 				<div className="flex items-center gap-2">
+					<input
+						ref={fileInputRef}
+						type="file"
+						multiple
+						accept="image/*,application/pdf"
+						className="sr-only"
+						onChange={(e) => {
+							const chosen = Array.from(e.target.files ?? [])
+							setPendingFiles((files) =>
+								[...files, ...chosen].slice(0, MAX_ATTACHMENTS)
+							)
+							e.target.value = ""
+						}}
+					/>
+					<Button
+						variant="ghost"
+						size="icon"
+						className="h-6 w-6 text-muted-foreground hover:text-foreground"
+						onClick={() => fileInputRef.current?.click()}
+						disabled={pendingFiles.length >= MAX_ATTACHMENTS}
+						aria-label="Attach a reference image or PDF"
+					>
+						<Paperclip className="h-3.5 w-3.5" aria-hidden="true" />
+					</Button>
 					{canPostInternal && (
 						<Button
 							variant={isInternal ? "default" : "outline"}

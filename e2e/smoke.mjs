@@ -439,6 +439,50 @@ check(
 const resolveRes = await apiJson(`/api/images/comments/${createdComment?.id}/resolve`, {})
 check("resolve a comment", resolveRes.ok)
 
+const attachmentForm = new FormData()
+attachmentForm.append(
+	"files",
+	new Blob([PNG_1PX], { type: "image/png" }),
+	"reference.png"
+)
+const attachRes = await api(
+	`/api/images/comments/${createdComment?.id}/attachments`,
+	{ method: "POST", body: attachmentForm }
+)
+const attachments = attachRes.ok ? await attachRes.json() : null
+check(
+	"attach a reference image to your own comment",
+	attachRes.status === 201 &&
+		attachments?.length === 1 &&
+		attachments[0].fileName === "reference.png",
+	`status=${attachRes.status}`
+)
+
+const attachedComments = await api(
+	`/api/images/versions/${reviewVersionId}/comments`
+).then((r) => (r.ok ? r.json() : []))
+check(
+	"attachments come back with the comment thread",
+	attachedComments.find((item) => item.id === createdComment?.id)?.attachments
+		?.length === 1
+)
+
+const badAttachmentForm = new FormData()
+badAttachmentForm.append(
+	"files",
+	new Blob(["#!/bin/sh\necho pwned"], { type: "application/x-sh" }),
+	"payload.sh"
+)
+const badAttachRes = await api(
+	`/api/images/comments/${createdComment?.id}/attachments`,
+	{ method: "POST", body: badAttachmentForm }
+)
+check(
+	"an executable attachment is refused",
+	badAttachRes.status >= 400,
+	`status=${badAttachRes.status}`
+)
+
 const internalCommentRes = await apiJson(
 	`/api/images/versions/${reviewVersionId}/comments`,
 	{ content: "internal: hold this until the contract is signed", internal: true }

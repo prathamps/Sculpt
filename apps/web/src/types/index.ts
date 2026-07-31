@@ -104,6 +104,13 @@ export interface Folder {
 	imageCount: number
 }
 
+export interface CommentAttachment {
+	id: string
+	url: string
+	fileName: string
+	mimeType: string
+}
+
 export interface CommentMention {
 	userId: string
 	user?: { name: string | null }
@@ -120,6 +127,7 @@ export interface Comment {
 	resolved: boolean
 	internal?: boolean
 	mentions?: CommentMention[]
+	attachments?: CommentAttachment[]
 	likes?: CommentLike[]
 	likeCount?: number
 	isLikedByCurrentUser?: boolean

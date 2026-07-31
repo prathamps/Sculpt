@@ -29,6 +29,7 @@ import { Comment as CommentType, CommentMention } from "@/types"
 import { formatDistanceToNow } from "date-fns"
 import { useAuth } from "@/context/AuthContext"
 import { MentionTextarea } from "@/components/MentionTextarea"
+import { CommentAttachments } from "@/components/CommentAttachments"
 import { useMentionDraft } from "@/hooks/useMentionDraft"
 
 const escapeRegExp = (value: string): string =>
@@ -356,6 +357,7 @@ export function CommentCard({
 					>
 						{renderWithMentions(comment.content, comment.mentions)}
 					</p>
+					<CommentAttachments attachments={comment.attachments} />
 					<div className="mt-2 flex items-center gap-3">
 						<Button
 							variant="ghost"

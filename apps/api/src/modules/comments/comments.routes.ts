@@ -6,6 +6,11 @@ import {
 	requireProjectRole,
 } from "../../middleware/authorize.middleware"
 import { validateBody } from "../../middleware/validate.middleware"
+import {
+	MAX_ATTACHMENTS_PER_COMMENT,
+	discardStagedUploadsWhenRequestEnds,
+	uploadAttachments,
+} from "../../middleware/upload.middleware"
 import { createCommentSchema, updateCommentSchema } from "./comments.schema"
 
 const router = Router()
@@ -25,6 +30,13 @@ router.post(
 	onVersion("MEMBER"),
 	validateBody(createCommentSchema),
 	commentsController.createComment
+)
+router.post(
+	"/comments/:commentId/attachments",
+	onComment,
+	discardStagedUploadsWhenRequestEnds,
+	uploadAttachments.array("files", MAX_ATTACHMENTS_PER_COMMENT),
+	commentsController.attachToComment
 )
 router.put(
 	"/comments/:commentId",

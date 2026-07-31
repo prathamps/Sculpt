@@ -233,12 +233,25 @@ model Comment {
   resolved       Boolean          @default(false)
   internal       Boolean          @default(false)
   mentions       CommentMention[]
+  attachments    CommentAttachment[]
   createdAt      DateTime         @default(now())
   updatedAt      DateTime         @updatedAt
 
   @@index([imageVersionId, createdAt])
   @@index([parentId])
   @@index([userId])
+}
+
+model CommentAttachment {
+  id        String   @id @default(cuid())
+  commentId String
+  comment   Comment  @relation(fields: [commentId], references: [id], onDelete: Cascade)
+  url       String
+  fileName  String
+  mimeType  String
+  createdAt DateTime @default(now())
+
+  @@index([commentId])
 }
 
 model CommentMention {
