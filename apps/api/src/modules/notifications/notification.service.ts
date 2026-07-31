@@ -73,13 +73,14 @@ export class NotificationService {
 	static async createProjectNotification(data: {
 		projectId: string
 		content: string
-		excludeUserId?: string
+		excludeUserIds?: string[]
 		metadata?: JsonValue
 	}): Promise<void> {
+		const excluded = data.excludeUserIds?.filter(Boolean) ?? []
 		const members = await prisma.projectMember.findMany({
 			where: {
 				projectId: data.projectId,
-				...(data.excludeUserId && { userId: { not: data.excludeUserId } }),
+				...(excluded.length > 0 && { userId: { notIn: excluded } }),
 			},
 			select: { userId: true },
 		})

@@ -677,6 +677,45 @@ check(
 )
 cookie = ownerCookie
 
+const membersRes = await api(`/api/projects/${project.id}/members`)
+const membersList = membersRes.ok ? await membersRes.json() : []
+check(
+	"project members are listable for the mention picker",
+	membersRes.ok && membersList.length === 2,
+	`count=${membersList.length}`
+)
+
+const mentionCommentRes = await apiJson(
+	`/api/images/versions/${reviewVersionId}/comments`,
+	{
+		content: "@Outsider please take a look",
+		mentionedUserIds: [outsiderId, "not-a-member-id"],
+	}
+)
+const mentionComment = mentionCommentRes.ok ? await mentionCommentRes.json() : null
+check(
+	"mentioning a member stores the mention and drops non-members",
+	mentionCommentRes.status === 201 &&
+		mentionComment?.mentions?.length === 1 &&
+		mentionComment?.mentions?.[0]?.userId === outsiderId,
+	JSON.stringify(mentionComment?.mentions)
+)
+
+cookie = outsiderCookie
+const mentionFeedRes = await api("/api/notifications")
+const mentionFeed = mentionFeedRes.ok ? await mentionFeedRes.json() : null
+check(
+	"the mentioned member is notified",
+	mentionFeedRes.ok &&
+		mentionFeed?.notifications?.some(
+			(item) =>
+				item.metadata?.type === "mention" &&
+				item.content.includes("mentioned you")
+		),
+	JSON.stringify(mentionFeed?.notifications?.slice(0, 3))
+)
+cookie = ownerCookie
+
 const resetRequestRes = await apiJson("/api/auth/password-reset/request", {
 	email,
 })

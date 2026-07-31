@@ -91,6 +91,21 @@ export const getProject = async (
 	}
 }
 
+export const getMembers = async (
+	req: AuthenticatedRequest,
+	res: Response
+): Promise<void> => {
+	try {
+		const members = await projectService.listProjectMembers(
+			req.params.projectId,
+			req.user!.id
+		)
+		res.status(200).json(members)
+	} catch (error) {
+		respondWithError(res, error, "list project members")
+	}
+}
+
 export const updateProject = async (
 	req: AuthenticatedRequest,
 	res: Response

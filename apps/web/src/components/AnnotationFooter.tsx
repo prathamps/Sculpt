@@ -3,7 +3,8 @@
 import { useState } from "react"
 import { Send, Undo, Redo, Trash2, X, FileText, MapPin } from "lucide-react"
 import { Button } from "@/components/ui/button"
-import { Textarea } from "@/components/ui/textarea"
+import { MentionTextarea } from "@/components/MentionTextarea"
+import { useMentionDraft } from "@/hooks/useMentionDraft"
 import { AnnotationToolbar } from "./AnnotationToolbar"
 import { AnnotationTool } from "@/app/project/[projectId]/image/[imageId]/page"
 import { cn, formatVideoTime } from "@/lib/utils"
@@ -70,6 +71,7 @@ export function AnnotationFooter({
 	const [comment, setComment] = useState("")
 	const [isSending, setIsSending] = useState(false)
 	const { user } = useAuth()
+	const { addMention, mentionIdsIn, resetMentions } = useMentionDraft()
 
 	const isVideoContext = typeof livePlayheadSeconds === "number"
 	const isModelContext = modelAnchor !== undefined
@@ -95,6 +97,7 @@ export function AnnotationFooter({
 			await api.post(`/api/images/versions/${imageVersionId}/comments`, {
 				content: comment,
 				annotation: annotationsToSend,
+				mentionedUserIds: mentionIdsIn(comment),
 				...(typeof anchorStart === "number" ? { timestamp: anchorStart } : {}),
 				...(hasRange ? { timestampEnd: anchorEnd } : {}),
 				...(typeof page === "number" ? { page } : {}),
@@ -102,6 +105,7 @@ export function AnnotationFooter({
 			})
 
 			setComment("")
+			resetMentions()
 			onClear()
 			onClearRange?.()
 			onCommentAdded()
@@ -125,13 +129,12 @@ export function AnnotationFooter({
 					<label htmlFor="comment-input" className="sr-only">
 						Add a comment
 					</label>
-					<Textarea
+					<MentionTextarea
 						id="comment-input"
-						placeholder="Add a comment..."
+						placeholder="Add a comment... Use @ to mention a teammate"
 						value={comment}
-						onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) =>
-							setComment(e.target.value)
-						}
+						onChange={setComment}
+						onMentionPicked={addMention}
 						className="min-h-[40px] resize-none rounded-md border-border/50 bg-background/60 pr-10 text-sm focus-visible:ring-1 focus-visible:ring-ring"
 					/>
 					<Button

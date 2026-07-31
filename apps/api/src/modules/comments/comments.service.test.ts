@@ -15,7 +15,14 @@ vi.mock("../../lib/prisma", () => ({
 		image: {
 			findUnique: vi.fn(),
 		},
+		projectMember: {
+			findMany: vi.fn(),
+		},
 	},
+}))
+
+vi.mock("../projects/access", () => ({
+	getVersionProjectId: vi.fn(),
 }))
 
 vi.mock("../../realtime/socket", () => ({
@@ -31,6 +38,8 @@ vi.mock("../notifications/notification.service", () => ({
 
 import { prisma } from "../../lib/prisma"
 import { io } from "../../realtime/socket"
+import { getVersionProjectId } from "../projects/access"
+import { NotificationService } from "../notifications/notification.service"
 import { CommentsService } from "./comments.service"
 import {
 	ForbiddenError,
@@ -249,6 +258,117 @@ describe("CommentsService.createComment anchors", () => {
 			"new-comment",
 			expect.objectContaining({ id: "c1" })
 		)
+	})
+})
+
+describe("CommentsService.createComment mentions", () => {
+	const mockedAccess = vi.mocked(getVersionProjectId)
+	const mockedNotifications = vi.mocked(NotificationService, true)
+
+	beforeEach(() => {
+		vi.clearAllMocks()
+		mockedNotifications.createNotification.mockResolvedValue({} as never)
+		mockedNotifications.createProjectNotification.mockResolvedValue(undefined)
+		mocked.comment.create.mockResolvedValue({
+			id: "c1",
+			imageVersionId: "v1",
+			parentId: null,
+			user: { name: "Ada" },
+		} as never)
+		mocked.imageVersion.findUnique.mockResolvedValue({
+			mediaType: "IMAGE",
+			duration: null,
+			imageId: "img1",
+		} as never)
+		mocked.image.findUnique.mockResolvedValue({
+			projectId: "p1",
+			name: "hero.png",
+		} as never)
+		mockedAccess.mockResolvedValue("p1")
+		mocked.projectMember.findMany.mockResolvedValue([
+			{ userId: "member1" },
+		] as never)
+	})
+
+	const createWithMentions = (mentionedUserIds: string[]) =>
+		CommentsService.createComment({
+			content: "hi @Member",
+			imageVersionId: "v1",
+			userId: "u1",
+			mentionedUserIds,
+		})
+
+	it("stores only project members, never the author", async () => {
+		await createWithMentions(["u1", "member1", "stranger", "member1"])
+
+		expect(mocked.projectMember.findMany).toHaveBeenCalledWith({
+			where: { projectId: "p1", userId: { in: ["member1", "stranger"] } },
+			select: { userId: true },
+		})
+		expect(mocked.comment.create).toHaveBeenCalledWith(
+			expect.objectContaining({
+				data: expect.objectContaining({
+					mentions: { create: [{ userId: "member1" }] },
+				}),
+			})
+		)
+	})
+
+	it("notifies mentioned members and excludes them from the project fan-out", async () => {
+		await createWithMentions(["member1"])
+
+		expect(mockedNotifications.createNotification).toHaveBeenCalledWith(
+			expect.objectContaining({
+				userId: "member1",
+				metadata: expect.objectContaining({ type: "mention" }),
+			})
+		)
+		expect(mockedNotifications.createProjectNotification).toHaveBeenCalledWith(
+			expect.objectContaining({
+				excludeUserIds: ["u1", "member1"],
+			})
+		)
+	})
+
+	it("skips membership lookup entirely without mentions", async () => {
+		await createWithMentions([])
+
+		expect(mocked.projectMember.findMany).not.toHaveBeenCalled()
+		expect(mocked.comment.create).toHaveBeenCalledWith(
+			expect.objectContaining({
+				data: expect.objectContaining({ mentions: { create: [] } }),
+			})
+		)
+	})
+
+	it("does not double-notify a mentioned parent author on a reply", async () => {
+		mocked.comment.findUnique.mockResolvedValue({
+			imageVersionId: "v1",
+			userId: "parent-author",
+		} as never)
+		mocked.comment.create.mockResolvedValue({
+			id: "c2",
+			imageVersionId: "v1",
+			parentId: "c1",
+			user: { name: "Ada" },
+		} as never)
+		mocked.projectMember.findMany.mockResolvedValue([
+			{ userId: "parent-author" },
+		] as never)
+
+		await CommentsService.createComment({
+			content: "hi",
+			imageVersionId: "v1",
+			userId: "u1",
+			parentId: "c1",
+			mentionedUserIds: ["parent-author"],
+		})
+
+		const contents = mockedNotifications.createNotification.mock.calls.map(
+			(call) => call[0].content
+		)
+		expect(contents).toContain("Ada mentioned you in a comment")
+		expect(contents.some((text) => text.includes("replied"))).toBe(false)
 	})
 })
 

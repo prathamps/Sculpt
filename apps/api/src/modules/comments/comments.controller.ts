@@ -33,6 +33,7 @@ export const createComment = async (
 			timestampEnd,
 			page,
 			modelAnchor,
+			mentionedUserIds,
 		} = req.body
 
 		const comment = await CommentsService.createComment({
@@ -45,6 +46,9 @@ export const createComment = async (
 			timestampEnd: typeof timestampEnd === "number" ? timestampEnd : null,
 			page: typeof page === "number" ? page : null,
 			modelAnchor: modelAnchor ?? null,
+			mentionedUserIds: Array.isArray(mentionedUserIds)
+				? mentionedUserIds
+				: [],
 		})
 		res.status(201).json(comment)
 	} catch (error) {

@@ -4,14 +4,28 @@ import { Comment, CommentLike, MediaType, User } from "@prisma/client"
 
 import { io } from "../../realtime/socket"
 import { NotificationService } from "../notifications/notification.service"
+import { getVersionProjectId } from "../projects/access"
 import { ForbiddenError, NotFoundError, ValidationError } from "../../lib/errors"
 import { logger } from "../../lib/logger"
+
+const MENTION_INCLUDE = {
+	select: {
+		userId: true,
+		user: { select: { name: true } },
+	},
+} as const
+
+type CommentMentionSummary = {
+	userId: string
+	user: { name: string | null }
+}
 
 type CommentWithLikesAndUser = Comment & {
 	likes: CommentLike[]
 	user: Omit<User, "password">
 	likeCount?: number
 	isLikedByCurrentUser?: boolean
+	mentions?: CommentMentionSummary[]
 	replies?: CommentWithLikesAndUser[]
 }
 
@@ -143,6 +157,26 @@ export class CommentsService {
 		}
 	}
 
+	private static async mentionableMembers(
+		imageVersionId: string,
+		authorId: string,
+		requestedUserIds: string[]
+	): Promise<string[]> {
+		const candidates = Array.from(new Set(requestedUserIds)).filter(
+			(id) => id !== authorId
+		)
+		if (candidates.length === 0) return []
+
+		const projectId = await getVersionProjectId(imageVersionId)
+		if (!projectId) return []
+
+		const members = await prisma.projectMember.findMany({
+			where: { projectId, userId: { in: candidates } },
+			select: { userId: true },
+		})
+		return members.map((member) => member.userId)
+	}
+
 	static async createComment(data: {
 		content: string
 		imageVersionId: string
@@ -153,6 +187,7 @@ export class CommentsService {
 		timestampEnd?: number | null
 		page?: number | null
 		modelAnchor?: unknown
+		mentionedUserIds?: string[]
 	}): Promise<Comment> {
 		const anchors = await this.validateAnchors(data.imageVersionId, {
 			timestamp: data.timestamp ?? null,
@@ -171,6 +206,12 @@ export class CommentsService {
 			}
 		}
 
+		const mentionedUserIds = await this.mentionableMembers(
+			data.imageVersionId,
+			data.userId,
+			data.mentionedUserIds ?? []
+		)
+
 		const comment = await prisma.comment.create({
 			data: {
 				content: data.content,
@@ -182,10 +223,14 @@ export class CommentsService {
 				timestampEnd: anchors.timestampEnd,
 				page: anchors.page,
 				modelAnchor: anchors.modelAnchor ?? undefined,
+				mentions: {
+					create: mentionedUserIds.map((userId) => ({ userId })),
+				},
 			},
 			include: {
 				user: true,
 				likes: true,
+				mentions: MENTION_INCLUDE,
 			},
 		})
 
@@ -200,7 +245,7 @@ export class CommentsService {
 			commentWithExtras
 		)
 
-		await this.handleCommentNotifications(comment, data.userId)
+		await this.handleCommentNotifications(comment, data.userId, mentionedUserIds)
 
 		return comment
 	}
@@ -214,8 +259,9 @@ export class CommentsService {
 			include: {
 				user: true,
 				likes: true,
+				mentions: MENTION_INCLUDE,
 				replies: {
-					include: { user: true, likes: true },
+					include: { user: true, likes: true, mentions: MENTION_INCLUDE },
 					orderBy: { createdAt: "asc" },
 				},
 			},
@@ -378,21 +424,44 @@ export class CommentsService {
 
 	private static async handleCommentNotifications(
 		comment: Comment & { user: Omit<User, "password"> },
-		currentUserId: string
+		currentUserId: string,
+		mentionedUserIds: string[] = []
 	): Promise<void> {
 		try {
+			const authorName = comment.user.name || "Someone"
+
+			await Promise.all(
+				mentionedUserIds.map((userId) =>
+					NotificationService.createNotification({
+						userId,
+						content: `${authorName} mentioned you in a comment`,
+						metadata: {
+							type: "mention",
+							commentId: comment.id,
+							imageVersionId: comment.imageVersionId,
+						},
+					}).catch((error) =>
+						logger.error("Mention notification failed", error, {
+							commentId: comment.id,
+						})
+					)
+				)
+			)
+
 			if (comment.parentId) {
 				const parentComment = await prisma.comment.findUnique({
 					where: { id: comment.parentId },
 					select: { userId: true },
 				})
 
-				if (parentComment && parentComment.userId !== currentUserId) {
+				if (
+					parentComment &&
+					parentComment.userId !== currentUserId &&
+					!mentionedUserIds.includes(parentComment.userId)
+				) {
 					await NotificationService.createNotification({
 						userId: parentComment.userId,
-						content: `${
-							comment.user.name || "Someone"
-						} replied to your comment`,
+						content: `${authorName} replied to your comment`,
 						metadata: {
 							type: "comment_reply",
 							commentId: comment.id,
@@ -415,10 +484,8 @@ export class CommentsService {
 					if (image) {
 						await NotificationService.createProjectNotification({
 							projectId: image.projectId,
-							content: `${comment.user.name || "Someone"} commented on image "${
-								image.name
-							}"`,
-							excludeUserId: currentUserId,
+							content: `${authorName} commented on image "${image.name}"`,
+							excludeUserIds: [currentUserId, ...mentionedUserIds],
 							metadata: {
 								type: "new_comment",
 								commentId: comment.id,

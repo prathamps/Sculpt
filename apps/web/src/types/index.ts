@@ -96,6 +96,11 @@ export interface CommentLike {
 	createdAt: string
 }
 
+export interface CommentMention {
+	userId: string
+	user?: { name: string | null }
+}
+
 export interface Comment {
 	id: string
 	content: string
@@ -105,6 +110,7 @@ export interface Comment {
 	parentId?: string
 	replies?: Comment[]
 	resolved: boolean
+	mentions?: CommentMention[]
 	likes?: CommentLike[]
 	likeCount?: number
 	isLikedByCurrentUser?: boolean

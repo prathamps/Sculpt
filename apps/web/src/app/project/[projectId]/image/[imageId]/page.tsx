@@ -9,6 +9,7 @@ import {
 	Suspense,
 } from "react"
 import { useAuth } from "@/context/AuthContext"
+import { ProjectMembersProvider } from "@/context/ProjectMembersContext"
 import {
 	useRouter,
 	useParams,
@@ -1085,6 +1086,8 @@ function ProjectFileViewPageInner() {
 }
 
 export default function ProjectFileViewPage() {
+	const params = useParams()
+	const projectId = params.projectId as string
 	return (
 		<Suspense
 			fallback={
@@ -1093,7 +1096,9 @@ export default function ProjectFileViewPage() {
 				</div>
 			}
 		>
-			<ProjectFileViewPageInner />
+			<ProjectMembersProvider projectId={projectId}>
+				<ProjectFileViewPageInner />
+			</ProjectMembersProvider>
 		</Suspense>
 	)
 }

@@ -36,6 +36,7 @@ router.delete(
 	projectController.revokeInvitation
 )
 
+router.get("/:projectId/members", projectController.getMembers)
 router.patch(
 	"/:projectId/members/:userId/role",
 	validateBody(changeMemberRoleSchema),
