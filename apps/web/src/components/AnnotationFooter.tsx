@@ -1,7 +1,7 @@
 "use client"
 
 import { useState } from "react"
-import { Send, Undo, Redo, Trash2, X, FileText, MapPin } from "lucide-react"
+import { Send, Undo, Redo, Trash2, X, FileText, MapPin, Lock } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { MentionTextarea } from "@/components/MentionTextarea"
 import { useMentionDraft } from "@/hooks/useMentionDraft"
@@ -43,6 +43,7 @@ interface AnnotationFooterProps {
 	page?: number | null
 	modelAnchor?: ModelAnchor | null
 	onClearModelAnchor?: () => void
+	canPostInternal?: boolean
 }
 
 export function AnnotationFooter({
@@ -67,8 +68,10 @@ export function AnnotationFooter({
 	page,
 	modelAnchor,
 	onClearModelAnchor,
+	canPostInternal = false,
 }: AnnotationFooterProps) {
 	const [comment, setComment] = useState("")
+	const [isInternal, setIsInternal] = useState(false)
 	const [isSending, setIsSending] = useState(false)
 	const { user } = useAuth()
 	const { addMention, mentionIdsIn, resetMentions } = useMentionDraft()
@@ -98,6 +101,7 @@ export function AnnotationFooter({
 				content: comment,
 				annotation: annotationsToSend,
 				mentionedUserIds: mentionIdsIn(comment),
+				...(isInternal ? { internal: true } : {}),
 				...(typeof anchorStart === "number" ? { timestamp: anchorStart } : {}),
 				...(hasRange ? { timestampEnd: anchorEnd } : {}),
 				...(typeof page === "number" ? { page } : {}),
@@ -155,6 +159,19 @@ export function AnnotationFooter({
 
 			<div className="flex items-center justify-between">
 				<div className="flex items-center gap-2">
+					{canPostInternal && (
+						<Button
+							variant={isInternal ? "default" : "outline"}
+							size="sm"
+							className="h-6 gap-1 px-2 text-[11px]"
+							onClick={() => setIsInternal(!isInternal)}
+							aria-pressed={isInternal}
+							aria-label="Post as an internal note, hidden from viewers and reviewers"
+						>
+							<Lock className="h-3 w-3" aria-hidden="true" />
+							{isInternal ? "Internal note" : "Internal"}
+						</Button>
+					)}
 					{annotations.length > 0 && (
 						<div className="text-xs text-muted-foreground">
 							{annotations.length} drawing{annotations.length > 1 ? "s" : ""}

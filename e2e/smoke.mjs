@@ -439,6 +439,27 @@ check(
 const resolveRes = await apiJson(`/api/images/comments/${createdComment?.id}/resolve`, {})
 check("resolve a comment", resolveRes.ok)
 
+const internalCommentRes = await apiJson(
+	`/api/images/versions/${reviewVersionId}/comments`,
+	{ content: "internal: hold this until the contract is signed", internal: true }
+)
+const internalComment = internalCommentRes.ok
+	? await internalCommentRes.json()
+	: null
+check(
+	"an owner can post an internal comment",
+	internalCommentRes.status === 201 && internalComment?.internal === true,
+	`status=${internalCommentRes.status}`
+)
+
+const ownerSeesInternal = await api(
+	`/api/images/versions/${reviewVersionId}/comments`
+).then((r) => (r.ok ? r.json() : []))
+check(
+	"the internal team sees internal comments",
+	ownerSeesInternal.some((item) => item.id === internalComment?.id)
+)
+
 const emptyCommentRes = await apiJson(
 	`/api/images/versions/${reviewVersionId}/comments`,
 	{ content: "   " }
@@ -670,6 +691,28 @@ const outsiderId = inviteBody?.project?.members?.find(
 	(member) => member.user.email === outsiderEmail
 )?.user?.id
 
+cookie = outsiderCookie
+const memberComments = await api(
+	`/api/images/versions/${reviewVersionId}/comments`
+).then((r) => (r.ok ? r.json() : []))
+check(
+	"a MEMBER never receives internal comments",
+	!memberComments.some((item) => item.id === internalComment?.id) &&
+		!memberComments.some((item) => item.internal),
+	`count=${memberComments.length}`
+)
+
+const memberInternalRes = await apiJson(
+	`/api/images/versions/${reviewVersionId}/comments`,
+	{ content: "sneaky internal", internal: true }
+)
+check(
+	"a MEMBER cannot post an internal comment",
+	memberInternalRes.status === 403,
+	`status=${memberInternalRes.status}`
+)
+cookie = ownerCookie
+
 const roleChangeRes = await apiSend(
 	"PATCH",
 	`/api/projects/${project.id}/members/${outsiderId}/role`,
@@ -690,6 +733,15 @@ check(
 	"stored media becomes readable once you are a member",
 	memberMediaRes.ok,
 	`status=${memberMediaRes.status}`
+)
+
+const editorComments = await api(
+	`/api/images/versions/${reviewVersionId}/comments`
+).then((r) => (r.ok ? r.json() : []))
+check(
+	"promotion to EDITOR reveals internal comments",
+	editorComments.some((item) => item.id === internalComment?.id),
+	`count=${editorComments.length}`
 )
 cookie = ownerCookie
 

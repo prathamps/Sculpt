@@ -118,6 +118,7 @@ export interface Comment {
 	parentId?: string
 	replies?: Comment[]
 	resolved: boolean
+	internal?: boolean
 	mentions?: CommentMention[]
 	likes?: CommentLike[]
 	likeCount?: number

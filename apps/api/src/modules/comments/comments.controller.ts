@@ -8,10 +8,11 @@ export const listComments = async (
 	res: Response
 ): Promise<void> => {
 	try {
-		const { userId } = authorizedScope(res)
+		const { userId, role } = authorizedScope(res)
 		const comments = await CommentsService.getCommentsByImageVersionId(
 			req.params.imageVersionId,
-			userId
+			userId,
+			role
 		)
 		res.status(200).json(comments)
 	} catch (error) {
@@ -24,7 +25,7 @@ export const createComment = async (
 	res: Response
 ): Promise<void> => {
 	try {
-		const { userId } = authorizedScope(res)
+		const { userId, role } = authorizedScope(res)
 		const {
 			content,
 			parentId,
@@ -34,6 +35,7 @@ export const createComment = async (
 			page,
 			modelAnchor,
 			mentionedUserIds,
+			internal,
 		} = req.body
 
 		const comment = await CommentsService.createComment({
@@ -49,6 +51,8 @@ export const createComment = async (
 			mentionedUserIds: Array.isArray(mentionedUserIds)
 				? mentionedUserIds
 				: [],
+			internal: internal === true,
+			authorRole: role,
 		})
 		res.status(201).json(comment)
 	} catch (error) {

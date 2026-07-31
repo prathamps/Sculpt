@@ -990,6 +990,7 @@ function ProjectFileViewPageInner() {
 									page={isPdf ? currentPdfPage : null}
 									modelAnchor={isModel ? pendingPin : undefined}
 									onClearModelAnchor={() => setPendingPin(null)}
+									canPostInternal={canEditMedia}
 								/>
 							</div>
 						) : (

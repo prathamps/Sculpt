@@ -1,6 +1,6 @@
 import { prisma } from "../../lib/prisma"
 import { io } from "../../realtime/socket"
-import { Notification, Prisma } from "@prisma/client"
+import { Notification, Prisma, ProjectRole } from "@prisma/client"
 import { JsonValue } from "@prisma/client/runtime/library"
 import { isUserOnline } from "../../lib/presence"
 import { logger } from "../../lib/logger"
@@ -74,6 +74,7 @@ export class NotificationService {
 		projectId: string
 		content: string
 		excludeUserIds?: string[]
+		onlyRoles?: ProjectRole[]
 		metadata?: JsonValue
 	}): Promise<void> {
 		const excluded = data.excludeUserIds?.filter(Boolean) ?? []
@@ -81,6 +82,7 @@ export class NotificationService {
 			where: {
 				projectId: data.projectId,
 				...(excluded.length > 0 && { userId: { notIn: excluded } }),
+				...(data.onlyRoles && { role: { in: data.onlyRoles } }),
 			},
 			select: { userId: true },
 		})
@@ -105,6 +107,8 @@ export class NotificationService {
 				)
 			)
 		)
+
+		if (data.onlyRoles) return
 
 		io.to(`project:${data.projectId}`).emit("project-update", {
 			type: "notification",

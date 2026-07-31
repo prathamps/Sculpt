@@ -6,6 +6,7 @@ vi.mock("../../lib/prisma", () => ({
 	prisma: {
 		comment: {
 			findUnique: vi.fn(),
+			findMany: vi.fn(),
 			update: vi.fn(),
 			create: vi.fn(),
 		},
@@ -21,12 +22,18 @@ vi.mock("../../lib/prisma", () => ({
 	},
 }))
 
-vi.mock("../projects/access", () => ({
-	getVersionProjectId: vi.fn(),
-}))
+vi.mock("../projects/access", async (importOriginal) => {
+	const actual = await importOriginal<typeof import("../projects/access")>()
+	return {
+		...actual,
+		getVersionProjectId: vi.fn(),
+	}
+})
 
 vi.mock("../../realtime/socket", () => ({
 	io: { to: vi.fn(() => ({ emit: emitMock })) },
+	internalVersionRoom: (imageVersionId: string) =>
+		`imageVersion:${imageVersionId}:internal`,
 }))
 
 vi.mock("../notifications/notification.service", () => ({
@@ -426,6 +433,97 @@ describe("CommentsService.createComment parent threading", () => {
 		expect(mocked.comment.create).toHaveBeenCalledWith(
 			expect.objectContaining({
 				data: expect.objectContaining({ parentId: "p1" }),
+			})
+		)
+	})
+})
+
+describe("CommentsService internal comments", () => {
+	const mockedAccess = vi.mocked(getVersionProjectId)
+	const mockedNotifications = vi.mocked(NotificationService, true)
+
+	beforeEach(() => {
+		vi.clearAllMocks()
+		mockedNotifications.createNotification.mockResolvedValue({} as never)
+		mockedNotifications.createProjectNotification.mockResolvedValue(undefined)
+		mocked.imageVersion.findUnique.mockResolvedValue({
+			mediaType: "IMAGE",
+			duration: null,
+			imageId: "img1",
+		} as never)
+		mocked.image.findUnique.mockResolvedValue({
+			projectId: "p1",
+			name: "hero.png",
+		} as never)
+		mockedAccess.mockResolvedValue("p1")
+		mocked.comment.create.mockResolvedValue({
+			id: "c1",
+			imageVersionId: "v1",
+			parentId: null,
+			internal: true,
+			user: { name: "Ada" },
+		} as never)
+	})
+
+	const post = (internal: boolean, authorRole: "VIEWER" | "MEMBER" | "EDITOR") =>
+		CommentsService.createComment({
+			content: "internal note",
+			imageVersionId: "v1",
+			userId: "u1",
+			internal,
+			authorRole,
+		})
+
+	it("refuses an internal comment from a member below EDITOR", async () => {
+		await expect(post(true, "MEMBER")).rejects.toBeInstanceOf(ForbiddenError)
+		expect(mocked.comment.create).not.toHaveBeenCalled()
+	})
+
+	it("stores an internal comment for an editor", async () => {
+		await post(true, "EDITOR")
+
+		expect(mocked.comment.create).toHaveBeenCalledWith(
+			expect.objectContaining({
+				data: expect.objectContaining({ internal: true }),
+			})
+		)
+	})
+
+	it("fans an internal comment out only to the internal roles", async () => {
+		await post(true, "EDITOR")
+
+		expect(mockedNotifications.createProjectNotification).toHaveBeenCalledWith(
+			expect.objectContaining({ onlyRoles: ["EDITOR", "OWNER"] })
+		)
+	})
+
+	it("emits an internal comment to the internal room only", async () => {
+		await post(true, "EDITOR")
+
+		expect(io.to).toHaveBeenCalledWith("imageVersion:v1:internal")
+		expect(io.to).not.toHaveBeenCalledWith("imageVersion:v1")
+	})
+
+	it("hides internal comments from readers below EDITOR", async () => {
+		mocked.comment.findMany.mockResolvedValue([] as never)
+
+		await CommentsService.getCommentsByImageVersionId("v1", "u1", "MEMBER")
+
+		expect(mocked.comment.findMany).toHaveBeenCalledWith(
+			expect.objectContaining({
+				where: { imageVersionId: "v1", parentId: null, internal: false },
+			})
+		)
+	})
+
+	it("shows internal comments to editors", async () => {
+		mocked.comment.findMany.mockResolvedValue([] as never)
+
+		await CommentsService.getCommentsByImageVersionId("v1", "u1", "EDITOR")
+
+		expect(mocked.comment.findMany).toHaveBeenCalledWith(
+			expect.objectContaining({
+				where: { imageVersionId: "v1", parentId: null },
 			})
 		)
 	})

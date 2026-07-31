@@ -2,9 +2,22 @@ import { JsonValue } from "@prisma/client/runtime/library";
 import { prisma } from "../../lib/prisma"
 import { Comment, CommentLike, MediaType, User } from "@prisma/client"
 
-import { io } from "../../realtime/socket"
+import { ProjectRole } from "@prisma/client"
+import { io, internalVersionRoom } from "../../realtime/socket"
 import { NotificationService } from "../notifications/notification.service"
-import { getVersionProjectId } from "../projects/access"
+import { getVersionProjectId, roleMeets } from "../projects/access"
+
+export const INTERNAL_COMMENT_MIN_ROLE: ProjectRole = "EDITOR"
+
+export const INTERNAL_COMMENT_ROLES: ProjectRole[] = ["EDITOR", "OWNER"]
+
+export const canSeeInternalComments = (role: ProjectRole | null): boolean =>
+	roleMeets(role, INTERNAL_COMMENT_MIN_ROLE)
+
+const commentRoom = (imageVersionId: string, internal: boolean): string =>
+	internal
+		? internalVersionRoom(imageVersionId)
+		: `imageVersion:${imageVersionId}`
 import { ForbiddenError, NotFoundError, ValidationError } from "../../lib/errors"
 import { logger } from "../../lib/logger"
 
@@ -188,6 +201,8 @@ export class CommentsService {
 		page?: number | null
 		modelAnchor?: unknown
 		mentionedUserIds?: string[]
+		internal?: boolean
+		authorRole?: ProjectRole | null
 	}): Promise<Comment> {
 		const anchors = await this.validateAnchors(data.imageVersionId, {
 			timestamp: data.timestamp ?? null,
@@ -204,6 +219,12 @@ export class CommentsService {
 			if (!parent || parent.imageVersionId !== data.imageVersionId) {
 				throw new NotFoundError("Parent comment not found")
 			}
+		}
+
+		if (data.internal && !canSeeInternalComments(data.authorRole ?? null)) {
+			throw new ForbiddenError(
+				"Only the internal team can post internal comments"
+			)
 		}
 
 		const mentionedUserIds = await this.mentionableMembers(
@@ -223,6 +244,7 @@ export class CommentsService {
 				timestampEnd: anchors.timestampEnd,
 				page: anchors.page,
 				modelAnchor: anchors.modelAnchor ?? undefined,
+				internal: !!data.internal,
 				mentions: {
 					create: mentionedUserIds.map((userId) => ({ userId })),
 				},
@@ -240,7 +262,7 @@ export class CommentsService {
 			isLikedByCurrentUser: false,
 		}
 
-		io.to(`imageVersion:${data.imageVersionId}`).emit(
+		io.to(commentRoom(data.imageVersionId, comment.internal)).emit(
 			"new-comment",
 			commentWithExtras
 		)
@@ -252,15 +274,20 @@ export class CommentsService {
 
 	static async getCommentsByImageVersionId(
 		imageVersionId: string,
-		currentUserId?: string
+		currentUserId?: string,
+		callerRole?: ProjectRole | null
 	): Promise<CommentWithLikesAndUser[]> {
+		const internalVisible = canSeeInternalComments(callerRole ?? null)
+		const visibility = internalVisible ? {} : { internal: false }
+
 		const comments = await prisma.comment.findMany({
-			where: { imageVersionId, parentId: null },
+			where: { imageVersionId, parentId: null, ...visibility },
 			include: {
 				user: true,
 				likes: true,
 				mentions: MENTION_INCLUDE,
 				replies: {
+					where: visibility,
 					include: { user: true, likes: true, mentions: MENTION_INCLUDE },
 					orderBy: { createdAt: "asc" },
 				},
@@ -310,7 +337,9 @@ export class CommentsService {
 			include: { user: true, likes: true },
 		})
 
-		io.to(`imageVersion:${existingComment.imageVersionId}`).emit(
+		io.to(
+			commentRoom(existingComment.imageVersionId, existingComment.internal)
+		).emit(
 			"comment-updated",
 			{
 				...updatedComment,
@@ -324,7 +353,7 @@ export class CommentsService {
 	static async deleteComment(commentId: string, userId: string): Promise<void> {
 		const comment = await prisma.comment.findFirst({
 			where: { id: commentId, userId },
-			select: { id: true, imageVersionId: true },
+			select: { id: true, imageVersionId: true, internal: true },
 		})
 
 		if (!comment) {
@@ -335,10 +364,13 @@ export class CommentsService {
 
 		await prisma.comment.delete({ where: { id: commentId } })
 
-		io.to(`imageVersion:${comment.imageVersionId}`).emit("comment-deleted", {
-			id: commentId,
-			imageVersionId: comment.imageVersionId,
-		})
+		io.to(commentRoom(comment.imageVersionId, comment.internal)).emit(
+			"comment-deleted",
+			{
+				id: commentId,
+				imageVersionId: comment.imageVersionId,
+			}
+		)
 	}
 
 	static async toggleLike(
@@ -347,7 +379,7 @@ export class CommentsService {
 	): Promise<{ liked: boolean; count: number }> {
 		const comment = await prisma.comment.findUnique({
 			where: { id: commentId },
-			select: { userId: true, imageVersionId: true },
+			select: { userId: true, imageVersionId: true, internal: true },
 		})
 		if (!comment) throw new NotFoundError("Comment not found")
 
@@ -366,7 +398,7 @@ export class CommentsService {
 			}
 		})
 
-		io.to(`imageVersion:${comment.imageVersionId}`).emit(
+		io.to(commentRoom(comment.imageVersionId, comment.internal)).emit(
 			"comment-like-updated",
 			{
 				id: commentId,
@@ -400,7 +432,12 @@ export class CommentsService {
 	): Promise<{ resolved: boolean }> {
 		const comment = await prisma.comment.findUnique({
 			where: { id: commentId },
-			select: { userId: true, resolved: true, imageVersionId: true },
+			select: {
+				userId: true,
+				resolved: true,
+				imageVersionId: true,
+				internal: true,
+			},
 		})
 
 		if (!comment) throw new NotFoundError("Comment not found")
@@ -414,12 +451,32 @@ export class CommentsService {
 			include: { user: true, likes: true },
 		})
 
-		io.to(`imageVersion:${comment.imageVersionId}`).emit("comment-updated", {
+		io.to(commentRoom(comment.imageVersionId, comment.internal)).emit(
+			"comment-updated",
+			{
 			...updated,
 			imageVersionId: comment.imageVersionId,
 		})
 
 		return { resolved: updated.resolved }
+	}
+
+	private static async internalOnlyMentions(
+		imageVersionId: string,
+		mentionedUserIds: string[]
+	): Promise<string[]> {
+		if (mentionedUserIds.length === 0) return []
+		const projectId = await getVersionProjectId(imageVersionId)
+		if (!projectId) return []
+		const members = await prisma.projectMember.findMany({
+			where: {
+				projectId,
+				userId: { in: mentionedUserIds },
+				role: { in: INTERNAL_COMMENT_ROLES },
+			},
+			select: { userId: true },
+		})
+		return members.map((member) => member.userId)
 	}
 
 	private static async handleCommentNotifications(
@@ -429,9 +486,15 @@ export class CommentsService {
 	): Promise<void> {
 		try {
 			const authorName = comment.user.name || "Someone"
+			const recipients = comment.internal
+				? await this.internalOnlyMentions(
+						comment.imageVersionId,
+						mentionedUserIds
+					)
+				: mentionedUserIds
 
 			await Promise.all(
-				mentionedUserIds.map((userId) =>
+				recipients.map((userId) =>
 					NotificationService.createNotification({
 						userId,
 						content: `${authorName} mentioned you in a comment`,
@@ -453,11 +516,20 @@ export class CommentsService {
 					where: { id: comment.parentId },
 					select: { userId: true },
 				})
+				const parentAuthorMayKnow =
+					!!parentComment &&
+					(!comment.internal ||
+						(
+							await this.internalOnlyMentions(comment.imageVersionId, [
+								parentComment.userId,
+							])
+						).length > 0)
 
 				if (
 					parentComment &&
+					parentAuthorMayKnow &&
 					parentComment.userId !== currentUserId &&
-					!mentionedUserIds.includes(parentComment.userId)
+					!recipients.includes(parentComment.userId)
 				) {
 					await NotificationService.createNotification({
 						userId: parentComment.userId,
@@ -484,8 +556,13 @@ export class CommentsService {
 					if (image) {
 						await NotificationService.createProjectNotification({
 							projectId: image.projectId,
-							content: `${authorName} commented on image "${image.name}"`,
-							excludeUserIds: [currentUserId, ...mentionedUserIds],
+							content: comment.internal
+								? `${authorName} left an internal note on "${image.name}"`
+								: `${authorName} commented on image "${image.name}"`,
+							excludeUserIds: [currentUserId, ...recipients],
+							...(comment.internal
+								? { onlyRoles: INTERNAL_COMMENT_ROLES }
+								: {}),
 							metadata: {
 								type: "new_comment",
 								commentId: comment.id,

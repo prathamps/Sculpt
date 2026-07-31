@@ -15,6 +15,7 @@ import {
 	Clock,
 	FileText,
 	MapPin,
+	Lock,
 } from "lucide-react"
 import { cn, formatVideoTime } from "@/lib/utils"
 import {
@@ -324,6 +325,12 @@ export function CommentCard({
 								<span className="inline-flex items-center gap-1 rounded-full bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary">
 									<MapPin className="h-3 w-3" aria-hidden="true" />
 									3D pin
+								</span>
+							)}
+							{comment.internal && (
+								<span className="inline-flex items-center gap-1 rounded-full bg-amber-500/15 px-2 py-0.5 text-xs font-medium text-amber-700 dark:text-amber-300">
+									<Lock className="h-3 w-3" aria-hidden="true" />
+									Internal
 								</span>
 							)}
 							{comment.resolved && (

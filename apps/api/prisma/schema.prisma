@@ -231,6 +231,7 @@ model Comment {
   page           Int?
   modelAnchor    Json?
   resolved       Boolean          @default(false)
+  internal       Boolean          @default(false)
   mentions       CommentMention[]
   createdAt      DateTime         @default(now())
   updatedAt      DateTime         @updatedAt
