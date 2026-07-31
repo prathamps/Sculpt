@@ -30,6 +30,7 @@ import { MoreVertical } from "lucide-react"
 import { formatBytes } from "@/lib/utils"
 import { Button } from "./ui/button"
 import { ConfirmationModal } from "./ConfirmationModal"
+import { ReviewStatusBadge } from "./ReviewPanel"
 import { api } from "@/lib/api"
 import { describeError } from "@/lib/errors"
 import { toast } from "sonner"
@@ -178,6 +179,8 @@ export function FileCard({
 	const [isConfirmingDelete, setConfirmingDelete] = useState(false)
 	const [isDeleting, setIsDeleting] = useState(false)
 	const mediaType: MediaType = file.latestVersion?.mediaType ?? "IMAGE"
+	const reviewStatus = file.latestVersion?.reviewStatus
+	const showReviewStatus = !!reviewStatus && reviewStatus !== "PENDING"
 	const fileCreatedAt = new Date(file.createdAt)
 	const formattedDate = formatDistanceToNow(fileCreatedAt, { addSuffix: true })
 	const versionCount = file.versionCount ?? 1
@@ -232,6 +235,12 @@ export function FileCard({
 									{formattedDate}
 								</span>
 								{file.size && <span>{formatBytes(file.size)}</span>}
+								{showReviewStatus && (
+									<ReviewStatusBadge
+										status={reviewStatus}
+										className="px-2 py-0.5 text-[10px]"
+									/>
+								)}
 							</div>
 						</div>
 					</div>
@@ -314,6 +323,12 @@ export function FileCard({
 							overlayIconSize="h-8 w-8"
 							zoomOnHover={mediaType === "IMAGE"}
 						/>
+						{showReviewStatus && (
+							<ReviewStatusBadge
+								status={reviewStatus}
+								className="absolute left-1.5 top-1.5 z-10 bg-background/90 px-2 py-0.5 text-[10px]"
+							/>
+						)}
 					</div>
 				</Link>
 				<CardContent className="p-4">
