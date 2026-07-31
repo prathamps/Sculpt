@@ -31,6 +31,13 @@ import { formatBytes } from "@/lib/utils"
 import { Button } from "./ui/button"
 import { ConfirmationModal } from "./ConfirmationModal"
 import { ReviewStatusBadge } from "./ReviewPanel"
+import { FolderNode } from "@/hooks/useProjectFolders"
+import {
+	DropdownMenuSub,
+	DropdownMenuSubContent,
+	DropdownMenuSubTrigger,
+} from "./ui/dropdown-menu"
+import { FolderInputIcon } from "lucide-react"
 import { api } from "@/lib/api"
 import { describeError } from "@/lib/errors"
 import { toast } from "sonner"
@@ -43,6 +50,8 @@ interface FileCardProps {
 	linkTabIndex?: number
 	onRename?: (file: File) => void
 	onDelete?: (file: File) => void
+	folders?: FolderNode[]
+	canEdit?: boolean
 }
 
 interface ThumbnailProps {
@@ -174,6 +183,8 @@ export function FileCard({
 	onProjectChanged,
 	viewMode = "grid",
 	linkTabIndex,
+	folders = [],
+	canEdit = true,
 }: FileCardProps) {
 	const [isRenameModalOpen, setRenameModalOpen] = useState(false)
 	const [isConfirmingDelete, setConfirmingDelete] = useState(false)
@@ -198,6 +209,43 @@ export function FileCard({
 			setIsDeleting(false)
 		}
 	}
+
+	const moveToFolder = async (folderId: string | null) => {
+		try {
+			await api.patch(`/api/projects/${projectId}/images/${file.id}/folder`, {
+				folderId,
+			})
+			onProjectChanged()
+		} catch (error) {
+			toast.error(describeError(error, "Could not move this file."))
+		}
+	}
+
+	const moveMenu = canEdit && folders.length > 0 && (
+		<DropdownMenuSub>
+			<DropdownMenuSubTrigger>
+				<FolderInputIcon className="mr-2 h-4 w-4" />
+				Move to
+			</DropdownMenuSubTrigger>
+			<DropdownMenuSubContent className="max-h-64 overflow-y-auto">
+				<DropdownMenuItem
+					disabled={!file.folderId}
+					onClick={() => moveToFolder(null)}
+				>
+					All files
+				</DropdownMenuItem>
+				{folders.map((folder) => (
+					<DropdownMenuItem
+						key={folder.id}
+						disabled={folder.id === file.folderId}
+						onClick={() => moveToFolder(folder.id)}
+					>
+						{folder.name}
+					</DropdownMenuItem>
+				))}
+			</DropdownMenuSubContent>
+		</DropdownMenuSub>
+	)
 
 	const deleteConfirmation = (
 		<ConfirmationModal
@@ -276,6 +324,7 @@ export function FileCard({
 									<PencilIcon className="mr-2 h-4 w-4 text-primary/70" />
 									Rename
 								</DropdownMenuItem>
+								{moveMenu}
 								<DropdownMenuItem asChild>
 									<Link
 										href={`/project/${projectId}/image/${file.id}`}
@@ -364,6 +413,7 @@ export function FileCard({
 									<PencilIcon className="mr-2 h-4 w-4" />
 									Rename
 								</DropdownMenuItem>
+								{moveMenu}
 								<DropdownMenuItem
 									onClick={() => setConfirmingDelete(true)}
 									className="text-destructive focus:text-destructive"

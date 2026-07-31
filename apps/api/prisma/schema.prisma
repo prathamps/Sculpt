@@ -110,11 +110,28 @@ model Project {
   name       String
   members    ProjectMember[]
   images     Image[]
+  folders    Folder[]
   shareLinks ShareLink[]
   mediaAssets MediaAsset[]
   invitations ProjectInvitation[]
   createdAt  DateTime        @default(now())
   updatedAt  DateTime        @updatedAt
+}
+
+model Folder {
+  id        String   @id @default(cuid())
+  name      String
+  projectId String
+  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  parentId  String?
+  parent    Folder?  @relation("FolderToFolder", fields: [parentId], references: [id], onDelete: Cascade)
+  children  Folder[] @relation("FolderToFolder")
+  images    Image[]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([projectId, parentId, name])
+  @@index([projectId, parentId])
 }
 
 model ProjectMember {
@@ -145,12 +162,15 @@ model Image {
   name        String
   projectId   String
   project     Project        @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  folderId    String?
+  folder      Folder?        @relation(fields: [folderId], references: [id], onDelete: SetNull)
   versions    ImageVersion[]
   createdAt   DateTime       @default(now())
   updatedAt   DateTime       @updatedAt
 
   @@index([projectId, updatedAt])
   @@index([projectId, name])
+  @@index([folderId])
 }
 
 model ImageVersion {

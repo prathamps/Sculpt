@@ -65,6 +65,7 @@ interface ImageUploadModalProps {
 	onClose: () => void
 	onUploadComplete: () => void
 	imageId?: string
+	folderId?: string | null
 }
 
 export function ImageUploadModal({
@@ -73,6 +74,7 @@ export function ImageUploadModal({
 	onClose,
 	onUploadComplete,
 	imageId,
+	folderId = null,
 }: ImageUploadModalProps) {
 	const [files, setFiles] = useState<File[]>([])
 	const [isUploading, setIsUploading] = useState(false)
@@ -213,6 +215,7 @@ export function ImageUploadModal({
 					})
 				}
 				formData.append("filesMeta", JSON.stringify(filesMeta))
+				if (folderId) formData.append("folderId", folderId)
 
 				uploadPath = `/api/projects/${projectId}/images`
 			}

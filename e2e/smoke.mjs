@@ -612,6 +612,22 @@ check(
 	JSON.stringify(outsiderSearch)
 )
 
+const outsiderFolderRes = await apiJson(`/api/projects/${project.id}/folders`, {
+	name: "Sneaky",
+})
+check(
+	"a non-member cannot create folders in someone else's project",
+	outsiderFolderRes.status === 403 || outsiderFolderRes.status === 404,
+	`status=${outsiderFolderRes.status}`
+)
+
+const outsiderFolderListRes = await api(`/api/projects/${project.id}/folders`)
+check(
+	"a non-member cannot list folders",
+	outsiderFolderListRes.status === 403 || outsiderFolderListRes.status === 404,
+	`status=${outsiderFolderListRes.status}`
+)
+
 const outsiderMediaRes = await api(`/${imageForReview?.latestVersion?.url ?? "uploads/none"}`)
 check(
 	"stored media is not readable by a non-member",
@@ -676,6 +692,75 @@ check(
 	`status=${memberMediaRes.status}`
 )
 cookie = ownerCookie
+
+const folderRes = await apiJson(`/api/projects/${project.id}/folders`, {
+	name: "Shots",
+})
+const folder = folderRes.ok ? await folderRes.json() : null
+check("create a folder", folderRes.status === 201 && !!folder?.id)
+
+const nestedRes = await apiJson(`/api/projects/${project.id}/folders`, {
+	name: "Approved",
+	parentId: folder?.id,
+})
+const nested = nestedRes.ok ? await nestedRes.json() : null
+check("create a nested folder", nestedRes.status === 201 && !!nested?.id)
+
+const duplicateRes = await apiJson(`/api/projects/${project.id}/folders`, {
+	name: "Shots",
+})
+check(
+	"a duplicate folder name in the same parent is refused",
+	duplicateRes.status === 400,
+	`status=${duplicateRes.status}`
+)
+
+const cycleRes = await apiSend(
+	"PATCH",
+	`/api/projects/${project.id}/folders/${folder?.id}/parent`,
+	{ parentId: nested?.id }
+)
+check(
+	"a folder cannot be moved inside its own descendant",
+	cycleRes.status === 400,
+	`status=${cycleRes.status}`
+)
+
+const moveImageRes = await apiSend(
+	"PATCH",
+	`/api/projects/${project.id}/images/${imageForReview?.id}/folder`,
+	{ folderId: folder?.id }
+)
+check("move a file into a folder", moveImageRes.status === 204, `status=${moveImageRes.status}`)
+
+const inFolderRes = await api(
+	`/api/projects/${project.id}/images?folderId=${folder?.id}`
+)
+const inFolder = inFolderRes.ok ? await inFolderRes.json() : []
+check(
+	"listing a folder returns only its files",
+	inFolderRes.ok &&
+		inFolder.length === 1 &&
+		inFolder[0].id === imageForReview?.id,
+	`count=${inFolder.length}`
+)
+
+const rootListRes = await api(`/api/projects/${project.id}/images?folderId=root`)
+const rootList = rootListRes.ok ? await rootListRes.json() : []
+check(
+	"the root listing excludes files that moved into a folder",
+	rootListRes.ok && !rootList.some((item) => item.id === imageForReview?.id),
+	`count=${rootList.length}`
+)
+
+const foldersListRes = await api(`/api/projects/${project.id}/folders`)
+const foldersList = foldersListRes.ok ? await foldersListRes.json() : []
+check(
+	"folders report how many files they hold",
+	foldersListRes.ok &&
+		foldersList.find((item) => item.id === folder?.id)?.imageCount === 1,
+	JSON.stringify(foldersList)
+)
 
 const downloadRes = await api(
 	`/api/images/versions/${reviewVersionId}/download`,

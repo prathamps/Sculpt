@@ -34,11 +34,18 @@ import {
 } from "./ui/dropdown-menu"
 import { Input } from "./ui/input"
 import { UserAvatar } from "@/components/UserAvatar"
+import { FolderBrowser } from "./FolderBrowser"
+import { FolderNode } from "@/hooks/useProjectFolders"
 
 interface ProjectContentViewProps {
 	project: Project | null
 	onUploadClick: () => void
 	onProjectChanged: () => void
+	currentFolderId: string | null
+	onNavigateFolder: (folderId: string | null) => void
+	folders: FolderNode[]
+	onFoldersChanged: () => void
+	canEdit: boolean
 }
 
 type FileType = "image" | "video" | "pdf" | "all"
@@ -64,6 +71,11 @@ export function ProjectContentView({
 	project,
 	onUploadClick,
 	onProjectChanged,
+	currentFolderId,
+	onNavigateFolder,
+	folders,
+	onFoldersChanged,
+	canEdit,
 }: ProjectContentViewProps) {
 	const router = useRouter()
 	const [viewMode, setViewMode] = useState<"grid" | "list">("grid")
@@ -72,10 +84,18 @@ export function ProjectContentView({
 	const [searchQuery, setSearchQuery] = useState("")
 	const [showFilterBar, setShowFilterBar] = useState(false)
 
+	const filesInFolder = useMemo(
+		() =>
+			(project?.images ?? []).filter(
+				(file) => (file.folderId ?? null) === currentFolderId
+			),
+		[project, currentFolderId]
+	)
+
 	const filteredAndSortedFiles = useMemo(() => {
 		if (!project) return []
 
-		const filtered = project.images.filter((file) => {
+		const filtered = filesInFolder.filter((file) => {
 			if (
 				searchQuery &&
 				!file.name.toLowerCase().includes(searchQuery.toLowerCase())
@@ -104,12 +124,12 @@ export function ProjectContentView({
 					return 0
 			}
 		})
-	}, [project, fileType, sortBy, searchQuery])
+	}, [project, filesInFolder, fileType, sortBy, searchQuery])
 
 	const fileTypeCount = useMemo(() => {
 		const counts = { total: 0, images: 0, videos: 0, pdfs: 0 }
 		if (!project) return counts
-		return project.images.reduce((acc, file) => {
+		return filesInFolder.reduce((acc, file) => {
 			acc.total++
 			const media = fileMediaType(file)
 			if (media === "VIDEO") acc.videos++
@@ -117,7 +137,7 @@ export function ProjectContentView({
 			else acc.images++
 			return acc
 		}, counts)
-	}, [project])
+	}, [project, filesInFolder])
 
 	const { getItemProps } = useRovingGrid<HTMLDivElement>({
 		itemCount: filteredAndSortedFiles.length,
@@ -373,16 +393,25 @@ export function ProjectContentView({
 				</div>
 			)}
 
+			<FolderBrowser
+				projectId={project.id}
+				folders={folders}
+				currentFolderId={currentFolderId}
+				onNavigate={onNavigateFolder}
+				onFoldersChanged={onFoldersChanged}
+				canEdit={canEdit}
+			/>
+
 			<div className="flex items-center justify-between pb-4">
 				<h3 className="text-sm font-medium">
 					{filteredAndSortedFiles.length} file
 					{filteredAndSortedFiles.length !== 1 && "s"}
-					{project.images.length !== filteredAndSortedFiles.length &&
-						` (filtered from ${project.images.length})`}
+					{filesInFolder.length !== filteredAndSortedFiles.length &&
+						` (filtered from ${filesInFolder.length})`}
 				</h3>
 			</div>
 
-			{project.images.length > 0 ? (
+			{filesInFolder.length > 0 ? (
 				<>
 					{filteredAndSortedFiles.length > 0 ? (
 						<div
@@ -409,6 +438,8 @@ export function ProjectContentView({
 										onProjectChanged={onProjectChanged}
 										viewMode={viewMode}
 										linkTabIndex={-1}
+										folders={folders}
+										canEdit={canEdit}
 									/>
 								</div>
 							))}

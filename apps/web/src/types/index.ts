@@ -80,6 +80,7 @@ export interface Image {
 	id: string
 	name: string
 	projectId: string
+	folderId?: string | null
 	createdAt: string
 	updatedAt: string
 	versions: ImageVersion[]
@@ -94,6 +95,13 @@ export interface CommentLike {
 	user: User
 	commentId: string
 	createdAt: string
+}
+
+export interface Folder {
+	id: string
+	name: string
+	parentId: string | null
+	imageCount: number
 }
 
 export interface CommentMention {

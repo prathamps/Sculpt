@@ -28,6 +28,18 @@ const withLatestVersion = (
 	latestVersion: image.versions[0] ?? null,
 })
 
+const folderScopeOf = (req: Request): string | null | undefined => {
+	const folder = req.query.folderId
+	if (folder === undefined) return undefined
+	if (folder === "" || folder === "root") return null
+	return typeof folder === "string" ? folder : undefined
+}
+
+const uploadFolderOf = (req: Request): string | null => {
+	const folder = req.body?.folderId
+	return typeof folder === "string" && folder ? folder : null
+}
+
 type UploadFields = Record<string, Express.Multer.File[] | undefined>
 
 interface StoredMediaFiles {
@@ -131,6 +143,7 @@ export const uploadImage = async (
 				url: stored.url,
 				name: file.originalname,
 				projectId,
+				folderId: uploadFolderOf(req),
 				mediaType,
 				duration: metas[index].duration,
 				thumbnailUrl: stored.thumbnailUrl,
@@ -163,7 +176,11 @@ export const uploadImage = async (
 			ipAddress: requestIp(req),
 		})
 
-		res.status(201).json(await imageService.getImagesForProject(projectId))
+		res
+			.status(201)
+			.json(
+				await imageService.getImagesForProject(projectId, uploadFolderOf(req))
+			)
 	} catch (error) {
 		await Promise.all(storedUrls.map((url) => storage.remove(url)))
 		await Promise.all(
@@ -255,7 +272,10 @@ export const getProjectImages = async (
 ): Promise<void> => {
 	try {
 		const { projectId } = authorizedScope(res)
-		const images = await imageService.getImagesForProject(projectId)
+		const images = await imageService.getImagesForProject(
+			projectId,
+			folderScopeOf(req)
+		)
 		res.status(200).json(images)
 	} catch (error) {
 		respondWithError(res, error, "list project media")

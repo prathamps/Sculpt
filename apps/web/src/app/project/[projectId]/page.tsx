@@ -8,11 +8,13 @@ import { ImageUploadModal } from "@/components/ImageUploadModal"
 import { ProjectSidebar } from "@/components/ProjectSidebar"
 import { ProjectContentView } from "@/components/ProjectContentView"
 import { Header } from "@/components/Header"
-import { Project } from "@/types"
+import { Project, ProjectRole } from "@/types"
 import { Loader2 } from "lucide-react"
 import { toast } from "sonner"
 import { Paginated, api } from "@/lib/api"
 import { describeError } from "@/lib/errors"
+import { roleAtLeast } from "@/lib/utils"
+import { useProjectFolders } from "@/hooks/useProjectFolders"
 
 export default function ProjectPage() {
 	const { loading, isAuthenticated } = useAuth()
@@ -26,6 +28,9 @@ export default function ProjectPage() {
 	const [isUploadModalOpen, setUploadModalOpen] = useState(false)
 	const [isSidebarOpen, setSidebarOpen] = useState(false)
 	const [isProjectLoading, setIsProjectLoading] = useState(true)
+	const [currentFolderId, setCurrentFolderId] = useState<string | null>(null)
+	const [role, setRole] = useState<ProjectRole | null>(null)
+	const { folders, refreshFolders } = useProjectFolders(projectId)
 
 	const handleRefreshProjects = useCallback(async () => {
 		if (!isAuthenticated) return
@@ -58,6 +63,24 @@ export default function ProjectPage() {
 			router.push("/login")
 		}
 	}, [isAuthenticated, loading, router, handleRefreshProjects])
+
+	useEffect(() => {
+		setCurrentFolderId(null)
+	}, [projectId])
+
+	useEffect(() => {
+		if (!isAuthenticated || !projectId) return
+		let cancelled = false
+		api
+			.get<{ role: ProjectRole }>(`/api/projects/${projectId}/my-role`)
+			.then((data) => {
+				if (!cancelled) setRole(data.role)
+			})
+			.catch((): void => undefined)
+		return (): void => {
+			cancelled = true
+		}
+	}, [isAuthenticated, projectId])
 
 	if (loading) {
 		return (
@@ -97,7 +120,15 @@ export default function ProjectPage() {
 					<ProjectContentView
 						project={selectedProject}
 						onUploadClick={() => setUploadModalOpen(true)}
-						onProjectChanged={handleRefreshProjects}
+						onProjectChanged={() => {
+							handleRefreshProjects()
+							refreshFolders()
+						}}
+						currentFolderId={currentFolderId}
+						onNavigateFolder={setCurrentFolderId}
+						folders={folders}
+						onFoldersChanged={refreshFolders}
+						canEdit={roleAtLeast(role, "EDITOR")}
 					/>
 				)}
 
@@ -112,8 +143,12 @@ export default function ProjectPage() {
 				<ImageUploadModal
 					isOpen={isUploadModalOpen}
 					onClose={() => setUploadModalOpen(false)}
-					onUploadComplete={handleRefreshProjects}
+					onUploadComplete={() => {
+						handleRefreshProjects()
+						refreshFolders()
+					}}
 					projectId={selectedProject?.id || null}
+					folderId={currentFolderId}
 				/>
 			</div>
 		</div>

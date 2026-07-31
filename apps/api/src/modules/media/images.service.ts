@@ -11,6 +11,7 @@ interface ImagePayload {
 	url: string
 	name: string
 	projectId: string
+	folderId?: string | null
 	mediaType?: MediaType
 	duration?: number | null
 	thumbnailUrl?: string | null
@@ -46,6 +47,7 @@ export const addImagesToProject = async (
 					data: {
 						name: image.name,
 						projectId: image.projectId,
+						folderId: image.folderId ?? null,
 						versions: {
 							create: {
 								url: image.url,
@@ -74,10 +76,14 @@ export const addImagesToProject = async (
 }
 
 export const getImagesForProject = async (
-	projectId: string
+	projectId: string,
+	folderId?: string | null
 ): Promise<(Image & { latestVersion: ImageVersion | null })[]> => {
 	const images = await prisma.image.findMany({
-		where: { projectId },
+		where: {
+			projectId,
+			...(folderId === undefined ? {} : { folderId }),
+		},
 		include: {
 			versions: { orderBy: { versionNumber: "desc" }, take: 1 },
 		},
