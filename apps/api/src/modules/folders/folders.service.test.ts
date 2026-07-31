@@ -11,7 +11,9 @@ vi.mock("../../lib/prisma", () => ({
 		},
 		image: {
 			findFirst: vi.fn(),
+			findMany: vi.fn(),
 			update: vi.fn(),
+			updateMany: vi.fn(),
 		},
 	},
 }))
@@ -23,6 +25,7 @@ import {
 	folderPath,
 	moveFolder,
 	moveImageToFolder,
+	moveImagesToFolder,
 	renameFolder,
 } from "./folders.service"
 
@@ -171,21 +174,54 @@ describe("renameFolder", () => {
 
 describe("moveImageToFolder", () => {
 	it("refuses an image that is not in the project", async () => {
-		mocked.image.findFirst.mockResolvedValue(null)
+		mocked.image.findMany.mockResolvedValue([] as never)
 
 		await expect(
 			moveImageToFolder("img1", "p1", null)
 		).rejects.toBeInstanceOf(NotFoundError)
-		expect(mocked.image.update).not.toHaveBeenCalled()
+		expect(mocked.image.updateMany).not.toHaveBeenCalled()
 	})
 
 	it("refuses a destination folder from another project", async () => {
-		mocked.image.findFirst.mockResolvedValue({ id: "img1" } as never)
+		mocked.image.findMany.mockResolvedValue([{ id: "img1" }] as never)
 		mocked.folder.findFirst.mockResolvedValue(null)
 
 		await expect(
 			moveImageToFolder("img1", "p1", "other-project-folder")
 		).rejects.toBeInstanceOf(NotFoundError)
-		expect(mocked.image.update).not.toHaveBeenCalled()
+		expect(mocked.image.updateMany).not.toHaveBeenCalled()
+	})
+})
+
+describe("moveImagesToFolder", () => {
+	it("moves every requested image in one statement", async () => {
+		mocked.image.findMany.mockResolvedValue([
+			{ id: "a" },
+			{ id: "b" },
+		] as never)
+		mocked.folder.findFirst.mockResolvedValue(folder("f1", null) as never)
+		mocked.image.updateMany.mockResolvedValue({ count: 2 } as never)
+
+		expect(await moveImagesToFolder(["a", "b"], "p1", "f1")).toBe(2)
+		expect(mocked.image.updateMany).toHaveBeenCalledWith({
+			where: { id: { in: ["a", "b"] }, projectId: "p1" },
+			data: { folderId: "f1" },
+		})
+	})
+
+	it("moves nothing when one id belongs to another project", async () => {
+		mocked.image.findMany.mockResolvedValue([{ id: "a" }] as never)
+
+		await expect(
+			moveImagesToFolder(["a", "stolen"], "p1", null)
+		).rejects.toBeInstanceOf(NotFoundError)
+		expect(mocked.image.updateMany).not.toHaveBeenCalled()
+	})
+
+	it("collapses duplicate ids before checking ownership", async () => {
+		mocked.image.findMany.mockResolvedValue([{ id: "a" }] as never)
+		mocked.image.updateMany.mockResolvedValue({ count: 1 } as never)
+
+		expect(await moveImagesToFolder(["a", "a"], "p1", null)).toBe(1)
 	})
 })

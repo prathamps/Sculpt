@@ -12,7 +12,11 @@ import {
 	upload,
 } from "../../middleware/upload.middleware"
 import { validateBody } from "../../middleware/validate.middleware"
-import { renameImageSchema, renameVersionSchema } from "./media.schema"
+import {
+	deleteImagesSchema,
+	renameImageSchema,
+	renameVersionSchema,
+} from "./media.schema"
 import commentsRouter from "../comments/comments.routes"
 import { versionReviewRouter } from "../reviews/reviews.routes"
 
@@ -86,6 +90,12 @@ projectImagesRouter.get(
 	"/",
 	requireProjectRole("VIEWER", projectIdFromParam("projectId")),
 	imageController.getProjectImages
+)
+projectImagesRouter.post(
+	"/delete",
+	requireProjectRole("EDITOR", projectIdFromParam("projectId")),
+	validateBody(deleteImagesSchema),
+	imageController.deleteImages
 )
 
 export { router as imageRouter, projectImagesRouter }

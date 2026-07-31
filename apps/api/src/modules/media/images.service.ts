@@ -165,6 +165,17 @@ export const addImageVersion = async (
 	)
 }
 
+export const imageIdsInProject = async (
+	imageIds: string[],
+	projectId: string
+): Promise<string[]> => {
+	const images = await prisma.image.findMany({
+		where: { id: { in: imageIds }, projectId },
+		select: { id: true },
+	})
+	return images.map((image) => image.id)
+}
+
 export const deleteImage = async (id: string): Promise<void> => {
 	const image = await prisma.image.findUnique({
 		where: { id },

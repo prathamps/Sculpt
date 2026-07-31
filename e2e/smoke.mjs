@@ -805,6 +805,42 @@ check(
 	`count=${rootList.length}`
 )
 
+const bulkMoveRes = await apiSend(
+	"PATCH",
+	`/api/projects/${project.id}/images/folder`,
+	{ imageIds: [imageForReview?.id], folderId: nested?.id }
+)
+check(
+	"move several files at once",
+	bulkMoveRes.ok && (await bulkMoveRes.json())?.moved === 1,
+	`status=${bulkMoveRes.status}`
+)
+
+const bulkMoveStolenRes = await apiSend(
+	"PATCH",
+	`/api/projects/${project.id}/images/folder`,
+	{ imageIds: [imageForReview?.id, "not-a-real-image"], folderId: null }
+)
+check(
+	"a bulk move that names an unknown file moves nothing",
+	bulkMoveStolenRes.status === 404,
+	`status=${bulkMoveStolenRes.status}`
+)
+
+const stillNested = await api(
+	`/api/projects/${project.id}/images?folderId=${nested?.id}`
+).then((r) => (r.ok ? r.json() : []))
+check(
+	"the rejected bulk move left the files where they were",
+	stillNested.some((item) => item.id === imageForReview?.id),
+	`count=${stillNested.length}`
+)
+
+await apiSend("PATCH", `/api/projects/${project.id}/images/folder`, {
+	imageIds: [imageForReview?.id],
+	folderId: folder?.id,
+})
+
 const foldersListRes = await api(`/api/projects/${project.id}/folders`)
 const foldersList = foldersListRes.ok ? await foldersListRes.json() : []
 check(

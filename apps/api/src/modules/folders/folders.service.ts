@@ -188,13 +188,30 @@ export const moveImageToFolder = async (
 	projectId: string,
 	folderId: string | null
 ): Promise<void> => {
-	const image = await prisma.image.findFirst({
-		where: { id: imageId, projectId },
+	await moveImagesToFolder([imageId], projectId, folderId)
+}
+
+export const moveImagesToFolder = async (
+	imageIds: string[],
+	projectId: string,
+	folderId: string | null
+): Promise<number> => {
+	const ids = Array.from(new Set(imageIds))
+	if (ids.length === 0) return 0
+
+	const owned = await prisma.image.findMany({
+		where: { id: { in: ids }, projectId },
 		select: { id: true },
 	})
-	if (!image) throw new NotFoundError("Image not found")
+	if (owned.length !== ids.length) {
+		throw new NotFoundError("Image not found")
+	}
 
 	if (folderId) await requireFolderInProject(folderId, projectId)
 
-	await prisma.image.update({ where: { id: imageId }, data: { folderId } })
+	const { count } = await prisma.image.updateMany({
+		where: { id: { in: ids }, projectId },
+		data: { folderId },
+	})
+	return count
 }

@@ -355,6 +355,38 @@ export const downloadOriginal = async (
 	}
 }
 
+export const deleteImages = async (
+	req: Request,
+	res: Response
+): Promise<void> => {
+	try {
+		const { projectId, userId } = authorizedScope(res)
+		const imageIds: string[] = Array.from(new Set(req.body.imageIds))
+
+		const owned = await imageService.imageIdsInProject(imageIds, projectId)
+		if (owned.length !== imageIds.length) {
+			throw new NotFoundError("Image not found")
+		}
+
+		for (const imageId of owned) {
+			await imageService.deleteImage(imageId)
+		}
+
+		await recordAudit({
+			action: "media.deleted",
+			targetType: "project",
+			targetId: projectId,
+			actorId: userId,
+			metadata: { imageIds: owned },
+			ipAddress: requestIp(req),
+		})
+
+		res.status(200).json({ deleted: owned.length })
+	} catch (error) {
+		respondWithError(res, error, "delete media")
+	}
+}
+
 export const deleteImage = async (
 	req: Request,
 	res: Response

@@ -125,6 +125,34 @@ export const deleteFolder = async (
 	}
 }
 
+export const moveImages = async (
+	req: Request,
+	res: Response
+): Promise<void> => {
+	try {
+		const { projectId, userId } = authorizedScope(res)
+		const moved = await folderService.moveImagesToFolder(
+			req.body.imageIds,
+			projectId,
+			req.body.folderId ?? null
+		)
+		await recordAudit({
+			action: "media.moved",
+			targetType: "project",
+			targetId: projectId,
+			actorId: userId,
+			metadata: {
+				imageIds: req.body.imageIds,
+				folderId: req.body.folderId ?? null,
+			},
+			ipAddress: requestIp(req),
+		})
+		res.status(200).json({ moved })
+	} catch (error) {
+		respondWithError(res, error, "move images")
+	}
+}
+
 export const moveImage = async (
 	req: Request,
 	res: Response

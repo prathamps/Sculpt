@@ -30,6 +30,7 @@ import { MoreVertical } from "lucide-react"
 import { formatBytes } from "@/lib/utils"
 import { Button } from "./ui/button"
 import { ConfirmationModal } from "./ConfirmationModal"
+import { Checkbox } from "./ui/checkbox"
 import { ReviewStatusBadge } from "./ReviewPanel"
 import { FolderNode } from "@/hooks/useProjectFolders"
 import {
@@ -52,6 +53,8 @@ interface FileCardProps {
 	onDelete?: (file: File) => void
 	folders?: FolderNode[]
 	canEdit?: boolean
+	isSelected?: boolean
+	onToggleSelected?: () => void
 }
 
 interface ThumbnailProps {
@@ -185,6 +188,8 @@ export function FileCard({
 	linkTabIndex,
 	folders = [],
 	canEdit = true,
+	isSelected = false,
+	onToggleSelected,
 }: FileCardProps) {
 	const [isRenameModalOpen, setRenameModalOpen] = useState(false)
 	const [isConfirmingDelete, setConfirmingDelete] = useState(false)
@@ -209,6 +214,15 @@ export function FileCard({
 			setIsDeleting(false)
 		}
 	}
+
+	const selectionCheckbox = onToggleSelected && (
+		<Checkbox
+			checked={isSelected}
+			onCheckedChange={onToggleSelected}
+			onClick={(e) => e.stopPropagation()}
+			aria-label={`Select ${file.name}`}
+		/>
+	)
 
 	const moveToFolder = async (folderId: string | null) => {
 		try {
@@ -263,8 +277,14 @@ export function FileCard({
 	if (viewMode === "list") {
 		return (
 			<>
-				<div className="group flex items-center justify-between rounded-md border border-border/40 bg-card p-3 hover:border-primary/40 transition-all">
+				<div
+					className={cn(
+						"group flex items-center justify-between rounded-md border bg-card p-3 transition-all hover:border-primary/40",
+						isSelected ? "border-primary" : "border-border/40"
+					)}
+				>
 					<div className="flex items-center gap-3 flex-1 min-w-0">
+						{selectionCheckbox}
 						<div className="relative h-12 w-12 shrink-0 overflow-hidden rounded-md bg-muted/50">
 							<CardThumbnail
 								file={file}
@@ -359,7 +379,12 @@ export function FileCard({
 
 	return (
 		<>
-			<Card className="group overflow-hidden bg-card hover:shadow-md">
+			<Card
+				className={cn(
+					"group relative overflow-hidden bg-card hover:shadow-md",
+					isSelected && "ring-2 ring-primary"
+				)}
+			>
 				<Link
 					href={`/project/${projectId}/image/${file.id}`}
 					tabIndex={linkTabIndex}
@@ -380,6 +405,18 @@ export function FileCard({
 						)}
 					</div>
 				</Link>
+				{selectionCheckbox && (
+					<div
+						className={cn(
+							"absolute right-2 top-2 z-10 rounded bg-background/90 p-1 transition-opacity",
+							isSelected
+								? "opacity-100"
+								: "opacity-0 focus-within:opacity-100 group-hover:opacity-100"
+						)}
+					>
+						{selectionCheckbox}
+					</div>
+				)}
 				<CardContent className="p-4">
 					<div className="flex items-center justify-between">
 						<div className="truncate">

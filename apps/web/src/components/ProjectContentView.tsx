@@ -20,7 +20,7 @@ import {
 	X,
 	Search,
 } from "lucide-react"
-import { useState, useMemo } from "react"
+import { useState, useMemo, useEffect } from "react"
 import { cn } from "@/lib/utils"
 import {
 	DropdownMenu,
@@ -35,6 +35,7 @@ import {
 import { Input } from "./ui/input"
 import { UserAvatar } from "@/components/UserAvatar"
 import { FolderBrowser } from "./FolderBrowser"
+import { SelectionToolbar } from "./SelectionToolbar"
 import { FolderNode } from "@/hooks/useProjectFolders"
 
 interface ProjectContentViewProps {
@@ -83,6 +84,7 @@ export function ProjectContentView({
 	const [sortBy, setSortBy] = useState<SortOption>("newest")
 	const [searchQuery, setSearchQuery] = useState("")
 	const [showFilterBar, setShowFilterBar] = useState(false)
+	const [selectedIds, setSelectedIds] = useState<string[]>([])
 
 	const filesInFolder = useMemo(
 		() =>
@@ -138,6 +140,20 @@ export function ProjectContentView({
 			return acc
 		}, counts)
 	}, [project, filesInFolder])
+
+	useEffect(() => {
+		setSelectedIds([])
+	}, [currentFolderId, project?.id])
+
+	const toggleSelected = (imageId: string) => {
+		setSelectedIds((ids) =>
+			ids.includes(imageId)
+				? ids.filter((id) => id !== imageId)
+				: [...ids, imageId]
+		)
+	}
+
+	const clearSelection = () => setSelectedIds([])
 
 	const { getItemProps } = useRovingGrid<HTMLDivElement>({
 		itemCount: filteredAndSortedFiles.length,
@@ -402,6 +418,17 @@ export function ProjectContentView({
 				canEdit={canEdit}
 			/>
 
+			{canEdit && selectedIds.length > 0 && (
+				<SelectionToolbar
+					projectId={project.id}
+					selectedIds={selectedIds}
+					folders={folders}
+					currentFolderId={currentFolderId}
+					onClear={clearSelection}
+					onChanged={onProjectChanged}
+				/>
+			)}
+
 			<div className="flex items-center justify-between pb-4">
 				<h3 className="text-sm font-medium">
 					{filteredAndSortedFiles.length} file
@@ -440,6 +467,10 @@ export function ProjectContentView({
 										linkTabIndex={-1}
 										folders={folders}
 										canEdit={canEdit}
+										isSelected={selectedIds.includes(image.id)}
+										onToggleSelected={
+											canEdit ? () => toggleSelected(image.id) : undefined
+										}
 									/>
 								</div>
 							))}

@@ -9,6 +9,7 @@ import {
 	createFolderSchema,
 	moveFolderSchema,
 	moveImageSchema,
+	moveImagesSchema,
 	renameFolderSchema,
 } from "./folders.schema"
 
@@ -49,6 +50,12 @@ projectFoldersRouter.delete(
 
 const projectImageFolderRouter = Router({ mergeParams: true })
 
+projectImageFolderRouter.patch(
+	"/folder",
+	requireProjectRole("EDITOR", projectIdFromParam("projectId")),
+	validateBody(moveImagesSchema),
+	folderController.moveImages
+)
 projectImageFolderRouter.patch(
 	"/:imageId/folder",
 	requireProjectRole("EDITOR", projectIdFromParam("projectId")),

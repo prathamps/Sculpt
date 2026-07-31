@@ -22,3 +22,8 @@ export const moveFolderSchema = z.object({
 export const moveImageSchema = z.object({
 	folderId: z.string().max(64).nullable(),
 })
+
+export const moveImagesSchema = z.object({
+	imageIds: z.array(z.string().max(64)).min(1).max(100),
+	folderId: z.string().max(64).nullable(),
+})
