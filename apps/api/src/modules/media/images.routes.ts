@@ -36,6 +36,11 @@ router.put(
 router.delete("/:id", onImage("EDITOR"), imageController.deleteImage)
 
 router.get("/versions/:versionId", onVersion("VIEWER"), imageController.getImageVersion)
+router.get(
+	"/versions/:versionId/download",
+	onVersion("VIEWER"),
+	imageController.downloadOriginal
+)
 router.post(
 	"/:imageId/versions",
 	onImage("EDITOR", "imageId"),

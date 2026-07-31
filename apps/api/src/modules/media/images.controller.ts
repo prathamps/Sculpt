@@ -12,7 +12,10 @@ import {
 	stageVideoForProcessing,
 } from "./video-pipeline"
 import { enqueueImageRendition } from "./image-pipeline"
-import { storage } from "../../storage"
+import path from "path"
+import { storage, uploadsDir } from "../../storage"
+import { storedPathOf } from "./media-access.service"
+import { downloadFileName } from "./download-name"
 import { NotFoundError, ValidationError } from "../../lib/errors"
 import { respondWithError } from "../../lib/http"
 import { recordAudit, requestIp } from "../audit/audit.service"
@@ -279,6 +282,56 @@ export const getImageVersion = async (
 		res.status(200).json(version)
 	} catch (error) {
 		respondWithError(res, error, "fetch image version")
+	}
+}
+
+const DOWNLOAD_URL_TTL_SECONDS = 300
+
+export const downloadOriginal = async (
+	req: Request,
+	res: Response
+): Promise<void> => {
+	try {
+		const { userId } = authorizedScope(res)
+		const version = await imageService.getVersionForDownload(
+			req.params.versionId
+		)
+		const storedPath = version ? storedPathOf(version.url) : null
+		if (!version || !storedPath) {
+			throw new NotFoundError("Image version not found")
+		}
+
+		await recordAudit({
+			action: "media.downloaded",
+			targetType: "imageVersion",
+			targetId: req.params.versionId,
+			actorId: userId,
+			metadata: {
+				imageName: version.image.name,
+				versionNumber: version.versionNumber,
+			},
+			ipAddress: requestIp(req),
+		})
+
+		if (storage.temporaryReadUrl) {
+			res.redirect(
+				302,
+				await storage.temporaryReadUrl(storedPath, DOWNLOAD_URL_TTL_SECONDS)
+			)
+			return
+		}
+
+		res.download(
+			path.join(uploadsDir, storedPath),
+			downloadFileName(version.image.name, version.versionNumber, storedPath),
+			(error) => {
+				if (error && !res.headersSent) {
+					res.status(404).json({ message: "Not found" })
+				}
+			}
+		)
+	} catch (error) {
+		respondWithError(res, error, "download original media")
 	}
 }
 

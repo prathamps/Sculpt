@@ -103,6 +103,16 @@ export const getImageVersionById = async (
 ): Promise<ImageVersion | null> =>
 	prisma.imageVersion.findUnique({ where: { id: versionId } })
 
+export const getVersionForDownload = async (versionId: string) =>
+	prisma.imageVersion.findUnique({
+		where: { id: versionId },
+		select: {
+			url: true,
+			versionNumber: true,
+			image: { select: { name: true } },
+		},
+	})
+
 const isVersionNumberConflict = (error: unknown): boolean =>
 	error instanceof Prisma.PrismaClientKnownRequestError &&
 	error.code === VERSION_NUMBER_CONFLICT

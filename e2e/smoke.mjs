@@ -677,6 +677,20 @@ check(
 )
 cookie = ownerCookie
 
+const downloadRes = await api(
+	`/api/images/versions/${reviewVersionId}/download`,
+	{ redirect: "manual" }
+)
+check(
+	"a member can download the original file",
+	(downloadRes.status === 200 &&
+		(downloadRes.headers.get("content-disposition") ?? "").includes(
+			"attachment"
+		)) ||
+		downloadRes.status === 302,
+	`status=${downloadRes.status}`
+)
+
 const membersRes = await api(`/api/projects/${project.id}/members`)
 const membersList = membersRes.ok ? await membersRes.json() : []
 check(
