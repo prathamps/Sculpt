@@ -9,10 +9,13 @@ saved viewpoint. Sixteen model formats are converted to GLB in the browser
 before upload. If your team reviews product renders, game assets, architectural
 viz or printable parts alongside ordinary media, that is the gap this fills.
 
-![Sculpt review workspace](apps/web/public/herobanner.jpg)
+![Annotating an image and commenting in Sculpt](docs/media/image-annotation.gif)
 
-> Screenshots above show the review workspace. Replace the images in
-> `apps/web/public/` with captures from your own instance if you fork this.
+![Placing a pin on a 3D model and flying back to its saved view](docs/media/model-annotation.gif)
+
+> Every capture above and in the **[full showcase](docs/showcase.md)** — image,
+> video, PDF and 3D annotation — was recorded from a real Sculpt instance
+> driven end to end in a browser.
 
 ## Features
 
@@ -134,6 +137,7 @@ More detail in [docs/architecture.md](docs/architecture.md).
 
 | Document | What's in it |
 | --- | --- |
+| [docs/showcase.md](docs/showcase.md) | screenshots and recordings of image, video, PDF and 3D review in action |
 | [docs/architecture.md](docs/architecture.md) | how the codebase fits together, and why |
 | [docs/deployment.md](docs/deployment.md) | hosting, environment variables, TLS, scaling out |
 | [docs/backup-and-restore.md](docs/backup-and-restore.md) | what to back up, how to restore, how to verify |
