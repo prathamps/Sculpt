@@ -43,6 +43,9 @@ import {
 	rejectedUploadMessage,
 	unconvertibleModelMessage,
 } from "@/lib/upload-formats"
+import { uploadWithProgress } from "@/lib/api"
+import { describeError } from "@/lib/errors"
+import { cn } from "@/lib/utils"
 
 const refuseUnconvertedModel = (
 	file: File,
@@ -56,23 +59,13 @@ const refuseUnconvertedModel = (
 	)
 }
 
-const serverReason = async (res: Response): Promise<string> => {
-	const fallback = `Upload failed (${res.status}).`
-	try {
-		const body = await res.clone().json()
-		return typeof body?.message === "string" ? body.message : fallback
-	} catch {
-		const text = await res.text().catch(() => "")
-		return text.trim() ? text.trim().slice(0, 300) : fallback
-	}
-}
-
 interface ImageUploadModalProps {
 	projectId: string | null
 	isOpen: boolean
 	onClose: () => void
 	onUploadComplete: () => void
 	imageId?: string
+	folderId?: string | null
 }
 
 export function ImageUploadModal({
@@ -81,15 +74,17 @@ export function ImageUploadModal({
 	onClose,
 	onUploadComplete,
 	imageId,
+	folderId = null,
 }: ImageUploadModalProps) {
 	const [files, setFiles] = useState<File[]>([])
 	const [isUploading, setIsUploading] = useState(false)
+	const [isPreparing, setIsPreparing] = useState(false)
 	const [uploadProgress, setUploadProgress] = useState(0)
 	const [error, setError] = useState("")
-	const URI = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001"
-	const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-		if (e.target.files) {
-			const selectedFiles = Array.from(e.target.files)
+	const [isDraggingOver, setIsDraggingOver] = useState(false)
+
+	const acceptSelection = (selectedFiles: File[]) => {
+		if (selectedFiles.length > 0) {
 			const wrongFormat = selectedFiles.filter((file) => !isAcceptedUpload(file))
 			const tooLarge = selectedFiles.filter(
 				(file) => isAcceptedUpload(file) && !isWithinUploadLimit(file)
@@ -126,23 +121,29 @@ export function ImageUploadModal({
 		}
 	}
 
-	const handleRemoveFile = (index: number) => {
-		setFiles((prev) => prev.filter((_, i) => i !== index))
+	const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+		if (e.target.files) acceptSelection(Array.from(e.target.files))
 	}
 
-	const simulateProgress = () => {
-		setUploadProgress(0)
-		const interval = setInterval(() => {
-			setUploadProgress((prev) => {
-				if (prev >= 95) {
-					clearInterval(interval)
-					return 95
-				}
-				return prev + 5
-			})
-		}, 200)
+	const handleDragOver = (e: React.DragEvent) => {
+		e.preventDefault()
+		if (!isUploading) setIsDraggingOver(true)
+	}
 
-		return () => clearInterval(interval)
+	const handleDragLeave = (e: React.DragEvent) => {
+		e.preventDefault()
+		setIsDraggingOver(false)
+	}
+
+	const handleDrop = (e: React.DragEvent) => {
+		e.preventDefault()
+		setIsDraggingOver(false)
+		if (isUploading) return
+		acceptSelection(Array.from(e.dataTransfer.files))
+	}
+
+	const handleRemoveFile = (index: number) => {
+		setFiles((prev) => prev.filter((_, i) => i !== index))
 	}
 
 	const handleUpload = async () => {
@@ -151,14 +152,14 @@ export function ImageUploadModal({
 			return
 		}
 		setIsUploading(true)
+		setIsPreparing(true)
 		setError("")
-
-		const clearProgressSimulation = simulateProgress()
+		setUploadProgress(0)
 
 		const formData = new FormData()
 
 		try {
-			let res
+			let uploadPath: string
 
 			if (imageId && files.length > 0) {
 				const fileToUpload = withMimeTypeTheApiCanMap(files[0])
@@ -181,11 +182,7 @@ export function ImageUploadModal({
 					formData.append("modelProxy", prepared.glb, "converted.glb")
 				}
 
-				res = await fetch(`${URI}/api/images/${imageId}/versions`, {
-					method: "POST",
-					body: formData,
-					credentials: "include",
-				})
+				uploadPath = `/api/images/${imageId}/versions`
 			} else {
 				const filesMeta: {
 					duration: number | null
@@ -218,32 +215,24 @@ export function ImageUploadModal({
 					})
 				}
 				formData.append("filesMeta", JSON.stringify(filesMeta))
+				if (folderId) formData.append("folderId", folderId)
 
-				res = await fetch(`${URI}/api/projects/${projectId}/images`, {
-					method: "POST",
-					body: formData,
-					credentials: "include",
-				})
+				uploadPath = `/api/projects/${projectId}/images`
 			}
 
-			if (!res.ok) {
-				throw new Error(await serverReason(res))
-			}
+			setIsPreparing(false)
 
-			setUploadProgress(100)
-			setTimeout(() => {
-				onUploadComplete()
-				onClose()
-			}, 500)
-		} catch (uploadError) {
-			setError(
-				uploadError instanceof Error && uploadError.message
-					? uploadError.message
-					: "An error occurred during upload."
+			await uploadWithProgress(uploadPath, formData, (progress) =>
+				setUploadProgress(progress.percent)
 			)
+
+			onUploadComplete()
+			onClose()
+		} catch (uploadError) {
+			setError(describeError(uploadError, "An error occurred during upload."))
 			setUploadProgress(0)
 		} finally {
-			clearProgressSimulation()
+			setIsPreparing(false)
 			setIsUploading(false)
 		}
 	}
@@ -267,15 +256,24 @@ export function ImageUploadModal({
 						<div className="flex flex-col items-center justify-center text-center space-y-2">
 							<Loader2 className="h-8 w-8 animate-spin text-primary" />
 							<h3 className="font-medium">
-								Uploading {files.length} file{files.length !== 1 ? "s" : ""}
+								{isPreparing ? "Preparing" : "Uploading"} {files.length} file
+								{files.length !== 1 ? "s" : ""}
 							</h3>
 							<p className="text-sm text-muted-foreground">
 								This may take a moment depending on the file size
 							</p>
 						</div>
-						<Progress value={uploadProgress} className="h-2 w-full bg-muted" />
+						<Progress
+							value={isPreparing ? undefined : uploadProgress}
+							className="h-2 w-full bg-muted"
+							aria-label={
+								isPreparing ? "Preparing files" : `${uploadProgress}% uploaded`
+							}
+						/>
 						<p className="text-xs text-center text-muted-foreground">
-							Files are being uploaded to temporary storage
+							{isPreparing
+								? "Generating previews and converting formats in your browser"
+								: `${uploadProgress}% uploaded`}
 						</p>
 					</div>
 				) : (
@@ -283,7 +281,16 @@ export function ImageUploadModal({
 						<div className="flex items-center justify-center w-full">
 							<label
 								htmlFor="dropzone-file"
-								className="flex flex-col items-center justify-center w-full h-52 border-2 border-dashed rounded-lg cursor-pointer bg-muted/40 hover:bg-muted/60 transition-colors"
+								onDragOver={handleDragOver}
+								onDragEnter={handleDragOver}
+								onDragLeave={handleDragLeave}
+								onDrop={handleDrop}
+								className={cn(
+									"flex flex-col items-center justify-center w-full h-52 border-2 border-dashed rounded-lg cursor-pointer transition-colors",
+									isDraggingOver
+										? "border-primary bg-primary/10"
+										: "bg-muted/40 hover:bg-muted/60"
+								)}
 							>
 								<div className="flex flex-col items-center justify-center gap-1.5 px-6 py-6 text-center">
 									<UploadCloud className="mb-1 h-8 w-8 text-primary/80" />

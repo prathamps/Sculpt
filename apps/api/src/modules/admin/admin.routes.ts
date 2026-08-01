@@ -11,10 +11,13 @@ import {
 	adminLogout,
 } from "./admin.controller"
 import { authenticateAdmin } from "../../middleware/auth.middleware"
+import { validateBody } from "../../middleware/validate.middleware"
+import { adminLoginSchema } from "../auth/auth.schema"
+import { loginRateLimit } from "../../middleware/rate-limit.middleware"
 
 const router = Router()
 
-router.post("/login", adminLogin)
+router.post("/login", loginRateLimit(), validateBody(adminLoginSchema), adminLogin)
 router.post("/logout", adminLogout)
 
 router.use(authenticateAdmin)

@@ -4,8 +4,9 @@ import {
 	buildImageReport,
 	buildImageReportCsv,
 	getImageProjectId,
-	isProjectMember,
 } from "./report.service"
+import { getMemberRole } from "../projects/access"
+import { canSeeInternalComments } from "../comments/comments.service"
 import { recordAudit, requestIp } from "../audit/audit.service"
 
 const auditExport = (req: Request, imageId: string, format: string) =>
@@ -18,22 +19,26 @@ const auditExport = (req: Request, imageId: string, format: string) =>
 		ipAddress: requestIp(req),
 	})
 
+interface ExportScope {
+	includeInternal: boolean
+}
+
 const authorizeExport = async (
 	imageId: string,
 	userId: string,
 	res: Response
-): Promise<boolean> => {
+): Promise<ExportScope | null> => {
 	const projectId = await getImageProjectId(imageId)
 	if (!projectId) {
 		res.status(404).json({ message: "Image not found" })
-		return false
+		return null
 	}
-	const member = await isProjectMember(projectId, userId)
-	if (!member) {
+	const role = await getMemberRole(projectId, userId)
+	if (!role) {
 		res.status(403).json({ message: "You are not a member of this project" })
-		return false
+		return null
 	}
-	return true
+	return { includeInternal: canSeeInternalComments(role) }
 }
 
 const slug = (name: string) =>
@@ -46,9 +51,10 @@ export const getImageReportJson = async (
 	try {
 		const { imageId } = req.params
 		const userId = (req.user as AuthenticatedUser).id
-		if (!(await authorizeExport(imageId, userId, res))) return
+		const scope = await authorizeExport(imageId, userId, res)
+		if (!scope) return
 
-		const report = await buildImageReport(imageId)
+		const report = await buildImageReport(imageId, scope.includeInternal)
 		if (!report) {
 			res.status(404).json({ message: "Image not found" })
 			return
@@ -71,9 +77,10 @@ export const getImageReportCsv = async (
 	try {
 		const { imageId } = req.params
 		const userId = (req.user as AuthenticatedUser).id
-		if (!(await authorizeExport(imageId, userId, res))) return
+		const scope = await authorizeExport(imageId, userId, res)
+		if (!scope) return
 
-		const report = await buildImageReport(imageId)
+		const report = await buildImageReport(imageId, scope.includeInternal)
 		if (!report) {
 			res.status(404).json({ message: "Image not found" })
 			return

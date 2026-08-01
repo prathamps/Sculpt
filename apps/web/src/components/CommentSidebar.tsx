@@ -27,6 +27,7 @@ interface CommentSidebarProps {
 	currentPage?: number | null
 	className?: string
 	canReply?: boolean
+	reviewPanel?: React.ReactNode
 }
 
 export function CommentSidebar({
@@ -40,6 +41,7 @@ export function CommentSidebar({
 	currentPage,
 	className,
 	canReply = true,
+	reviewPanel,
 }: CommentSidebarProps) {
 	const [searchQuery, setSearchQuery] = useState("")
 	const [filter, setFilter] = useState<CommentFilter>("all")
@@ -71,6 +73,7 @@ export function CommentSidebar({
 				<h3 className="text-sm font-medium">Comments</h3>
 				{isLoading && <Loader2 className="h-4 w-4 animate-spin" />}
 			</div>
+			{reviewPanel}
 			<div className="flex flex-wrap items-center gap-2 border-b border-border/40 p-3">
 				<div className="relative min-w-[8rem] flex-1">
 					<Search className="absolute left-2 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />

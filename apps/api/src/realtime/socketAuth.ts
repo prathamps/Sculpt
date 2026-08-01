@@ -1,7 +1,8 @@
 import { Socket } from "socket.io"
-import jwt from "jsonwebtoken"
 import { parse } from "cookie"
 import { prisma } from "../lib/prisma"
+import { SESSION_COOKIE } from "../lib/cookies"
+import { authenticateSessionToken } from "../modules/auth/session.service"
 
 export interface SocketUser {
 	id: string
@@ -16,17 +17,28 @@ export const resolveSocketUser = async (
 	try {
 		const cookieHeader = socket.handshake.headers.cookie
 		if (!cookieHeader) return null
-		const token = parse(cookieHeader)["token"]
-		if (!token) return null
-		const payload = jwt.verify(
-			token,
-			process.env.JWT_SECRET || "your_jwt_secret"
-		) as { id?: string }
-		if (!payload.id) return null
-		return await prisma.user.findUnique({
-			where: { id: payload.id },
-			select: { id: true, name: true, email: true, avatarUrl: true },
+		const claims = await authenticateSessionToken(
+			parse(cookieHeader)[SESSION_COOKIE],
+			"user"
+		)
+		if (!claims) return null
+		const user = await prisma.user.findUnique({
+			where: { id: claims.id },
+			select: {
+				id: true,
+				name: true,
+				email: true,
+				avatarUrl: true,
+				tokenVersion: true,
+			},
 		})
+		if (!user || user.tokenVersion !== claims.ver) return null
+		return {
+			id: user.id,
+			name: user.name,
+			email: user.email,
+			avatarUrl: user.avatarUrl,
+		}
 	} catch {
 		return null
 	}
@@ -36,6 +48,11 @@ export const socketAuth = async (
 	socket: Socket,
 	next: (err?: Error) => void
 ): Promise<void> => {
-	socket.data.user = await resolveSocketUser(socket)
+	const user = await resolveSocketUser(socket)
+	if (!user) {
+		next(new Error("Unauthorized"))
+		return
+	}
+	socket.data.user = user
 	next()
 }

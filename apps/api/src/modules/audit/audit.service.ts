@@ -1,6 +1,7 @@
 import { Request } from "express"
 import { Prisma } from "@prisma/client"
 import { prisma } from "../../lib/prisma"
+import { logger } from "../../lib/logger"
 
 export type AuditAction =
 	| "user.registered"
@@ -9,23 +10,38 @@ export type AuditAction =
 	| "user.logged_out"
 	| "user.oauth_login"
 	| "user.password_changed"
+	| "user.password_reset_requested"
+	| "user.password_reset_completed"
 	| "user.profile_updated"
 	| "user.role_changed"
+	| "user.account_deleted"
+	| "user.data_exported"
 	| "admin.login_succeeded"
 	| "admin.login_failed"
+	| "admin.logged_out"
 	| "project.created"
 	| "project.updated"
 	| "project.deleted"
 	| "project.member_invited"
 	| "project.member_removed"
+	| "project.member_role_changed"
 	| "project.member_joined_via_link"
+	| "project.invitation_sent"
 	| "share_link.created"
 	| "share_link.revoked"
+	| "review.decision_recorded"
+	| "review.reopened"
 	| "media.uploaded"
 	| "media.version_uploaded"
 	| "media.updated"
 	| "media.deleted"
+	| "media.downloaded"
+	| "media.moved"
 	| "media.version_deleted"
+	| "folder.created"
+	| "folder.renamed"
+	| "folder.moved"
+	| "folder.deleted"
 	| "report.exported"
 
 export interface AuditEntry {
@@ -52,7 +68,9 @@ export const recordAudit = async (entry: AuditEntry): Promise<void> => {
 			},
 		})
 	} catch (error) {
-		console.error("Failed to write audit log entry", entry.action, error)
+		logger.error("Failed to write audit log entry", error, {
+			action: entry.action,
+		})
 	}
 }
 

@@ -20,6 +20,7 @@ import {
 } from "./ui/dropdown-menu"
 import { Avatar, AvatarFallback, AvatarImage } from "./ui/avatar"
 import { useState } from "react"
+import { UserAvatar } from "@/components/UserAvatar"
 
 interface ProjectCardProps {
 	project: Project
@@ -82,18 +83,14 @@ export function ProjectCard({ project, onEdit, onDelete }: ProjectCardProps) {
 					<div className="mt-3 flex items-center justify-between">
 						<div className="flex -space-x-2">
 							{project.members.slice(0, 3).map((member) => (
-								<Avatar
+								<UserAvatar
 									key={member.user.id}
 									className="h-6 w-6 border-2 border-card"
-								>
-									<AvatarImage
-										src={`https://api.dicebear.com/7.x/micah/svg?seed=${member.user.email}`}
-										alt={member.user.name || member.user.email}
-									/>
-									<AvatarFallback className="text-xs">
-										{member.user.name?.charAt(0) || member.user.email.charAt(0)}
-									</AvatarFallback>
-								</Avatar>
+									fallbackClassName="text-xs"
+									name={member.user.name}
+									email={member.user.email}
+									avatarUrl={member.user.avatarUrl}
+								/>
 							))}
 							{project.members.length > 3 && (
 								<div className="flex h-6 w-6 items-center justify-center rounded-full border-2 border-card bg-muted text-xs">

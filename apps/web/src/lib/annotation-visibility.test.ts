@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest"
 import {
+	annotationTimeWindow,
 	isAnnotationVisibleAt,
 	INSTANT_ANNOTATION_VISIBILITY_SECONDS,
 	PLAYHEAD_SAMPLING_EPSILON_SECONDS,
@@ -65,4 +66,33 @@ describe("isAnnotationVisibleAt", () => {
 		expect(isAnnotationVisibleAt({ t: 7.32 }, 7.32)).toBe(true)
 		expect(isAnnotationVisibleAt({ t: 7.32, tEnd: 9 }, 7.32)).toBe(true)
 	})
+
+	it("keeps a pinned annotation on screen wherever the playhead is", () => {
+		expect(isAnnotationVisibleAt({ t: 10, pinned: true }, 90)).toBe(true)
+		expect(isAnnotationVisibleAt({ t: 10, tEnd: 12, pinned: true }, 0)).toBe(
+			true
+		)
+	})
 })
+
+describe("annotationTimeWindow", () => {
+	it("pads an instant mark by the default visibility window", () => {
+		expect(annotationTimeWindow({ t: 10 })).toEqual({
+			start: 10,
+			end: 10 + INSTANT_ANNOTATION_VISIBILITY_SECONDS,
+		})
+	})
+
+	it("uses an explicit range as-is", () => {
+		expect(annotationTimeWindow({ t: 5, tEnd: 20 })).toEqual({
+			start: 5,
+			end: 20,
+		})
+	})
+
+	it("has no window for an untimed annotation", () => {
+		expect(annotationTimeWindow({})).toBeNull()
+		expect(annotationTimeWindow({ t: null })).toBeNull()
+	})
+})
+

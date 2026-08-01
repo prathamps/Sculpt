@@ -3,28 +3,36 @@
 import { useState, useEffect, useCallback } from "react"
 import { useAuth } from "@/context/AuthContext"
 import { useSocket } from "@/context/SocketContext"
+import { api } from "@/lib/api"
 import { Comment } from "@/types"
-
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001"
 
 export function useVersionComments(imageVersionId: string | null) {
 	const { user } = useAuth()
-	const { socket, isConnected, joinImageVersion, leaveImageVersion } =
-		useSocket()
+	const {
+		socket,
+		isConnected,
+		reconnectCount,
+		joinImageVersion,
+		leaveImageVersion,
+	} = useSocket()
 	const [comments, setComments] = useState<Comment[]>([])
 	const [isLoading, setIsLoading] = useState(false)
+	const [error, setError] = useState<string | null>(null)
 
 	const refetch = useCallback(async () => {
 		if (!imageVersionId) return
 		setIsLoading(true)
+		setError(null)
 		try {
-			const res = await fetch(
-				`${API_URL}/api/images/versions/${imageVersionId}/comments`,
-				{ credentials: "include" }
+			setComments(
+				await api.get<Comment[]>(
+					`/api/images/versions/${imageVersionId}/comments`
+				)
 			)
-			if (res.ok) setComments(await res.json())
-		} catch (error) {
-			console.error("Failed to fetch comments:", error)
+		} catch (caught) {
+			setError(
+				caught instanceof Error ? caught.message : "Could not load comments."
+			)
 		} finally {
 			setIsLoading(false)
 		}
@@ -32,27 +40,41 @@ export function useVersionComments(imageVersionId: string | null) {
 
 	useEffect(() => {
 		setComments([])
-		refetch()
+		void refetch()
 	}, [refetch])
 
 	useEffect(() => {
-		if (!socket || !isConnected || !imageVersionId) return
+		if (!imageVersionId || reconnectCount === 0) return
+		void refetch()
+	}, [reconnectCount, imageVersionId, refetch])
 
+	useEffect(() => {
+		if (!imageVersionId) return
 		joinImageVersion(imageVersionId)
+	}, [imageVersionId, joinImageVersion])
+
+	useEffect(() => {
+		if (!socket || !imageVersionId) return
+
+		const isForThisVersion = (versionId: string) => versionId === imageVersionId
 
 		const handleNewComment = (newComment: Comment) => {
-			if (newComment.imageVersionId !== imageVersionId) return
+			if (!isForThisVersion(newComment.imageVersionId)) return
 			setComments((prev) =>
-				prev.some((c) => c.id === newComment.id)
+				prev.some((comment) => comment.id === newComment.id)
 					? prev
 					: [newComment, ...prev]
 			)
 		}
 
 		const handleCommentUpdated = (updatedComment: Comment) => {
-			if (updatedComment.imageVersionId !== imageVersionId) return
+			if (!isForThisVersion(updatedComment.imageVersionId)) return
 			setComments((prev) =>
-				prev.map((c) => (c.id === updatedComment.id ? updatedComment : c))
+				prev.map((comment) =>
+					comment.id === updatedComment.id
+						? { ...comment, ...updatedComment }
+						: comment
+				)
 			)
 		}
 
@@ -60,8 +82,8 @@ export function useVersionComments(imageVersionId: string | null) {
 			id: string
 			imageVersionId: string
 		}) => {
-			if (payload.imageVersionId !== imageVersionId) return
-			setComments((prev) => prev.filter((c) => c.id !== payload.id))
+			if (!isForThisVersion(payload.imageVersionId)) return
+			setComments((prev) => prev.filter((comment) => comment.id !== payload.id))
 		}
 
 		const handleLikeUpdate = (payload: {
@@ -71,19 +93,19 @@ export function useVersionComments(imageVersionId: string | null) {
 			userId: string
 			imageVersionId: string
 		}) => {
-			if (payload.imageVersionId !== imageVersionId) return
+			if (!isForThisVersion(payload.imageVersionId)) return
 			setComments((prev) =>
-				prev.map((c) =>
-					c.id === payload.id
+				prev.map((comment) =>
+					comment.id === payload.id
 						? {
-								...c,
+								...comment,
 								likeCount: payload.count,
 								isLikedByCurrentUser:
 									user?.id === payload.userId
 										? payload.liked
-										: c.isLikedByCurrentUser,
-						  }
-						: c
+										: comment.isLikedByCurrentUser,
+							}
+						: comment
 				)
 			)
 		}
@@ -99,13 +121,14 @@ export function useVersionComments(imageVersionId: string | null) {
 			socket.off("comment-deleted", handleCommentDeleted)
 			socket.off("comment-like-updated", handleLikeUpdate)
 		}
-	}, [socket, isConnected, imageVersionId, user?.id, joinImageVersion])
+	}, [socket, isConnected, imageVersionId, user?.id])
 
-	useEffect(() => {
-		return () => {
+	useEffect(
+		() => () => {
 			if (imageVersionId) leaveImageVersion(imageVersionId)
-		}
-	}, [imageVersionId, leaveImageVersion])
+		},
+		[imageVersionId, leaveImageVersion]
+	)
 
-	return { comments, isLoading, refetch }
+	return { comments, isLoading, error, refetch }
 }

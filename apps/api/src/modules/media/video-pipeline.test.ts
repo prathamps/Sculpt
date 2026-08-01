@@ -1,4 +1,4 @@
-import { describe, expect, it, vi, beforeEach } from "vitest"
+import { describe, expect, it, vi, beforeEach, afterEach } from "vitest"
 import fs from "fs/promises"
 import os from "os"
 import path from "path"
@@ -20,6 +20,10 @@ vi.mock("../../lib/prisma", () => ({
 			update: vi.fn(),
 			updateMany: vi.fn(),
 		},
+		mediaAsset: {
+			createMany: vi.fn(),
+			deleteMany: vi.fn(),
+		},
 	},
 }))
 
@@ -29,6 +33,7 @@ vi.mock("../../realtime/socket", () => ({
 
 vi.mock("./ffmpeg", () => ({
 	probeDuration: vi.fn(),
+	probeFrameRate: vi.fn(),
 	transcodeToWebProxy: vi.fn(),
 	capturePosterFrame: vi.fn(),
 }))
@@ -38,17 +43,21 @@ import { storage } from "../../storage"
 import {
 	capturePosterFrame,
 	probeDuration,
+	probeFrameRate,
 	transcodeToWebProxy,
 } from "./ffmpeg"
 import {
 	enqueueVideoProxy,
 	failAbandonedProxyJobs,
 	stageVideoForProcessing,
+	videoQueueDepth,
 } from "./video-pipeline"
+import { INSTANCE_ID } from "./rendition-queue"
 
 const mockedPrisma = vi.mocked(prisma, true)
 const mockedStorage = vi.mocked(storage, true)
 const mockedProbe = vi.mocked(probeDuration)
+const mockedFrameRate = vi.mocked(probeFrameRate)
 const mockedTranscode = vi.mocked(transcodeToWebProxy)
 const mockedPoster = vi.mocked(capturePosterFrame)
 
@@ -67,6 +76,7 @@ const makeSourceFile = async (): Promise<string> => {
 beforeEach(() => {
 	vi.clearAllMocks()
 	mockedProbe.mockResolvedValue(4.2)
+	mockedFrameRate.mockResolvedValue(24)
 	mockedTranscode.mockImplementation(writeOutput)
 	mockedPoster.mockImplementation(writeOutput)
 	mockedPrisma.imageVersion.update.mockResolvedValue({
@@ -76,7 +86,12 @@ beforeEach(() => {
 		proxyStatus: "READY",
 		duration: 4.2,
 		thumbnailUrl: "uploads/poster.jpg",
+		image: { projectId: "p1" },
 	} as never)
+})
+
+afterEach(async () => {
+	await vi.waitFor(() => expect(videoQueueDepth()).toBe(0))
 })
 
 describe("enqueueVideoProxy", () => {
@@ -130,7 +145,7 @@ describe("enqueueVideoProxy", () => {
 	})
 
 	it("marks the version FAILED when the transcode errors", async () => {
-		mockedTranscode.mockRejectedValueOnce(new Error("codec exploded"))
+		mockedTranscode.mockRejectedValue(new Error("codec exploded"))
 		const sourcePath = await stageVideoForProcessing(await makeSourceFile())
 
 		enqueueVideoProxy({ versionId: "v3", sourcePath, needsPoster: true })
@@ -162,16 +177,49 @@ describe("enqueueVideoProxy", () => {
 })
 
 describe("failAbandonedProxyJobs", () => {
-	it("fails every job left PENDING by a previous process", async () => {
+	it("fails this instance's own abandoned jobs", async () => {
 		mockedPrisma.imageVersion.updateMany.mockResolvedValue({
 			count: 2,
 		} as never)
 
 		await failAbandonedProxyJobs()
 
-		expect(mockedPrisma.imageVersion.updateMany).toHaveBeenCalledWith({
-			where: { proxyStatus: "PENDING" },
-			data: { proxyStatus: "FAILED" },
-		})
+		const call = mockedPrisma.imageVersion.updateMany.mock.calls[0][0] as {
+			where: { proxyStatus: string; OR: { proxyOwner: string | null }[] }
+			data: { proxyStatus: string }
+		}
+		expect(call.data).toEqual({ proxyStatus: "FAILED" })
+		expect(call.where.proxyStatus).toBe("PENDING")
+		expect(call.where.OR[0].proxyOwner).toBe(INSTANCE_ID)
+	})
+
+	it("never touches jobs owned by another running instance", async () => {
+		mockedPrisma.imageVersion.updateMany.mockResolvedValue({
+			count: 0,
+		} as never)
+
+		await failAbandonedProxyJobs()
+
+		const call = mockedPrisma.imageVersion.updateMany.mock.calls[0][0] as {
+			where: { OR: { proxyOwner: string | null }[] }
+		}
+		const ownerFilters = call.where.OR.map((clause) => clause.proxyOwner)
+		expect(ownerFilters).toEqual([INSTANCE_ID, null])
+	})
+})
+
+describe("job ownership", () => {
+	it("claims a job for this instance before transcoding", async () => {
+		mockedStorage.store.mockResolvedValueOnce("uploads/proxy.mp4")
+		const sourcePath = await stageVideoForProcessing(await makeSourceFile())
+
+		enqueueVideoProxy({ versionId: "v9", sourcePath, needsPoster: false })
+
+		await vi.waitFor(() =>
+			expect(mockedPrisma.imageVersion.update).toHaveBeenCalledWith({
+				where: { id: "v9" },
+				data: { proxyOwner: INSTANCE_ID },
+			})
+		)
 	})
 })

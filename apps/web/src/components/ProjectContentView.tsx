@@ -2,7 +2,6 @@
 
 import { Button } from "./ui/button"
 import { FileCard } from "./FileCard"
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Project, Image, MediaType } from "@/types"
 import { useRouter } from "next/navigation"
 import { useRovingGrid } from "@/hooks/useRovingGrid"
@@ -21,7 +20,7 @@ import {
 	X,
 	Search,
 } from "lucide-react"
-import { useState, useMemo } from "react"
+import { useState, useMemo, useEffect } from "react"
 import { cn } from "@/lib/utils"
 import {
 	DropdownMenu,
@@ -34,11 +33,20 @@ import {
 	DropdownMenuTrigger,
 } from "./ui/dropdown-menu"
 import { Input } from "./ui/input"
+import { UserAvatar } from "@/components/UserAvatar"
+import { FolderBrowser } from "./FolderBrowser"
+import { SelectionToolbar } from "./SelectionToolbar"
+import { FolderNode } from "@/hooks/useProjectFolders"
 
 interface ProjectContentViewProps {
 	project: Project | null
 	onUploadClick: () => void
 	onProjectChanged: () => void
+	currentFolderId: string | null
+	onNavigateFolder: (folderId: string | null) => void
+	folders: FolderNode[]
+	onFoldersChanged: () => void
+	canEdit: boolean
 }
 
 type FileType = "image" | "video" | "pdf" | "all"
@@ -64,6 +72,11 @@ export function ProjectContentView({
 	project,
 	onUploadClick,
 	onProjectChanged,
+	currentFolderId,
+	onNavigateFolder,
+	folders,
+	onFoldersChanged,
+	canEdit,
 }: ProjectContentViewProps) {
 	const router = useRouter()
 	const [viewMode, setViewMode] = useState<"grid" | "list">("grid")
@@ -71,11 +84,20 @@ export function ProjectContentView({
 	const [sortBy, setSortBy] = useState<SortOption>("newest")
 	const [searchQuery, setSearchQuery] = useState("")
 	const [showFilterBar, setShowFilterBar] = useState(false)
+	const [selectedIds, setSelectedIds] = useState<string[]>([])
+
+	const filesInFolder = useMemo(
+		() =>
+			(project?.images ?? []).filter(
+				(file) => (file.folderId ?? null) === currentFolderId
+			),
+		[project, currentFolderId]
+	)
 
 	const filteredAndSortedFiles = useMemo(() => {
 		if (!project) return []
 
-		const filtered = project.images.filter((file) => {
+		const filtered = filesInFolder.filter((file) => {
 			if (
 				searchQuery &&
 				!file.name.toLowerCase().includes(searchQuery.toLowerCase())
@@ -104,12 +126,12 @@ export function ProjectContentView({
 					return 0
 			}
 		})
-	}, [project, fileType, sortBy, searchQuery])
+	}, [project, filesInFolder, fileType, sortBy, searchQuery])
 
 	const fileTypeCount = useMemo(() => {
 		const counts = { total: 0, images: 0, videos: 0, pdfs: 0 }
 		if (!project) return counts
-		return project.images.reduce((acc, file) => {
+		return filesInFolder.reduce((acc, file) => {
 			acc.total++
 			const media = fileMediaType(file)
 			if (media === "VIDEO") acc.videos++
@@ -117,7 +139,21 @@ export function ProjectContentView({
 			else acc.images++
 			return acc
 		}, counts)
-	}, [project])
+	}, [project, filesInFolder])
+
+	useEffect(() => {
+		setSelectedIds([])
+	}, [currentFolderId, project?.id])
+
+	const toggleSelected = (imageId: string) => {
+		setSelectedIds((ids) =>
+			ids.includes(imageId)
+				? ids.filter((id) => id !== imageId)
+				: [...ids, imageId]
+		)
+	}
+
+	const clearSelection = () => setSelectedIds([])
 
 	const { getItemProps } = useRovingGrid<HTMLDivElement>({
 		itemCount: filteredAndSortedFiles.length,
@@ -153,19 +189,14 @@ export function ProjectContentView({
 					<div className="mt-1 flex items-center">
 						<div className="flex -space-x-2 overflow-hidden">
 							{project.members.slice(0, 5).map((member) => (
-								<Avatar
+								<UserAvatar
 									key={member.user.id}
 									className="h-6 w-6 border-2 border-background"
-								>
-									<AvatarImage
-										src={`https://api.dicebear.com/7.x/micah/svg?seed=${member.user.email}`}
-										alt={member.user.name ?? member.user.email}
-									/>
-									<AvatarFallback className="text-xs">
-										{member.user.name?.charAt(0).toUpperCase() ??
-											member.user.email.charAt(0).toUpperCase()}
-									</AvatarFallback>
-								</Avatar>
+									fallbackClassName="text-xs"
+									name={member.user.name}
+									email={member.user.email}
+									avatarUrl={member.user.avatarUrl}
+								/>
 							))}
 							{project.members.length > 5 && (
 								<div className="flex h-6 w-6 items-center justify-center rounded-full border-2 border-background bg-muted text-xs">
@@ -378,16 +409,36 @@ export function ProjectContentView({
 				</div>
 			)}
 
+			<FolderBrowser
+				projectId={project.id}
+				folders={folders}
+				currentFolderId={currentFolderId}
+				onNavigate={onNavigateFolder}
+				onFoldersChanged={onFoldersChanged}
+				canEdit={canEdit}
+			/>
+
+			{canEdit && selectedIds.length > 0 && (
+				<SelectionToolbar
+					projectId={project.id}
+					selectedIds={selectedIds}
+					folders={folders}
+					currentFolderId={currentFolderId}
+					onClear={clearSelection}
+					onChanged={onProjectChanged}
+				/>
+			)}
+
 			<div className="flex items-center justify-between pb-4">
 				<h3 className="text-sm font-medium">
 					{filteredAndSortedFiles.length} file
 					{filteredAndSortedFiles.length !== 1 && "s"}
-					{project.images.length !== filteredAndSortedFiles.length &&
-						` (filtered from ${project.images.length})`}
+					{filesInFolder.length !== filteredAndSortedFiles.length &&
+						` (filtered from ${filesInFolder.length})`}
 				</h3>
 			</div>
 
-			{project.images.length > 0 ? (
+			{filesInFolder.length > 0 ? (
 				<>
 					{filteredAndSortedFiles.length > 0 ? (
 						<div
@@ -414,6 +465,12 @@ export function ProjectContentView({
 										onProjectChanged={onProjectChanged}
 										viewMode={viewMode}
 										linkTabIndex={-1}
+										folders={folders}
+										canEdit={canEdit}
+										isSelected={selectedIds.includes(image.id)}
+										onToggleSelected={
+											canEdit ? () => toggleSelected(image.id) : undefined
+										}
 									/>
 								</div>
 							))}

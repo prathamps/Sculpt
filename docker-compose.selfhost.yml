@@ -1,15 +1,27 @@
 # Full self-hosted Sculpt: database, cache, API and web UI in one command.
 #
-#   JWT_SECRET=$(openssl rand -hex 32) docker compose -f docker-compose.selfhost.yml up -d --build
+#   JWT_SECRET=$(openssl rand -base64 48) docker compose -f docker-compose.selfhost.yml up -d --build
 #
 # The web UI is served on http://localhost:3000 and the API on
 # http://localhost:3001. Uploads persist in the `sculpt_uploads` volume.
+#
+# For HTTPS on a real domain, add the `tls` profile — it puts Caddy in front of
+# both services and obtains certificates automatically:
+#
+#   SCULPT_DOMAIN=sculpt.example.com \
+#   TLS_EMAIL=you@example.com \
+#   FRONTEND_URL=https://sculpt.example.com \
+#   API_URL=https://sculpt.example.com/api-origin \
+#   JWT_SECRET=$(openssl rand -base64 48) \
+#   docker compose -f docker-compose.selfhost.yml --profile tls up -d --build
+#
 # For OAuth, SMTP or S3 storage, add the variables from apps/api/.env.example
 # to the api service environment.
 
 services:
   postgres:
     image: postgres:17-alpine
+    restart: unless-stopped
     environment:
       POSTGRES_USER: sculpt
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-sculpt}
@@ -24,6 +36,9 @@ services:
 
   redis:
     image: redis:7-alpine
+    restart: unless-stopped
+    volumes:
+      - sculpt_redis:/data
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
@@ -32,6 +47,7 @@ services:
 
   api:
     build: ./apps/api
+    restart: unless-stopped
     depends_on:
       postgres:
         condition: service_healthy
@@ -41,15 +57,29 @@ services:
       DATABASE_URL: postgresql://sculpt:${POSTGRES_PASSWORD:-sculpt}@postgres:5432/sculpt
       DIRECT_URL: postgresql://sculpt:${POSTGRES_PASSWORD:-sculpt}@postgres:5432/sculpt
       REDIS_URL: redis://redis:6379
-      JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET to a long random string}
+      JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET to a long random string, e.g. openssl rand -base64 48}
       FRONTEND_URL: ${FRONTEND_URL:-http://localhost:3000}
       API_URL: ${API_URL:-http://localhost:3001}
       TRUST_PROXY: ${TRUST_PROXY:-}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      MAX_UPLOAD_MB: ${MAX_UPLOAD_MB:-2048}
       NODE_ENV: production
     volumes:
       - sculpt_uploads:/app/uploads
     ports:
-      - "3001:3001"
+      - "${API_PORT:-3001}:3001"
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://127.0.0.1:3001/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))",
+        ]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
 
   web:
     build:
@@ -57,11 +87,33 @@ services:
       args:
         NEXT_PUBLIC_API_URL: ${API_URL:-http://localhost:3001}
         NEXT_PUBLIC_SOCKET_URL: ${API_URL:-http://localhost:3001}
+    restart: unless-stopped
     depends_on:
       - api
     ports:
-      - "3000:3000"
+      - "${WEB_PORT:-3000}:3000"
+
+  caddy:
+    image: caddy:2-alpine
+    profiles: ["tls"]
+    restart: unless-stopped
+    depends_on:
+      - api
+      - web
+    environment:
+      SCULPT_DOMAIN: ${SCULPT_DOMAIN:?set SCULPT_DOMAIN to the public hostname}
+      TLS_EMAIL: ${TLS_EMAIL:?set TLS_EMAIL for certificate notices}
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - sculpt_caddy_data:/data
+      - sculpt_caddy_config:/config
+    ports:
+      - "80:80"
+      - "443:443"
 
 volumes:
   sculpt_pgdata:
   sculpt_uploads:
+  sculpt_redis:
+  sculpt_caddy_data:
+  sculpt_caddy_config:

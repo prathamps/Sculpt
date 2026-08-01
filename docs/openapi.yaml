@@ -1,0 +1,1326 @@
+openapi: 3.1.0
+info:
+  title: Sculpt API
+  version: 1.0.0
+  description: |
+    REST API for Sculpt, a self-hostable visual collaboration platform.
+
+    **Authentication** is by `httpOnly` session cookie (`token`), set by
+    `POST /api/auth/login` or an OAuth callback. Send credentials with every
+    request (`credentials: "include"` in the browser). The admin panel uses a
+    separate `admin_token` cookie obtained from `POST /api/admin/login`; the two
+    are not interchangeable.
+
+    **Authorization** is per project. Roles rank
+    `VIEWER < MEMBER < EDITOR < OWNER`:
+
+    | Role | Can |
+    | --- | --- |
+    | VIEWER | read projects, media and comments |
+    | MEMBER | + comment, reply, like, record review decisions |
+    | EDITOR | + upload media and versions, rename/delete media, set due dates |
+    | OWNER | + manage members and roles, share links, invitations, the project |
+
+    Failures return `{"message": "..."}`. Unexpected failures are `500` with a
+    generic message — internal error details are never returned.
+  license:
+    name: MIT
+    url: https://github.com/prathamps/Sculpt/blob/main/LICENSE
+
+servers:
+  - url: http://localhost:3001
+    description: Local development
+  - url: https://sculpt.example.com
+    description: Self-hosted behind the bundled Caddy profile
+
+tags:
+  - name: Auth
+  - name: Users
+  - name: Projects
+  - name: Members
+  - name: Sharing
+  - name: Media
+  - name: Comments
+  - name: Reviews
+  - name: Search
+  - name: Notifications
+  - name: Export
+  - name: Admin
+  - name: System
+
+components:
+  securitySchemes:
+    sessionCookie:
+      type: apiKey
+      in: cookie
+      name: token
+    adminCookie:
+      type: apiKey
+      in: cookie
+      name: admin_token
+
+  parameters:
+    page:
+      name: page
+      in: query
+      schema: { type: integer, minimum: 1, default: 1 }
+    pageSize:
+      name: pageSize
+      in: query
+      schema: { type: integer, minimum: 1, maximum: 100, default: 30 }
+
+  schemas:
+    Error:
+      type: object
+      properties:
+        message: { type: string }
+      required: [message]
+
+    ProjectRole:
+      type: string
+      enum: [VIEWER, MEMBER, EDITOR, OWNER]
+
+    MediaType:
+      type: string
+      enum: [IMAGE, VIDEO, PDF, MODEL]
+
+    ProxyStatus:
+      type: string
+      enum: [PENDING, READY, FAILED]
+
+    ReviewStatus:
+      type: string
+      enum: [PENDING, CHANGES_REQUESTED, APPROVED]
+
+    User:
+      type: object
+      properties:
+        id: { type: string }
+        email: { type: string, format: email }
+        name: { type: string, nullable: true }
+        role: { type: string, enum: [USER, ADMIN] }
+        avatarUrl: { type: string, nullable: true }
+        emailNotifications: { type: boolean }
+
+    ImageVersion:
+      type: object
+      properties:
+        id: { type: string }
+        url:
+          type: string
+          description: Relative path served through the authenticated media route.
+        versionName: { type: string }
+        versionNumber: { type: integer }
+        mediaType: { $ref: "#/components/schemas/MediaType" }
+        duration: { type: number, nullable: true }
+        frameRate:
+          type: number
+          nullable: true
+          description: Probed with ffprobe; drives frame-accurate stepping.
+        thumbnailUrl: { type: string, nullable: true }
+        proxyUrl:
+          type: string
+          nullable: true
+          description: Browser-viewable derivative. Consumers prefer this over `url`.
+        proxyStatus: { $ref: "#/components/schemas/ProxyStatus" }
+        reviewStatus: { $ref: "#/components/schemas/ReviewStatus" }
+        dueAt: { type: string, format: date-time, nullable: true }
+        createdAt: { type: string, format: date-time }
+
+    Image:
+      type: object
+      properties:
+        id: { type: string }
+        name: { type: string }
+        projectId: { type: string }
+        latestVersion: { $ref: "#/components/schemas/ImageVersion" }
+        versionCount: { type: integer }
+        createdAt: { type: string, format: date-time }
+
+    Project:
+      type: object
+      properties:
+        id: { type: string }
+        name: { type: string }
+        images:
+          type: array
+          items: { $ref: "#/components/schemas/Image" }
+        members:
+          type: array
+          items:
+            type: object
+            properties:
+              role: { $ref: "#/components/schemas/ProjectRole" }
+              user: { $ref: "#/components/schemas/User" }
+        createdAt: { type: string, format: date-time }
+
+    Annotation:
+      type: object
+      properties:
+        type: { type: string, enum: [pencil, rect, line] }
+        color: { type: string }
+        points:
+          type: array
+          maxItems: 5000
+          items:
+            type: object
+            properties:
+              x: { type: number, minimum: 0, maximum: 1 }
+              y: { type: number, minimum: 0, maximum: 1 }
+      required: [type, points]
+
+    ModelAnchor:
+      type: object
+      properties:
+        point:
+          type: array
+          items: { type: number }
+          minItems: 3
+          maxItems: 3
+        normal:
+          type: array
+          items: { type: number }
+          minItems: 3
+          maxItems: 3
+        camera:
+          type: object
+          properties:
+            position: { type: array, items: { type: number } }
+            target: { type: array, items: { type: number } }
+      required: [point]
+
+    Comment:
+      type: object
+      properties:
+        id: { type: string }
+        content: { type: string }
+        imageVersionId: { type: string }
+        parentId: { type: string, nullable: true }
+        annotation: { $ref: "#/components/schemas/Annotation" }
+        timestamp:
+          type: number
+          nullable: true
+          description: Video anchor, in seconds.
+        timestampEnd: { type: number, nullable: true }
+        page: { type: integer, nullable: true, description: PDF page anchor. }
+        modelAnchor: { $ref: "#/components/schemas/ModelAnchor" }
+        resolved: { type: boolean }
+        likeCount: { type: integer }
+        isLikedByCurrentUser: { type: boolean }
+        user: { $ref: "#/components/schemas/User" }
+        replies:
+          type: array
+          items: { $ref: "#/components/schemas/Comment" }
+        createdAt: { type: string, format: date-time }
+
+    Review:
+      type: object
+      properties:
+        id: { type: string }
+        decision: { type: string, enum: [APPROVED, CHANGES_REQUESTED] }
+        note: { type: string, nullable: true }
+        user: { $ref: "#/components/schemas/User" }
+        updatedAt: { type: string, format: date-time }
+
+    ShareLink:
+      type: object
+      properties:
+        id: { type: string }
+        token: { type: string }
+        role: { $ref: "#/components/schemas/ProjectRole" }
+        expiresAt: { type: string, format: date-time, nullable: true }
+        maxUses: { type: integer, nullable: true }
+        useCount: { type: integer }
+
+  responses:
+    Unauthorized:
+      description: No valid session.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    Forbidden:
+      description: Authenticated but not permitted at this role.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    NotFound:
+      description: Absent, or hidden because the caller cannot see it.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    ValidationFailed:
+      description: The request body or query failed validation.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    RateLimited:
+      description: Too many attempts from this address.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+
+security:
+  - sessionCookie: []
+
+paths:
+  /health:
+    get:
+      tags: [System]
+      summary: Liveness and dependency status
+      security: []
+      responses:
+        "200":
+          description: Database reachable.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: string, enum: [ok] }
+                  components:
+                    type: object
+                    properties:
+                      database: { type: string, enum: [ok, degraded, down] }
+                      redis: { type: string, enum: [ok, degraded, down] }
+        "503":
+          description: Database unreachable — drain this instance.
+
+  /uploads/{filename}:
+    get:
+      tags: [Media]
+      summary: Fetch a stored media file
+      description: |
+        Resolves the file's owning project and verifies membership. On private
+        object storage it redirects to a short-lived presigned URL. Supports
+        range requests for video and PDF.
+      parameters:
+        - name: filename
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200": { description: File contents. }
+        "302": { description: Redirect to a presigned object URL. }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /api/auth/register:
+    post:
+      tags: [Auth]
+      summary: Create an account
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                email: { type: string, format: email }
+                password: { type: string, minLength: 8 }
+                name: { type: string }
+              required: [email, password]
+      responses:
+        "201": { description: Account created. }
+        "400": { $ref: "#/components/responses/ValidationFailed" }
+        "409": { description: Email already registered. }
+        "429": { $ref: "#/components/responses/RateLimited" }
+
+  /api/auth/login:
+    post:
+      tags: [Auth]
+      summary: Sign in and receive a session cookie
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                email: { type: string, format: email }
+                password: { type: string }
+              required: [email, password]
+      responses:
+        "200": { description: Signed in; `token` cookie set. }
+        "401": { description: Invalid credentials. }
+        "429": { $ref: "#/components/responses/RateLimited" }
+
+  /api/auth/logout:
+    post:
+      tags: [Auth]
+      summary: Sign out and revoke this session
+      responses:
+        "200": { description: Session revoked and cookie cleared. }
+
+  /api/auth/providers:
+    get:
+      tags: [Auth]
+      summary: Which OAuth providers this instance has configured
+      security: []
+      responses:
+        "200":
+          description: Provider availability.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  google: { type: boolean }
+                  github: { type: boolean }
+
+  /api/auth/password-reset/request:
+    post:
+      tags: [Auth]
+      summary: Request a password reset email
+      description: |
+        Always responds `202`, whether or not the address has an account, so it
+        cannot be used to enumerate users. Requires SMTP to be configured.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                email: { type: string, format: email }
+              required: [email]
+      responses:
+        "202": { description: Accepted. }
+        "429": { $ref: "#/components/responses/RateLimited" }
+
+  /api/auth/password-reset/complete:
+    post:
+      tags: [Auth]
+      summary: Set a new password using a reset token
+      description: Single-use, expires after one hour, and signs out every session.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                token: { type: string }
+                password: { type: string, minLength: 8 }
+              required: [token, password]
+      responses:
+        "200": { description: Password updated. }
+        "400": { description: Token invalid, used or expired. }
+
+  /api/users/me:
+    get:
+      tags: [Users]
+      summary: The signed-in user
+      responses:
+        "200":
+          description: Profile.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/User" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+    patch:
+      tags: [Users]
+      summary: Update your profile
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name: { type: string }
+                avatarUrl: { type: string, nullable: true }
+      responses:
+        "200": { description: Updated profile. }
+        "400": { $ref: "#/components/responses/ValidationFailed" }
+    delete:
+      tags: [Users]
+      summary: Delete your account
+      description: |
+        Removes your profile, comments and reviews. Projects you solely own are
+        deleted with their media, which must be acknowledged explicitly.
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                password:
+                  type: string
+                  description: Required unless the account is OAuth-only.
+                deleteOwnedProjects: { type: boolean, default: false }
+      responses:
+        "204": { description: Account deleted. }
+        "400": { description: Confirmation missing, or you solely own projects. }
+        "403": { description: Password incorrect. }
+
+  /api/users/me/password:
+    post:
+      tags: [Users]
+      summary: Change your password
+      description: Signs out every other session and re-issues this one.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                currentPassword: { type: string }
+                newPassword: { type: string, minLength: 8 }
+              required: [currentPassword, newPassword]
+      responses:
+        "200": { description: Password updated. }
+        "403": { description: Current password incorrect. }
+
+  /api/users/me/notification-preferences:
+    patch:
+      tags: [Users]
+      summary: Toggle offline-activity emails
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                emailNotifications: { type: boolean }
+              required: [emailNotifications]
+      responses:
+        "200": { description: Preference saved. }
+
+  /api/users/me/export:
+    get:
+      tags: [Users]
+      summary: Download everything held about your account
+      responses:
+        "200":
+          description: JSON attachment.
+          content:
+            application/json:
+              schema: { type: object }
+
+  /api/projects:
+    get:
+      tags: [Projects]
+      summary: Projects you are a member of
+      parameters:
+        - $ref: "#/components/parameters/page"
+        - $ref: "#/components/parameters/pageSize"
+      responses:
+        "200":
+          description: Paginated projects.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: "#/components/schemas/Project" }
+                  total: { type: integer }
+                  page: { type: integer }
+                  pageSize: { type: integer }
+                  totalPages: { type: integer }
+    post:
+      tags: [Projects]
+      summary: Create a project (you become its OWNER)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name: { type: string, maxLength: 120 }
+              required: [name]
+      responses:
+        "201": { description: Project created. }
+        "400": { $ref: "#/components/responses/ValidationFailed" }
+
+  /api/projects/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string }
+    get:
+      tags: [Projects]
+      summary: One project with its media and members
+      responses:
+        "200":
+          description: Project.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Project" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    put:
+      tags: [Projects]
+      summary: Rename a project (OWNER)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name: { type: string }
+              required: [name]
+      responses:
+        "200": { description: Renamed. }
+        "403": { $ref: "#/components/responses/Forbidden" }
+    delete:
+      tags: [Projects]
+      summary: Delete a project and all its media (OWNER)
+      responses:
+        "204": { description: Deleted. }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /api/projects/{id}/my-role:
+    get:
+      tags: [Projects]
+      summary: Your role in this project
+      description: Used for UI gating only; the server re-checks on every call.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Role.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  role: { $ref: "#/components/schemas/ProjectRole" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /api/projects/{id}/invite:
+    post:
+      tags: [Members]
+      summary: Invite someone by email (OWNER)
+      description: |
+        Existing accounts are added immediately. Unknown addresses receive a
+        tokenised invitation valid for seven days.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                email: { type: string, format: email }
+                role:
+                  $ref: "#/components/schemas/ProjectRole"
+              required: [email]
+      responses:
+        "200":
+          description: Invitation sent or member added.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  invitedExistingUser: { type: boolean }
+                  email: { type: string }
+        "400": { description: Already a member, or OWNER was requested. }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /api/projects/{projectId}/invitations:
+    get:
+      tags: [Members]
+      summary: Pending invitations (OWNER)
+      parameters:
+        - name: projectId
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200": { description: Pending invitations. }
+
+  /api/projects/{projectId}/invitations/{invitationId}:
+    delete:
+      tags: [Members]
+      summary: Revoke a pending invitation (OWNER)
+      parameters:
+        - name: projectId
+          in: path
+          required: true
+          schema: { type: string }
+        - name: invitationId
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "204": { description: Revoked. }
+
+  /api/invitations/{token}/accept:
+    post:
+      tags: [Members]
+      summary: Accept an invitation
+      description: The signed-in account's email must match the invited address.
+      parameters:
+        - name: token
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200": { description: Joined; returns the project. }
+        "400": { description: Expired. }
+        "403": { description: Sent to a different address. }
+        "404": { description: Invalid or already accepted. }
+
+  /api/projects/{projectId}/members/{userId}/role:
+    patch:
+      tags: [Members]
+      summary: Change a member's role (OWNER)
+      description: Refuses to demote the project's last remaining owner.
+      parameters:
+        - name: projectId
+          in: path
+          required: true
+          schema: { type: string }
+        - name: userId
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                role: { $ref: "#/components/schemas/ProjectRole" }
+              required: [role]
+      responses:
+        "200": { description: Role updated. }
+        "400": { description: Would leave the project without an owner. }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /api/projects/{projectId}/members/{userId}:
+    delete:
+      tags: [Members]
+      summary: Remove a member (OWNER)
+      parameters:
+        - name: projectId
+          in: path
+          required: true
+          schema: { type: string }
+        - name: userId
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200": { description: Removed. }
+        "400": { description: Owners cannot be removed. }
+
+  /api/projects/{projectId}/share-links:
+    parameters:
+      - name: projectId
+        in: path
+        required: true
+        schema: { type: string }
+    get:
+      tags: [Sharing]
+      summary: Active share links (OWNER)
+      responses:
+        "200":
+          description: Share links.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/ShareLink" }
+    post:
+      tags: [Sharing]
+      summary: Create a share link (OWNER)
+      description: |
+        Following a link never lowers an existing member's role. `OWNER` cannot
+        be granted this way.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                role: { $ref: "#/components/schemas/ProjectRole" }
+                expiresInDays: { type: integer, minimum: 1, maximum: 365, nullable: true }
+                maxUses: { type: integer, minimum: 1, maximum: 1000, nullable: true }
+              required: [role]
+      responses:
+        "201":
+          description: Created.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ShareLink" }
+
+  /api/projects/{projectId}/share-links/{linkId}:
+    delete:
+      tags: [Sharing]
+      summary: Revoke a share link (OWNER)
+      parameters:
+        - name: projectId
+          in: path
+          required: true
+          schema: { type: string }
+        - name: linkId
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "204": { description: Revoked. }
+
+  /api/share/{token}:
+    post:
+      tags: [Sharing]
+      summary: Join a project via a share link
+      parameters:
+        - name: token
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200": { description: Joined; returns the project. }
+        "404": { description: Invalid, revoked, expired or used up. }
+
+  /api/projects/{projectId}/images:
+    parameters:
+      - name: projectId
+        in: path
+        required: true
+        schema: { type: string }
+    get:
+      tags: [Media]
+      summary: Media in a project
+      responses:
+        "200":
+          description: Media with latest versions.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Image" }
+    post:
+      tags: [Media]
+      summary: Upload media (EDITOR)
+      description: |
+        Up to ten files per request. `filesMeta` is a JSON array parallel to
+        `images`, declaring per-file `duration`, `hasThumbnail` and
+        `hasModelProxy`. 3D models are converted to GLB in the browser and
+        uploaded as `modelProxies`. Videos and pro image formats are normalised
+        server-side afterwards, so a version may return `proxyStatus: PENDING`.
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                images:
+                  type: array
+                  items: { type: string, format: binary }
+                thumbnails:
+                  type: array
+                  items: { type: string, format: binary }
+                modelProxies:
+                  type: array
+                  items: { type: string, format: binary }
+                filesMeta: { type: string }
+      responses:
+        "201": { description: Media created. }
+        "400": { description: Unsupported type, oversized, or bad metadata. }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /api/images/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string }
+    get:
+      tags: [Media]
+      summary: One media item with all versions
+      responses:
+        "200":
+          description: Media.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Image" }
+    put:
+      tags: [Media]
+      summary: Rename media (EDITOR)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name: { type: string }
+              required: [name]
+      responses:
+        "200": { description: Renamed. }
+    delete:
+      tags: [Media]
+      summary: Delete media and every version (EDITOR)
+      responses:
+        "204": { description: Deleted. }
+
+  /api/images/{imageId}/versions:
+    post:
+      tags: [Media]
+      summary: Upload a new version (EDITOR)
+      parameters:
+        - name: imageId
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                image: { type: string, format: binary }
+                thumbnail: { type: string, format: binary }
+                modelProxy: { type: string, format: binary }
+                versionName: { type: string }
+                duration: { type: string }
+      responses:
+        "201": { description: Version created. }
+        "400": { description: No file, or unsupported type. }
+
+  /api/images/versions/{versionId}:
+    parameters:
+      - name: versionId
+        in: path
+        required: true
+        schema: { type: string }
+    get:
+      tags: [Media]
+      summary: One version
+      responses:
+        "200":
+          description: Version.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ImageVersion" }
+    put:
+      tags: [Media]
+      summary: Rename a version (EDITOR)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                versionName: { type: string }
+              required: [versionName]
+      responses:
+        "200": { description: Renamed. }
+    delete:
+      tags: [Media]
+      summary: Delete a version (EDITOR)
+      responses:
+        "204": { description: Deleted. }
+        "400": { description: Cannot delete the only version. }
+
+  /api/images/versions/{imageVersionId}/comments:
+    parameters:
+      - name: imageVersionId
+        in: path
+        required: true
+        schema: { type: string }
+    get:
+      tags: [Comments]
+      summary: Comment threads on a version
+      responses:
+        "200":
+          description: Top-level comments with replies.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Comment" }
+    post:
+      tags: [Comments]
+      summary: Post a comment (MEMBER)
+      description: |
+        Anchors that do not apply to the version's media type are discarded
+        rather than trusted, and video timestamps are clamped to the real
+        duration.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                content: { type: string, maxLength: 5000 }
+                parentId: { type: string, nullable: true }
+                annotation: { $ref: "#/components/schemas/Annotation" }
+                timestamp: { type: number, nullable: true }
+                timestampEnd: { type: number, nullable: true }
+                page: { type: integer, nullable: true }
+                modelAnchor: { $ref: "#/components/schemas/ModelAnchor" }
+              required: [content]
+      responses:
+        "201": { description: Comment created. }
+        "400": { $ref: "#/components/responses/ValidationFailed" }
+
+  /api/images/comments/{commentId}:
+    parameters:
+      - name: commentId
+        in: path
+        required: true
+        schema: { type: string }
+    put:
+      tags: [Comments]
+      summary: Edit your own comment
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                content: { type: string }
+              required: [content]
+      responses:
+        "200": { description: Updated. }
+        "403": { description: Not the author. }
+    delete:
+      tags: [Comments]
+      summary: Delete your own comment
+      responses:
+        "204": { description: Deleted. }
+        "403": { description: Not the author. }
+
+  /api/images/comments/{commentId}/like:
+    post:
+      tags: [Comments]
+      summary: Toggle your like
+      parameters:
+        - name: commentId
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: New like state.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  liked: { type: boolean }
+                  count: { type: integer }
+
+  /api/images/comments/{commentId}/resolve:
+    post:
+      tags: [Comments]
+      summary: Toggle resolved (author only)
+      parameters:
+        - name: commentId
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: New resolution state.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  resolved: { type: boolean }
+
+  /api/images/versions/{versionId}/reviews:
+    parameters:
+      - name: versionId
+        in: path
+        required: true
+        schema: { type: string }
+    get:
+      tags: [Reviews]
+      summary: Review status and decisions for a version
+      responses:
+        "200":
+          description: Derived status plus every decision.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  reviewStatus: { $ref: "#/components/schemas/ReviewStatus" }
+                  dueAt: { type: string, format: date-time, nullable: true }
+                  reviews:
+                    type: array
+                    items: { $ref: "#/components/schemas/Review" }
+    post:
+      tags: [Reviews]
+      summary: Approve or request changes (MEMBER)
+      description: |
+        One decision per reviewer; posting again replaces yours. A single
+        `CHANGES_REQUESTED` outweighs any number of approvals.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                decision: { type: string, enum: [APPROVED, CHANGES_REQUESTED] }
+                note: { type: string, maxLength: 2000, nullable: true }
+              required: [decision]
+      responses:
+        "200":
+          description: Resulting version status.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  reviewStatus: { $ref: "#/components/schemas/ReviewStatus" }
+    delete:
+      tags: [Reviews]
+      summary: Withdraw your own decision (MEMBER)
+      responses:
+        "200": { description: Recalculated version status. }
+
+  /api/images/versions/{versionId}/due-date:
+    patch:
+      tags: [Reviews]
+      summary: Set or clear a review due date (EDITOR)
+      parameters:
+        - name: versionId
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                dueAt: { type: string, format: date-time, nullable: true }
+      responses:
+        "200": { description: Due date saved. }
+
+  /api/projects/{projectId}/reviews/summary:
+    get:
+      tags: [Reviews]
+      summary: Counts of versions by review status
+      parameters:
+        - name: projectId
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Counts per status.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  PENDING: { type: integer }
+                  CHANGES_REQUESTED: { type: integer }
+                  APPROVED: { type: integer }
+
+  /api/search:
+    get:
+      tags: [Search]
+      summary: Search projects, media and comments
+      description: Results are restricted to projects the caller belongs to.
+      parameters:
+        - name: q
+          in: query
+          required: true
+          schema: { type: string, minLength: 1, maxLength: 200 }
+        - name: limit
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 20 }
+      responses:
+        "200":
+          description: Grouped matches.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  projects: { type: array, items: { type: object } }
+                  media: { type: array, items: { type: object } }
+                  comments: { type: array, items: { type: object } }
+        "400": { $ref: "#/components/responses/ValidationFailed" }
+
+  /api/notifications:
+    get:
+      tags: [Notifications]
+      summary: Your notifications
+      parameters:
+        - $ref: "#/components/parameters/page"
+        - $ref: "#/components/parameters/pageSize"
+      responses:
+        "200":
+          description: Page of notifications plus an unread count.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  notifications: { type: array, items: { type: object } }
+                  total: { type: integer }
+                  unread: { type: integer }
+
+  /api/notifications/{notificationId}/read:
+    put:
+      tags: [Notifications]
+      summary: Mark one notification read
+      parameters:
+        - name: notificationId
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200": { description: Marked read. }
+
+  /api/notifications/read-all:
+    put:
+      tags: [Notifications]
+      summary: Mark all your notifications read
+      responses:
+        "200":
+          description: How many changed.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  updated: { type: integer }
+
+  /api/export/images/{imageId}:
+    get:
+      tags: [Export]
+      summary: Export a review report
+      description: CSV cells beginning with a formula character are neutralised.
+      parameters:
+        - name: imageId
+          in: path
+          required: true
+          schema: { type: string }
+        - name: format
+          in: query
+          schema: { type: string, enum: [json, csv] }
+      responses:
+        "200": { description: Report attachment. }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /api/admin/login:
+    post:
+      tags: [Admin]
+      summary: Sign in to the admin panel
+      description: |
+        Requires an account whose global role is `ADMIN`. Issues a separate
+        `admin_token` cookie that an ordinary session token cannot substitute
+        for.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                email: { type: string, format: email }
+                password: { type: string }
+              required: [email, password]
+      responses:
+        "200": { description: Signed in. }
+        "401": { description: Invalid credentials. }
+        "403": { description: Not an administrator. }
+        "429": { $ref: "#/components/responses/RateLimited" }
+
+  /api/admin/users:
+    get:
+      tags: [Admin]
+      summary: List users
+      security:
+        - adminCookie: []
+      parameters:
+        - $ref: "#/components/parameters/page"
+        - $ref: "#/components/parameters/pageSize"
+        - name: search
+          in: query
+          schema: { type: string }
+      responses:
+        "200": { description: Paginated users. }
+
+  /api/admin/users/{userId}/role:
+    patch:
+      tags: [Admin]
+      summary: Change a user's global role
+      description: |
+        Refuses to demote the last administrator. Changing a role invalidates
+        that user's sessions.
+      security:
+        - adminCookie: []
+      parameters:
+        - name: userId
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                role: { type: string, enum: [USER, ADMIN] }
+              required: [role]
+      responses:
+        "200": { description: Role updated. }
+        "400": { description: Would remove the last administrator. }
+
+  /api/admin/stats:
+    get:
+      tags: [Admin]
+      summary: Instance totals and 30-day signup trends
+      security:
+        - adminCookie: []
+      responses:
+        "200": { description: Dashboard statistics. }
+
+  /api/admin/audit-logs:
+    get:
+      tags: [Admin]
+      summary: Query the audit trail
+      security:
+        - adminCookie: []
+      parameters:
+        - $ref: "#/components/parameters/page"
+        - $ref: "#/components/parameters/pageSize"
+        - name: action
+          in: query
+          schema: { type: string }
+        - name: actorId
+          in: query
+          schema: { type: string }
+      responses:
+        "200": { description: Paginated audit entries. }

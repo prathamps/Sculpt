@@ -40,11 +40,14 @@ const countAnnotations = (annotation: unknown): number => {
 	return 0
 }
 
-export { getImageProjectId, isProjectMember } from "../projects/access"
+export { getImageProjectId } from "../projects/access"
 
 export const buildImageReport = async (
-	imageId: string
+	imageId: string,
+	includeInternal = false
 ): Promise<ImageReport | null> => {
+	const visibility = includeInternal ? {} : { internal: false }
+
 	const image = await prisma.image.findUnique({
 		where: { id: imageId },
 		include: {
@@ -53,11 +56,12 @@ export const buildImageReport = async (
 				orderBy: { versionNumber: "asc" },
 				include: {
 					comments: {
-						where: { parentId: null },
+						where: { parentId: null, ...visibility },
 						orderBy: { createdAt: "asc" },
 						include: {
 							user: { select: { name: true, email: true } },
 							replies: {
+								where: visibility,
 								orderBy: { createdAt: "asc" },
 								include: { user: { select: { name: true, email: true } } },
 							},
@@ -74,9 +78,11 @@ export const buildImageReport = async (
 	let resolvedComments = 0
 
 	const versions: ReportVersion[] = image.versions.map((version) => {
+		let versionAnnotations = 0
 		const comments: ReportComment[] = version.comments.map((c) => {
 			totalComments += 1
 			if (c.resolved) resolvedComments += 1
+			versionAnnotations += countAnnotations(c.annotation)
 			return {
 				id: c.id,
 				author: c.user?.name || c.user?.email || "Unknown",
@@ -99,9 +105,7 @@ export const buildImageReport = async (
 			versionNumber: version.versionNumber,
 			mediaType: version.mediaType,
 			url: version.url,
-			annotationCount: Array.isArray(version.annotations)
-				? version.annotations.length
-				: 0,
+			annotationCount: versionAnnotations,
 			comments,
 		}
 	})
@@ -124,12 +128,15 @@ export const buildImageReport = async (
 	}
 }
 
+const SPREADSHEET_FORMULA_PREFIX = /^[=+\-@\t\r]/
+
 const csvEscape = (value: unknown): string => {
-	const s = value === null || value === undefined ? "" : String(value)
-	if (/[",\n]/.test(s)) {
-		return `"${s.replace(/"/g, '""')}"`
+	const raw = value === null || value === undefined ? "" : String(value)
+	const neutralized = SPREADSHEET_FORMULA_PREFIX.test(raw) ? `'${raw}` : raw
+	if (/[",\n\r\t]/.test(neutralized)) {
+		return `"${neutralized.replace(/"/g, '""')}"`
 	}
-	return s
+	return neutralized
 }
 
 export const buildImageReportCsv = (report: ImageReport): string => {

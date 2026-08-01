@@ -2,7 +2,6 @@
 
 import Link from "next/link"
 import Image from "next/image"
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import {
 	DropdownMenu,
 	DropdownMenuContent,
@@ -14,6 +13,8 @@ import { useAuth } from "@/context/AuthContext"
 import { Menu, LogOut, User, ShieldAlert } from "lucide-react"
 import { ModeToggle } from "@/components/ui/theme-toggle";
 import { NotificationDropdown } from "./NotificationDropdown"
+import { UserAvatar } from "@/components/UserAvatar"
+import { GlobalSearch } from "@/components/GlobalSearch"
 
 interface HeaderProps {
 	onMenuClick?: () => void
@@ -43,6 +44,7 @@ export function Header({ onMenuClick }: HeaderProps) {
 				</Link>
 			</div>
 			<div className="flex items-center gap-2">
+				{user && <GlobalSearch />}
 				<ModeToggle />
 				{user && <NotificationDropdown />}
 				<DropdownMenu>
@@ -51,15 +53,13 @@ export function Header({ onMenuClick }: HeaderProps) {
 							className="flex items-center gap-2 rounded-full border border-border/50 bg-background px-2 py-1.5 text-sm hover:bg-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
 							aria-label="Account menu"
 						>
-							<Avatar className="h-6 w-6">
-								<AvatarImage
-									src={`https://api.dicebear.com/7.x/micah/svg?seed=${
-										user?.email || "user"
-									}`}
-									alt=""
-								/>
-								<AvatarFallback>{user?.name?.charAt(0) || "U"}</AvatarFallback>
-							</Avatar>
+							<UserAvatar
+								className="h-6 w-6"
+								fallbackClassName="text-[10px]"
+								name={user?.name}
+								email={user?.email}
+								avatarUrl={user?.avatarUrl}
+							/>
 							<span className="hidden text-sm sm:inline-block">
 								{user?.name || user?.email || "User"}
 							</span>

@@ -2,8 +2,15 @@
 
 import React, { useRef, useEffect, useState, useCallback } from "react"
 import { AnnotationTool } from "@/app/project/[projectId]/image/[imageId]/page"
-import { formatVideoTime, isEditableTarget } from "@/lib/utils"
+import { cn, formatVideoTime, isEditableTarget } from "@/lib/utils"
 import { drawAnnotations } from "@/lib/annotation-drawing"
+import {
+	devicePixelRatio,
+	observeElementSize,
+	scaleContextToPixelRatio,
+	cssCanvasSize,
+} from "@/lib/canvas"
+
 import { isAnnotationVisibleAt } from "@/lib/annotation-visibility"
 import { Scrubber, ScrubberMarker, ScrubberPeer } from "./Scrubber"
 import {
@@ -13,8 +20,21 @@ import {
 	ChevronLeft,
 	ChevronRight,
 	Camera,
+	Repeat,
+	Volume2,
+	VolumeX,
+	Maximize,
+	Minimize,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
+import {
+	DropdownMenu,
+	DropdownMenuContent,
+	DropdownMenuItem,
+	DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
+
+const PLAYBACK_RATES = [0.5, 0.75, 1, 1.25, 1.5, 2]
 
 interface Point {
 	x: number
@@ -30,6 +50,7 @@ interface VideoAnnotation {
 	tEnd?: number
 	isHighlighted?: boolean
 	dimmed?: boolean
+	pinned?: boolean
 }
 
 interface SeekRequest {
@@ -57,6 +78,8 @@ interface VideoAnnotationCanvasProps {
 	canDraw?: boolean
 	enableShortcuts?: boolean
 }
+
+const PLAYHEAD_PUBLISH_INTERVAL_SECONDS = 0.1
 
 export function VideoAnnotationCanvas({
 	videoUrl,
@@ -90,6 +113,12 @@ export function VideoAnnotationCanvas({
 		[]
 	)
 	const [dims, setDims] = useState({ width: 0, height: 0 })
+	const [playbackRate, setPlaybackRate] = useState(1)
+	const [isLooping, setIsLooping] = useState(false)
+	const [isMuted, setIsMuted] = useState(false)
+	const [volume, setVolume] = useState(1)
+	const [isFullscreen, setIsFullscreen] = useState(false)
+	const rootRef = useRef<HTMLDivElement>(null)
 
 	const isDrawingRef = useRef(false)
 	const startPosRef = useRef<Point | null>(null)
@@ -110,11 +139,12 @@ export function VideoAnnotationCanvas({
 		if (!canvas) return
 		const ctx = canvas.getContext("2d")
 		if (!ctx) return
-		ctx.clearRect(0, 0, canvas.width, canvas.height)
+		const { width, height } = cssCanvasSize(canvas)
+		ctx.clearRect(0, 0, width, height)
 		const visible = annotations.filter((a) =>
 			isAnnotationVisibleAt(a, playheadRef.current)
 		)
-		drawAnnotations(ctx, visible, canvas.width, canvas.height)
+		drawAnnotations(ctx, visible, width, height)
 	}, [annotations])
 
 	const resize = useCallback(() => {
@@ -137,12 +167,15 @@ export function VideoAnnotationCanvas({
 			width = height * videoAspect
 		}
 
+		const pixelRatio = devicePixelRatio()
+
 		;[drawingCanvasRef.current, previewCanvasRef.current].forEach((c) => {
 			if (c) {
-				c.width = width
-				c.height = height
+				c.width = Math.round(width * pixelRatio)
+				c.height = Math.round(height * pixelRatio)
 				c.style.width = `${width}px`
 				c.style.height = `${height}px`
+				scaleContextToPixelRatio(c, pixelRatio)
 			}
 		})
 		video.style.width = `${width}px`
@@ -164,11 +197,18 @@ export function VideoAnnotationCanvas({
 	useEffect(() => {
 		if (!isPlaying) return
 		let raf = 0
+		let lastPublishedTime = -1
 		const tick = () => {
 			const video = videoRef.current
 			if (video) {
 				playheadRef.current = video.currentTime
-				setCurrentTime(video.currentTime)
+				if (
+					Math.abs(video.currentTime - lastPublishedTime) >=
+					PLAYHEAD_PUBLISH_INTERVAL_SECONDS
+				) {
+					lastPublishedTime = video.currentTime
+					setCurrentTime(video.currentTime)
+				}
 				drawAll()
 			}
 			raf = requestAnimationFrame(tick)
@@ -188,14 +228,17 @@ export function VideoAnnotationCanvas({
 			currentPathRef.current = []
 			const preview = previewCanvasRef.current
 			const ctx = preview?.getContext("2d")
-			if (ctx && preview) ctx.clearRect(0, 0, preview.width, preview.height)
+			if (ctx && preview) {
+				const { width, height } = cssCanvasSize(preview)
+				ctx.clearRect(0, 0, width, height)
+			}
 		}
 	}, [seekRequest])
 
-	useEffect(() => {
-		window.addEventListener("resize", resize)
-		return () => window.removeEventListener("resize", resize)
-	}, [resize])
+	useEffect(
+		() => observeElementSize(containerRef.current, resize),
+		[resize]
+	)
 
 	const handleLoadedMetadata = () => {
 		const video = videoRef.current
@@ -260,6 +303,33 @@ export function VideoAnnotationCanvas({
 	)
 
 	useEffect(() => {
+		const video = videoRef.current
+		if (!video) return
+		video.playbackRate = playbackRate
+		video.loop = isLooping
+		video.muted = isMuted
+		video.volume = volume
+	}, [playbackRate, isLooping, isMuted, volume, videoUrl])
+
+	const toggleFullscreen = useCallback(() => {
+		const root = rootRef.current
+		if (!root) return
+		if (document.fullscreenElement) {
+			void document.exitFullscreen()
+		} else {
+			void root.requestFullscreen()
+		}
+	}, [])
+
+	useEffect(() => {
+		const onFullscreenChange = () =>
+			setIsFullscreen(document.fullscreenElement === rootRef.current)
+		document.addEventListener("fullscreenchange", onFullscreenChange)
+		return () =>
+			document.removeEventListener("fullscreenchange", onFullscreenChange)
+	}, [])
+
+	useEffect(() => {
 		if (!enableShortcuts) return
 		const onKeyDown = (e: KeyboardEvent) => {
 			if (isEditableTarget(e.target)) return
@@ -294,21 +364,39 @@ export function VideoAnnotationCanvas({
 					e.preventDefault()
 					seekTo(video.duration || 0)
 					break
+				case "m":
+				case "M":
+					setIsMuted((muted) => !muted)
+					break
+				case "l":
+				case "L":
+					setIsLooping((looping) => !looping)
+					break
+				case "f":
+				case "F":
+					toggleFullscreen()
+					break
 			}
 		}
 		window.addEventListener("keydown", onKeyDown)
 		return () => window.removeEventListener("keydown", onKeyDown)
-	}, [enableShortcuts, seekTo, stepFrame, togglePlay])
+	}, [enableShortcuts, seekTo, stepFrame, togglePlay, toggleFullscreen])
 
-	const getRelativePos = (e: React.MouseEvent): Point | null => {
+	const relativePointAt = (clientX: number, clientY: number): Point | null => {
 		const canvas = previewCanvasRef.current
 		if (!canvas) return null
 		const rect = canvas.getBoundingClientRect()
 		return {
-			x: Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width)),
-			y: Math.max(0, Math.min(1, (e.clientY - rect.top) / rect.height)),
+			x: Math.max(0, Math.min(1, (clientX - rect.left) / rect.width)),
+			y: Math.max(0, Math.min(1, (clientY - rect.top) / rect.height)),
 		}
 	}
+
+	const getRelativePos = (e: React.MouseEvent): Point | null =>
+		relativePointAt(e.clientX, e.clientY)
+
+	const pointFromTouch = (touch: React.Touch | undefined): Point | null =>
+		touch ? relativePointAt(touch.clientX, touch.clientY) : null
 
 	const handleMouseDown = (e: React.MouseEvent) => {
 		const pos = getRelativePos(e)
@@ -320,14 +408,12 @@ export function VideoAnnotationCanvas({
 		currentPathRef.current = [pos]
 	}
 
-	const handleMouseMove = (e: React.MouseEvent) => {
+	const extendTo = (pos: Point) => {
 		if (!isDrawingRef.current) return
-		const pos = getRelativePos(e)
-		if (!pos) return
 		const canvas = previewCanvasRef.current
 		const ctx = canvas?.getContext("2d")
 		if (!ctx || !canvas) return
-		const { width, height } = canvas
+		const { width, height } = cssCanvasSize(canvas)
 		ctx.clearRect(0, 0, width, height)
 		ctx.strokeStyle = color
 		ctx.lineWidth = 2
@@ -361,10 +447,14 @@ export function VideoAnnotationCanvas({
 		ctx.stroke()
 	}
 
-	const handleMouseUp = (e: React.MouseEvent) => {
+	const handleMouseMove = (e: React.MouseEvent) => {
+		const pos = getRelativePos(e)
+		if (pos) extendTo(pos)
+	}
+
+	const finishAt = (pos: Point | null) => {
 		if (!isDrawingRef.current) return
 		isDrawingRef.current = false
-		const pos = getRelativePos(e)
 		const start = startPosRef.current
 		if (!pos || !start) return
 		const finalPoints =
@@ -377,17 +467,41 @@ export function VideoAnnotationCanvas({
 				t: videoRef.current?.currentTime ?? currentTime,
 			})
 		}
-		const previewCtx = previewCanvasRef.current?.getContext("2d")
-		if (previewCtx && previewCanvasRef.current) {
-			previewCtx.clearRect(
-				0,
-				0,
-				previewCanvasRef.current.width,
-				previewCanvasRef.current.height
-			)
+		const previewCanvas = previewCanvasRef.current
+		const previewCtx = previewCanvas?.getContext("2d")
+		if (previewCtx && previewCanvas) {
+			const { width, height } = cssCanvasSize(previewCanvas)
+			previewCtx.clearRect(0, 0, width, height)
 		}
 		startPosRef.current = null
 		currentPathRef.current = []
+	}
+
+	const handleMouseUp = (e: React.MouseEvent) => finishAt(getRelativePos(e))
+
+	const handleTouchStart = (e: React.TouchEvent) => {
+		if (!canDraw) return
+		e.preventDefault()
+		const pos = pointFromTouch(e.touches[0])
+		if (!pos) return
+		videoRef.current?.pause()
+		setPlaying(false)
+		isDrawingRef.current = true
+		startPosRef.current = pos
+		currentPathRef.current = [pos]
+	}
+
+	const handleTouchMove = (e: React.TouchEvent) => {
+		if (!isDrawingRef.current) return
+		e.preventDefault()
+		const pos = pointFromTouch(e.touches[0])
+		if (pos) extendTo(pos)
+	}
+
+	const handleTouchEnd = (e: React.TouchEvent) => {
+		if (!isDrawingRef.current) return
+		e.preventDefault()
+		finishAt(pointFromTouch(e.changedTouches[0]))
 	}
 
 	const downloadFrame = () => {
@@ -417,7 +531,7 @@ export function VideoAnnotationCanvas({
 	}
 
 	return (
-		<div className="flex h-full w-full flex-col">
+		<div ref={rootRef} className="flex h-full w-full flex-col bg-background">
 			<div
 				ref={containerRef}
 				className="relative flex flex-1 items-center justify-center overflow-hidden bg-black/40"
@@ -463,6 +577,10 @@ export function VideoAnnotationCanvas({
 							onMouseMove={canDraw ? handleMouseMove : undefined}
 							onMouseUp={canDraw ? handleMouseUp : undefined}
 							onMouseLeave={canDraw ? handleMouseUp : undefined}
+							onTouchStart={canDraw ? handleTouchStart : undefined}
+							onTouchMove={canDraw ? handleTouchMove : undefined}
+							onTouchEnd={canDraw ? handleTouchEnd : undefined}
+							onTouchCancel={canDraw ? handleTouchEnd : undefined}
 							className={
 								canDraw
 									? "absolute left-0 top-0 cursor-crosshair"
@@ -522,6 +640,70 @@ export function VideoAnnotationCanvas({
 				<span className="pb-1 font-mono text-xs tabular-nums text-muted-foreground">
 					{formatVideoTime(duration)}
 				</span>
+				<DropdownMenu>
+					<DropdownMenuTrigger asChild>
+						<Button
+							size="sm"
+							variant="ghost"
+							className="h-8 px-1.5 font-mono text-xs tabular-nums"
+							aria-label={`Playback speed ${playbackRate}x`}
+						>
+							{playbackRate}×
+						</Button>
+					</DropdownMenuTrigger>
+					<DropdownMenuContent align="end" className="min-w-[80px]">
+						{PLAYBACK_RATES.map((rate) => (
+							<DropdownMenuItem
+								key={rate}
+								className={cn(
+									"justify-center font-mono text-xs tabular-nums",
+									rate === playbackRate && "text-primary"
+								)}
+								onClick={() => setPlaybackRate(rate)}
+							>
+								{rate}×
+							</DropdownMenuItem>
+						))}
+					</DropdownMenuContent>
+				</DropdownMenu>
+				<Button
+					size="icon"
+					variant="ghost"
+					className={cn("h-8 w-8", isLooping && "text-primary")}
+					onClick={() => setIsLooping((looping) => !looping)}
+					aria-label="Loop playback"
+					aria-pressed={isLooping}
+				>
+					<Repeat className="h-4 w-4" aria-hidden="true" />
+				</Button>
+				<Button
+					size="icon"
+					variant="ghost"
+					className="h-8 w-8"
+					onClick={() => setIsMuted((muted) => !muted)}
+					aria-label={isMuted ? "Unmute" : "Mute"}
+					aria-pressed={isMuted}
+				>
+					{isMuted || volume === 0 ? (
+						<VolumeX className="h-4 w-4" aria-hidden="true" />
+					) : (
+						<Volume2 className="h-4 w-4" aria-hidden="true" />
+					)}
+				</Button>
+				<input
+					type="range"
+					min={0}
+					max={1}
+					step={0.05}
+					value={isMuted ? 0 : volume}
+					onChange={(e) => {
+						const next = Number(e.target.value)
+						setVolume(next)
+						setIsMuted(next === 0)
+					}}
+					aria-label="Volume"
+					className="mb-3 hidden w-16 accent-primary sm:block"
+				/>
 				<Button
 					size="icon"
 					variant="ghost"
@@ -530,6 +712,20 @@ export function VideoAnnotationCanvas({
 					aria-label="Download annotated frame as PNG"
 				>
 					<Camera className="h-4 w-4" aria-hidden="true" />
+				</Button>
+				<Button
+					size="icon"
+					variant="ghost"
+					className="h-8 w-8"
+					onClick={toggleFullscreen}
+					aria-label={isFullscreen ? "Exit fullscreen" : "Fullscreen"}
+					aria-pressed={isFullscreen}
+				>
+					{isFullscreen ? (
+						<Minimize className="h-4 w-4" aria-hidden="true" />
+					) : (
+						<Maximize className="h-4 w-4" aria-hidden="true" />
+					)}
 				</Button>
 			</div>
 		</div>

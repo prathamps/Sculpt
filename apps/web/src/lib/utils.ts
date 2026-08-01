@@ -7,7 +7,6 @@ export function cn(...inputs: ClassValue[]) {
 	return twMerge(clsx(inputs))
 }
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001"
 
 const ROLE_RANK: Record<ProjectRole, number> = {
 	VIEWER: 0,
@@ -26,7 +25,7 @@ export function roleAtLeast(
 
 export function mediaUrl(url: string): string {
 	if (url.startsWith("http://") || url.startsWith("https://")) return url
-	return `${API_URL}/${url}`
+	return url.startsWith("/") ? url : `/${url}`
 }
 
 export function formatBytes(bytes: number, decimals = 2): string {

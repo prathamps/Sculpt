@@ -7,4 +7,5 @@ export interface IncomingFile {
 export interface StoragePort {
 	store(file: IncomingFile): Promise<string>
 	remove(url: string): Promise<void>
+	temporaryReadUrl?(storedPath: string, ttlSeconds: number): Promise<string>
 }

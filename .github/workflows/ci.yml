@@ -4,7 +4,6 @@ on:
   push:
     branches: [main]
   pull_request:
-    branches: [main]
 
 # CI gates only — releasing stays with Railway (API) and Vercel (web) git
 # integrations. This pipeline blocks merges on lint / typecheck / build / schema
