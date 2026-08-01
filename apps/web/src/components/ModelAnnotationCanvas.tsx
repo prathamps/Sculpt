@@ -68,29 +68,7 @@ const pinPosition = (anchor: ModelAnchor): Vec3 => {
 	]
 }
 
-const disposeMaterial = (material: THREE.Material): void => {
-	Object.values(material).forEach((value) => {
-		if (value && (value as THREE.Texture).isTexture) {
-			;(value as THREE.Texture).dispose()
-		}
-	})
-	material.dispose()
-}
-
-const releaseModel = (scene: THREE.Object3D, url: string): void => {
-	scene.traverse((object) => {
-		const mesh = object as THREE.Mesh
-		mesh.geometry?.dispose?.()
-		const material = mesh.material
-		if (Array.isArray(material)) {
-			material.forEach(disposeMaterial)
-		} else if (material) {
-			disposeMaterial(material)
-		}
-	})
-
-	useLoader.clear(GLTFLoader, url)
-}
+const COMPRESSION_MODULES = { DRACOLoader, KTX2Loader, MeshoptDecoder }
 
 function NormalizedModel({
 	url,
@@ -105,11 +83,7 @@ function NormalizedModel({
 }) {
 	const renderer = useThree((state) => state.gl)
 	const gltf = useLoader(GLTFLoader, url, (loader) =>
-		configureGltfCompression(
-			loader,
-			{ DRACOLoader, KTX2Loader, MeshoptDecoder },
-			renderer
-		)
+		configureGltfCompression(loader, COMPRESSION_MODULES, renderer)
 	)
 
 	const scene = useMemo(() => {
@@ -124,13 +98,6 @@ function NormalizedModel({
 		group.scale.setScalar(MODEL_TARGET_SIZE / maxDimension)
 		return group
 	}, [gltf])
-
-	useEffect(
-		() => () => {
-			releaseModel(gltf.scene, url)
-		},
-		[gltf, url]
-	)
 
 	const handleClick = (event: ThreeEvent<MouseEvent>) => {
 		if (!canPlacePin || !onPlacePin) return

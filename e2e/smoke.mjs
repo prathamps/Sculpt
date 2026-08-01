@@ -216,6 +216,24 @@ check(
 	pinComments.some((c) => c.modelAnchor?.position?.length === 3)
 )
 
+let modelRefetches = 0
+const countModelFetches = (request) => {
+	if (/\.(glb|gltf)(\?|$)/i.test(request.url())) modelRefetches += 1
+}
+page.on("request", countModelFetches)
+await page.click('button[aria-label^="Go to comment 1"]')
+await page.waitForTimeout(2500)
+page.off("request", countModelFetches)
+check(
+	"selecting a 3D comment flies the camera without reloading the model",
+	modelRefetches === 0,
+	`refetches=${modelRefetches}`
+)
+check(
+	"the model stays on screen while the camera moves to the pin",
+	await page.locator("canvas").isVisible()
+)
+
 const video = await openViewer("sample-video.mp4")
 check(
 	"video viewer renders a player",

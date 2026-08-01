@@ -10,6 +10,7 @@ import {
 	scaleContextToPixelRatio,
 	cssCanvasSize,
 } from "@/lib/canvas"
+
 import { isAnnotationVisibleAt } from "@/lib/annotation-visibility"
 import { Scrubber, ScrubberMarker, ScrubberPeer } from "./Scrubber"
 import {
@@ -137,11 +138,12 @@ export function VideoAnnotationCanvas({
 		if (!canvas) return
 		const ctx = canvas.getContext("2d")
 		if (!ctx) return
-		ctx.clearRect(0, 0, canvas.width, canvas.height)
+		const { width, height } = cssCanvasSize(canvas)
+		ctx.clearRect(0, 0, width, height)
 		const visible = annotations.filter((a) =>
 			isAnnotationVisibleAt(a, playheadRef.current)
 		)
-		drawAnnotations(ctx, visible, canvas.width, canvas.height)
+		drawAnnotations(ctx, visible, width, height)
 	}, [annotations])
 
 	const resize = useCallback(() => {
