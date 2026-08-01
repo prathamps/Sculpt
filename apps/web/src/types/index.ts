@@ -24,6 +24,7 @@ export interface Annotation {
 	points: Point[]
 	isHighlighted?: boolean
 	dimmed?: boolean
+	pinned?: boolean
 	t?: number
 	tEnd?: number
 	page?: number

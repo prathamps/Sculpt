@@ -50,6 +50,7 @@ interface VideoAnnotation {
 	tEnd?: number
 	isHighlighted?: boolean
 	dimmed?: boolean
+	pinned?: boolean
 }
 
 interface SeekRequest {
