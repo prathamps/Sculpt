@@ -755,7 +755,51 @@ check(
 	memberInternalRes.status === 403,
 	`status=${memberInternalRes.status}`
 )
+
+const memberSearchRes = await api(
+	`/api/search?q=${encodeURIComponent("contract is signed")}`
+)
+const memberSearch = memberSearchRes.ok ? await memberSearchRes.json() : null
+check(
+	"search never surfaces internal comments to a MEMBER",
+	memberSearchRes.ok &&
+		!memberSearch?.comments?.some((hit) => hit.id === internalComment?.id),
+	JSON.stringify(memberSearch?.comments?.map((hit) => hit.label))
+)
 cookie = ownerCookie
+
+const ownerSearchRes = await api(
+	`/api/search?q=${encodeURIComponent("contract is signed")}`
+)
+const ownerSearch = ownerSearchRes.ok ? await ownerSearchRes.json() : null
+check(
+	"the internal team can still find internal comments",
+	ownerSearchRes.ok &&
+		ownerSearch?.comments?.some((hit) => hit.id === internalComment?.id),
+	JSON.stringify(ownerSearch?.comments?.map((hit) => hit.label))
+)
+
+const typeFilterRes = await api(
+	`/api/search?q=${encodeURIComponent("sample")}&mediaType=VIDEO`
+)
+const typeFiltered = typeFilterRes.ok ? await typeFilterRes.json() : null
+check(
+	"a media-type filter returns only that type and drops project hits",
+	typeFilterRes.ok &&
+		typeFiltered.media.length > 0 &&
+		typeFiltered.media.every((hit) => hit.mediaType === "VIDEO") &&
+		typeFiltered.projects.length === 0,
+	JSON.stringify(typeFiltered?.media?.map((hit) => hit.mediaType))
+)
+
+const badFilterRes = await api(
+	`/api/search?q=${encodeURIComponent("sample")}&mediaType=HOLOGRAM`
+)
+check(
+	"an unknown media-type filter is rejected",
+	badFilterRes.status === 400,
+	`status=${badFilterRes.status}`
+)
 
 const roleChangeRes = await apiSend(
 	"PATCH",
