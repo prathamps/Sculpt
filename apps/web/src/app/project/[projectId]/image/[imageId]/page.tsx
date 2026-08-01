@@ -1,29 +1,14 @@
 "use client"
 
-import {
-	useEffect,
-	useState,
-	useCallback,
-	useMemo,
-	useRef,
-	Suspense,
-} from "react"
+import { useEffect, useState, useCallback, useMemo, Suspense } from "react"
 import { useAuth } from "@/context/AuthContext"
 import { ProjectMembersProvider } from "@/context/ProjectMembersContext"
-import {
-	useRouter,
-	useParams,
-	usePathname,
-	useSearchParams,
-} from "next/navigation"
-import dynamic from "next/dynamic"
-import { AnnotationCanvas } from "@/components/AnnotationCanvas"
-import { VideoAnnotationCanvas } from "@/components/VideoAnnotationCanvas"
-import { PdfAnnotationCanvas } from "@/components/PdfAnnotationCanvas"
+import { useParams } from "next/navigation"
 import type {
 	ModelFlyToRequest,
 	ModelPin,
 } from "@/components/ModelAnnotationCanvas"
+import { ViewerSurface } from "@/components/ViewerSurface"
 import { AnnotationFooter, ComposeRange } from "@/components/AnnotationFooter"
 import { CommentSidebar } from "@/components/CommentSidebar"
 import { CompareView } from "@/components/CompareView"
@@ -47,81 +32,26 @@ import {
 } from "@/components/ui/dropdown-menu"
 import {
 	Annotation,
-	Image,
+	AnnotationTool,
 	ImageVersion,
 	Comment,
 	ModelAnchor,
-	ProjectRole,
 } from "@/types"
-import { mediaUrl, roleAtLeast } from "@/lib/utils"
-import {
-	captureThumbnail,
-	getVideoDuration,
-	thumbnailFileName,
-	withMimeTypeTheApiCanMap,
-} from "@/lib/media-capture"
-import { prepareModelUpload } from "@/lib/model-capture"
-import { extensionOf, isModelFile } from "@/lib/model-formats"
-import {
-	FILE_INPUT_ACCEPT,
-	isNativelyPlayableVideo,
-} from "@/lib/upload-formats"
+import { roleAtLeast } from "@/lib/utils"
+import { extensionOf } from "@/lib/model-formats"
+import { isNativelyPlayableVideo } from "@/lib/upload-formats"
 import { useVersionComments } from "@/hooks/useVersionComments"
 import { useAnnotationHistory } from "@/hooks/useAnnotationHistory"
 import { usePresence } from "@/hooks/usePresence"
+import { useMediaQuery } from "@/hooks/useMediaQuery"
+import { useCompareMode, useFileViewer } from "@/hooks/useFileViewer"
 import { ReviewPanel } from "@/components/ReviewPanel"
 import { UserAvatar } from "@/components/UserAvatar"
-import {
-	useVersionProcessingUpdates,
-	VersionProcessingUpdate,
-} from "@/hooks/useVersionProcessing"
-import {
-	Dialog,
-	DialogContent,
-	DialogHeader,
-	DialogTitle,
-	DialogDescription,
-} from "@/components/ui/dialog"
-import { Input } from "@/components/ui/input"
+import { UploadVersionDialog } from "@/components/UploadVersionDialog"
+import { ConfirmationModal } from "@/components/ConfirmationModal"
+import { toast } from "sonner"
 
-const ModelAnnotationCanvas = dynamic(
-	() =>
-		import("@/components/ModelAnnotationCanvas").then(
-			(mod) => mod.ModelAnnotationCanvas
-		),
-	{
-		ssr: false,
-		loading: () => (
-			<div className="flex h-full w-full items-center justify-center">
-				<Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
-			</div>
-		),
-	}
-)
-
-function useMediaQuery(query: string): boolean {
-	const [matches, setMatches] = useState(false)
-
-	useEffect(() => {
-		if (typeof window === "undefined") return
-
-		const media = window.matchMedia(query)
-		setMatches(media.matches)
-
-		const listener = (event: MediaQueryListEvent) => {
-			setMatches(event.matches)
-		}
-
-		media.addEventListener("change", listener)
-		return () => {
-			media.removeEventListener("change", listener)
-		}
-	}, [query])
-
-	return matches
-}
-
-export type AnnotationTool = "pencil" | "rect" | "line"
+const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001"
 
 const annotationsOf = (comment: Comment): Annotation[] =>
 	Array.isArray(comment.annotation)
@@ -133,25 +63,30 @@ const annotationsOf = (comment: Comment): Annotation[] =>
 function ProjectFileViewPageInner() {
 	const params = useParams()
 	const { isAuthenticated, loading, user } = useAuth()
-	const router = useRouter()
-	const pathname = usePathname()
-	const searchParams = useSearchParams()
-	const searchParamsRef = useRef(searchParams)
-	searchParamsRef.current = searchParams
+	const imageId = params.imageId as string
+	const projectId = params.projectId as string
 
-	const [role, setRole] = useState<ProjectRole | null>(null)
-	const [loadError, setLoadError] = useState(false)
-	const [image, setImage] = useState<Image | null>(null)
-	const [selectedVersion, setSelectedVersion] = useState<ImageVersion | null>(
-		null
-	)
+	const {
+		router,
+		searchParams,
+		buildUrl,
+		role,
+		loadError,
+		image,
+		setImage,
+		selectedVersion,
+		setSelectedVersion,
+		isImageLoading,
+		fetchImage,
+	} = useFileViewer({ imageId, projectId, isAuthenticated })
+
 	const [tool, setTool] = useState<AnnotationTool>("pencil")
 	const [color, setColor] = useState("#4783E8")
-	const [isImageLoading, setIsImageLoading] = useState(true)
 	const [isUploadModalOpen, setIsUploadModalOpen] = useState(false)
-	const [uploadFile, setUploadFile] = useState<File | null>(null)
-	const [versionName, setVersionName] = useState("")
-	const [isUploading, setIsUploading] = useState(false)
+	const [versionToDelete, setVersionToDelete] = useState<ImageVersion | null>(
+		null
+	)
+	const [isDeletingVersion, setIsDeletingVersion] = useState(false)
 	const [isSidebarOpen, setIsSidebarOpen] = useState(true)
 
 	const {
@@ -214,16 +149,6 @@ function ProjectFileViewPageInner() {
 		isVideo ? currentVideoTime : 0
 	)
 
-	const applyVersionUpdate = useCallback((update: VersionProcessingUpdate) => {
-		const patch = (version: ImageVersion) =>
-			version.id === update.id ? { ...version, ...update } : version
-		setImage((prev) =>
-			prev ? { ...prev, versions: prev.versions.map(patch) } : prev
-		)
-		setSelectedVersion((prev) => (prev ? patch(prev) : prev))
-	}, [])
-	useVersionProcessingUpdates(selectedVersion?.id ?? null, applyVersionUpdate)
-
 	const isSmallScreen = useMediaQuery("(max-width: 768px)")
 	const [isMounted, setIsMounted] = useState(false)
 
@@ -231,130 +156,14 @@ function ProjectFileViewPageInner() {
 		setIsMounted(true)
 	}, [])
 
-	const imageId = params.imageId as string
-	const projectId = params.projectId as string
-	const URI = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001"
-
-	const buildUrl = useCallback(
-		(updates: Record<string, string | null>) => {
-			const next = new URLSearchParams(searchParamsRef.current.toString())
-			for (const [key, value] of Object.entries(updates)) {
-				if (value === null) next.delete(key)
-				else next.set(key, value)
-			}
-			const qs = next.toString()
-			return qs ? `${pathname}?${qs}` : pathname
-		},
-		[pathname]
-	)
-
-	const fetchImage = useCallback(async () => {
-		if (isAuthenticated) {
-			setIsImageLoading(true)
-			setLoadError(false)
-			try {
-				const res = await fetch(`${URI}/api/images/${imageId}`, {
-					credentials: "include",
-				})
-				if (res.ok) {
-					const data: Image = await res.json()
-					setImage(data)
-					const requested = searchParamsRef.current.get("v")
-					const fromParam = data.versions?.find((v) => v.id === requested)
-					setSelectedVersion(
-						fromParam ?? data.latestVersion ?? data.versions?.[0] ?? null
-					)
-				} else {
-					setLoadError(true)
-				}
-			} catch (error) {
-				console.error("Failed to fetch image:", error)
-				setLoadError(true)
-			} finally {
-				setIsImageLoading(false)
-			}
-		}
-	}, [isAuthenticated, imageId, URI])
-
-	useEffect(() => {
-		if (!isAuthenticated) return
-		let cancelled = false
-
-		const load = async (attempt = 0): Promise<void> => {
-			try {
-				const res = await fetch(`${URI}/api/projects/${projectId}/my-role`, {
-					credentials: "include",
-				})
-				if (cancelled) return
-				if (res.ok) {
-					const data = await res.json()
-					setRole(data?.role ?? null)
-					return
-				}
-				if (res.status === 403) {
-					setRole(null)
-					return
-				}
-				throw new Error(`role fetch failed: ${res.status}`)
-			} catch {
-				if (cancelled || attempt >= 3) return
-				setTimeout(() => load(attempt + 1), 1000 * (attempt + 1))
-			}
-		}
-
-		load()
-		return () => {
-			cancelled = true
-		}
-	}, [isAuthenticated, projectId, URI])
-
 	useEffect(() => {
 		if (!loading && !isAuthenticated) {
 			router.push("/login")
 		}
 	}, [isAuthenticated, loading, router])
 
-	useEffect(() => {
-		fetchImage()
-	}, [fetchImage])
-
-	const compareId = searchParams.get("compare")
-	const compareVersion = useMemo(
-		() =>
-			compareId && image
-				? image.versions.find((v) => v.id === compareId) ?? null
-				: null,
-		[compareId, image]
-	)
-	const isCompareMode =
-		!!compareVersion && !!selectedVersion && (image?.versions.length ?? 0) >= 2
-
-	useEffect(() => {
-		if (!image || !compareId) return
-		const valid =
-			image.versions.length >= 2 &&
-			image.versions.some((v) => v.id === compareId)
-		if (!valid) {
-			router.replace(buildUrl({ compare: null }), { scroll: false })
-		}
-	}, [image, compareId, router, buildUrl])
-
-	const enterCompare = () => {
-		if (!image || !selectedVersion || image.versions.length < 2) return
-		const other =
-			image.versions.find((v) => v.id !== selectedVersion.id) ??
-			selectedVersion
-		router.push(buildUrl({ v: selectedVersion.id, compare: other.id }), {
-			scroll: false,
-		})
-	}
-
-	const exitCompare = () => {
-		router.replace(
-			buildUrl({ v: selectedVersion?.id ?? null, compare: null }),
-			{ scroll: false }
-		)
-	}
+	const { compareId, compareVersion, isCompareMode, enterCompare, exitCompare } =
+		useCompareMode({ image, selectedVersion, searchParams, buildUrl, router })
 
 	const resetPerVersionState = useCallback(() => {
 		clear()
@@ -599,64 +408,19 @@ function ProjectFileViewPageInner() {
 		refetchComments()
 	}
 
-	const handleUploadNewVersion = async () => {
-		if (!uploadFile || !imageId) return
-
-		setIsUploading(true)
-		try {
-			const fileToUpload = withMimeTypeTheApiCanMap(uploadFile)
-			const formData = new FormData()
-			formData.append("image", fileToUpload)
-			if (versionName) {
-				formData.append("versionName", versionName)
-			}
-
-			if (fileToUpload.type.startsWith("video/")) {
-				const duration = await getVideoDuration(fileToUpload)
-				if (duration != null) formData.append("duration", String(duration))
-			}
-			const prepared = isModelFile(fileToUpload)
-				? await prepareModelUpload(fileToUpload)
-				: null
-			const thumbnail = prepared
-				? prepared.thumbnail
-				: await captureThumbnail(fileToUpload)
-			if (thumbnail) formData.append("thumbnail", thumbnail, thumbnailFileName(thumbnail))
-			if (prepared?.glb) {
-				formData.append("modelProxy", prepared.glb, "converted.glb")
-			}
-
-			const res = await fetch(`${URI}/api/images/${imageId}/versions`, {
-				method: "POST",
-				credentials: "include",
-				body: formData,
-			})
-
-			if (res.ok) {
-				const updatedImage = await res.json()
-				setImage(updatedImage)
-
-				if (updatedImage.versions && updatedImage.versions.length > 0) {
-					setSelectedVersion(updatedImage.versions[0])
-					resetPerVersionState()
-				}
-
-				setIsUploadModalOpen(false)
-				setUploadFile(null)
-				setVersionName("")
-			}
-		} catch (error) {
-			console.error("Failed to upload new version:", error)
-		} finally {
-			setIsUploading(false)
+	const handleVersionUploaded = (updatedImage: NonNullable<typeof image>) => {
+		setImage(updatedImage)
+		const newest = updatedImage.versions?.[0]
+		if (newest) {
+			setSelectedVersion(newest)
+			resetPerVersionState()
 		}
 	}
 
 	const handleDeleteVersion = async (versionId: string) => {
-		if (!confirm("Are you sure you want to delete this version?")) return
-
+		setIsDeletingVersion(true)
 		try {
-			const res = await fetch(`${URI}/api/images/versions/${versionId}`, {
+			const res = await fetch(`${API_URL}/api/images/versions/${versionId}`, {
 				method: "DELETE",
 				credentials: "include",
 			})
@@ -678,12 +442,15 @@ function ProjectFileViewPageInner() {
 					router.replace(buildUrl({ compare: null }), { scroll: false })
 				}
 			} else {
-				const errorData = await res.json()
-				alert(errorData.message || "Failed to delete version")
+				const errorData = await res.json().catch(() => null)
+				toast.error(errorData?.message || "Failed to delete version")
 			}
 		} catch (error) {
 			console.error("Error deleting version:", error)
-			alert("An error occurred while deleting the version")
+			toast.error("An error occurred while deleting the version")
+		} finally {
+			setIsDeletingVersion(false)
+			setVersionToDelete(null)
 		}
 	}
 
@@ -813,7 +580,7 @@ function ProjectFileViewPageInner() {
 														className="h-6 w-6 ml-2 text-destructive"
 														onClick={(e) => {
 															e.stopPropagation()
-															handleDeleteVersion(version.id)
+															setVersionToDelete(version)
 														}}
 														aria-label={`Delete ${version.versionName}`}
 													>
@@ -868,101 +635,33 @@ function ProjectFileViewPageInner() {
 						}`}
 					>
 						<div className="flex-1 flex items-center justify-center bg-muted/20 overflow-auto">
-							{isImageLoading ? (
-								<div className="flex h-full w-full items-center justify-center">
-									<Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
-								</div>
-							) : selectedVersion ? (
-								isVideo ? (
-									!playableVideoUrl ? (
-										<div className="flex h-full w-full flex-col items-center justify-center gap-2">
-											<Loader2
-												className="h-6 w-6 animate-spin text-muted-foreground"
-												aria-hidden="true"
-											/>
-											<p className="text-sm text-muted-foreground">
-												Preparing this video for playback…
-											</p>
-										</div>
-									) : (
-									<VideoAnnotationCanvas
-										videoUrl={mediaUrl(playableVideoUrl)}
-										tool={tool}
-										color={color}
-										canDraw={canComment}
-										markers={timelineMarkers}
-										peers={scrubberPeers}
-										composingRange={composingRange}
-										onSelectComment={handleSelectCommentById}
-										onAddAnnotation={handleAddAnnotation}
-										onTimeChange={(t) => setCurrentVideoTime(t)}
-										onPlayStateChange={(playing) => {
-											if (playing) setSelectedCommentId(null)
-										}}
-										seekRequest={seekRequest}
-										initialDuration={selectedVersion.duration}
-										frameRate={selectedVersion.frameRate ?? undefined}
-										annotations={canvasAnnotations}
-									/>
-									)
-								) : isModel ? (
-									viewableModelUrl ? (
-										<ModelAnnotationCanvas
-											modelUrl={mediaUrl(viewableModelUrl)}
-											canComment={canComment}
-											pins={modelPins}
-											pendingPin={pendingPin}
-											flyTo={modelFlyTo}
-											onPlacePin={handlePlacePin}
-											onSelectComment={handleSelectCommentById}
-										/>
-									) : (
-										<div className="flex h-full w-full items-center justify-center p-4 text-center">
-											<p className="max-w-sm text-sm text-muted-foreground">
-												This model has no viewable version. It was stored
-												before conversion succeeded — re-upload it, exporting
-												to GLB from your 3D tool if the original format keeps
-												failing.
-											</p>
-										</div>
-									)
-								) : isPdf ? (
-									<PdfAnnotationCanvas
-										pdfUrl={mediaUrl(selectedVersion.url)}
-										pageNumber={currentPdfPage}
-										onPageChange={handlePdfPageChange}
-										tool={tool}
-										color={color}
-										canDraw={canComment}
-										onAddAnnotation={handleAddAnnotation}
-										annotations={canvasAnnotations}
-									/>
-								) : awaitingRendition ? (
-									<div className="flex h-full w-full flex-col items-center justify-center gap-2">
-										<Loader2
-											className="h-6 w-6 animate-spin text-muted-foreground"
-											aria-hidden="true"
-										/>
-										<p className="text-sm text-muted-foreground">
-											Preparing a preview of this file…
-										</p>
-									</div>
-								) : (
-									<AnnotationCanvas
-										imageUrl={mediaUrl(
-											selectedVersion.proxyUrl || selectedVersion.url
-										)}
-										tool={tool}
-										color={color}
-										onAddAnnotation={handleAddAnnotation}
-										annotations={canvasAnnotations}
-									/>
-								)
-							) : (
-								<div className="flex h-full w-full items-center justify-center">
-									<p className="text-muted-foreground">No version available</p>
-								</div>
-							)}
+							<ViewerSurface
+								isImageLoading={isImageLoading}
+								selectedVersion={selectedVersion}
+								playableVideoUrl={playableVideoUrl}
+								viewableModelUrl={viewableModelUrl}
+								awaitingRendition={awaitingRendition}
+								tool={tool}
+								color={color}
+								canComment={canComment}
+								canvasAnnotations={canvasAnnotations}
+								onAddAnnotation={handleAddAnnotation}
+								onSelectCommentById={handleSelectCommentById}
+								timelineMarkers={timelineMarkers}
+								scrubberPeers={scrubberPeers}
+								composingRange={composingRange}
+								seekRequest={seekRequest}
+								onVideoTimeChange={setCurrentVideoTime}
+								onVideoPlayStateChange={(playing) => {
+									if (playing) setSelectedCommentId(null)
+								}}
+								currentPdfPage={currentPdfPage}
+								onPdfPageChange={handlePdfPageChange}
+								modelPins={modelPins}
+								pendingPin={pendingPin}
+								modelFlyTo={modelFlyTo}
+								onPlacePin={handlePlacePin}
+							/>
 						</div>
 						{canComment ? (
 							<div className="border-t border-border">
@@ -1030,56 +729,26 @@ function ProjectFileViewPageInner() {
 				</div>
 			)}
 
-			<Dialog open={isUploadModalOpen} onOpenChange={setIsUploadModalOpen}>
-				<DialogContent className="sm:max-w-md">
-					<DialogHeader>
-						<DialogTitle>Upload New Version</DialogTitle>
-						<DialogDescription>
-							Upload a new version (image, video, PDF or 3D model) of this file
-						</DialogDescription>
-					</DialogHeader>
-					<div className="space-y-4">
-						<div>
-							<Input
-								type="text"
-								placeholder="Version name (optional)"
-								aria-label="Version name"
-								value={versionName}
-								onChange={(e) => setVersionName(e.target.value)}
-							/>
-						</div>
-						<div>
-							<Input
-								type="file"
-								aria-label="Version file"
-								onChange={(e) => setUploadFile(e.target.files?.[0] || null)}
-								accept={FILE_INPUT_ACCEPT}
-							/>
-						</div>
-						<div className="flex justify-end gap-2">
-							<Button
-								variant="outline"
-								onClick={() => setIsUploadModalOpen(false)}
-							>
-								Cancel
-							</Button>
-							<Button
-								onClick={handleUploadNewVersion}
-								disabled={!uploadFile || isUploading}
-							>
-								{isUploading ? (
-									<>
-										<Loader2 className="mr-2 h-4 w-4 animate-spin" />
-										Uploading...
-									</>
-								) : (
-									"Upload"
-								)}
-							</Button>
-						</div>
-					</div>
-				</DialogContent>
-			</Dialog>
+			<UploadVersionDialog
+				imageId={imageId}
+				open={isUploadModalOpen}
+				onOpenChange={setIsUploadModalOpen}
+				onUploaded={handleVersionUploaded}
+			/>
+
+			<ConfirmationModal
+				isOpen={!!versionToDelete}
+				onClose={() => setVersionToDelete(null)}
+				onConfirm={() => {
+					if (versionToDelete) handleDeleteVersion(versionToDelete.id)
+				}}
+				title="Delete this version?"
+				description={`"${
+					versionToDelete?.versionName ?? "This version"
+				}" and its comments will be permanently deleted.`}
+				confirmText="Delete version"
+				isConfirming={isDeletingVersion}
+			/>
 		</div>
 	)
 }

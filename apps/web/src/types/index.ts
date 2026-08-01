@@ -17,9 +17,11 @@ export interface Point {
 	y: number
 }
 
+export type AnnotationTool = "pencil" | "rect" | "line"
+
 export interface Annotation {
 	id: number
-	type: "pencil" | "rect" | "line"
+	type: AnnotationTool
 	color: string
 	points: Point[]
 	isHighlighted?: boolean
