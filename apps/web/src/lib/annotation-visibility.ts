@@ -25,14 +25,6 @@ export const annotationTimeWindow = (
 	}
 }
 
-export const timeWindowsOverlap = (
-	a: TimeWindow | null,
-	b: TimeWindow | null
-): boolean => {
-	if (!a || !b) return true
-	return a.start <= b.end && b.start <= a.end
-}
-
 export const isAnnotationVisibleAt = (
 	annotation: TimedAnnotation,
 	currentTime: number

@@ -55,10 +55,6 @@ import {
 } from "@/types"
 import { mediaUrl, roleAtLeast } from "@/lib/utils"
 import {
-	annotationTimeWindow,
-	timeWindowsOverlap,
-} from "@/lib/annotation-visibility"
-import {
 	captureThumbnail,
 	getVideoDuration,
 	thumbnailFileName,
@@ -498,37 +494,17 @@ function ProjectFileViewPageInner() {
 	const canvasAnnotations = useMemo(() => {
 		let derived: Annotation[]
 		if (isVideo) {
-			const selectedWindow = selectedComment
-				? annotationTimeWindow({
-						t: selectedComment.timestamp,
-						tEnd: selectedComment.timestampEnd,
-					})
-				: null
+			const visibleComments = selectedComment ? [selectedComment] : comments
 
-			derived = comments.flatMap((c) => {
-				const isSelected = c.id === selectedCommentId
-				const commentWindow = annotationTimeWindow({
-					t: c.timestamp,
-					tEnd: c.timestampEnd,
-				})
-
-				if (
-					selectedComment &&
-					!isSelected &&
-					!timeWindowsOverlap(commentWindow, selectedWindow)
-				) {
-					return []
-				}
-
-				return annotationsOf(c).map((a) => ({
+			derived = visibleComments.flatMap((c) =>
+				annotationsOf(c).map((a) => ({
 					...a,
 					t: typeof c.timestamp === "number" ? c.timestamp : a.t,
 					tEnd: typeof c.timestampEnd === "number" ? c.timestampEnd : a.tEnd,
-					isHighlighted: isSelected,
+					isHighlighted: !!selectedComment,
 					pinned: !!selectedComment,
-					dimmed: !!selectedComment && !isSelected,
 				}))
-			})
+			)
 			return [
 				...annotations.map(
 					(a): Annotation => ({ ...a, t: undefined, tEnd: undefined })

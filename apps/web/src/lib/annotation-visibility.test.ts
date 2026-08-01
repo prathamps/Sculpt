@@ -2,7 +2,6 @@ import { describe, expect, it } from "vitest"
 import {
 	annotationTimeWindow,
 	isAnnotationVisibleAt,
-	timeWindowsOverlap,
 	INSTANT_ANNOTATION_VISIBILITY_SECONDS,
 	PLAYHEAD_SAMPLING_EPSILON_SECONDS,
 } from "./annotation-visibility"
@@ -97,42 +96,3 @@ describe("annotationTimeWindow", () => {
 	})
 })
 
-describe("timeWindowsOverlap", () => {
-	it("detects overlapping ranges in either order", () => {
-		expect(timeWindowsOverlap({ start: 0, end: 10 }, { start: 5, end: 15 })).toBe(
-			true
-		)
-		expect(timeWindowsOverlap({ start: 5, end: 15 }, { start: 0, end: 10 })).toBe(
-			true
-		)
-	})
-
-	it("counts a shared edge as overlapping", () => {
-		expect(timeWindowsOverlap({ start: 0, end: 5 }, { start: 5, end: 9 })).toBe(
-			true
-		)
-	})
-
-	it("rejects ranges that do not touch", () => {
-		expect(timeWindowsOverlap({ start: 0, end: 4 }, { start: 5, end: 9 })).toBe(
-			false
-		)
-	})
-
-	it("treats a window-less annotation as always overlapping", () => {
-		expect(timeWindowsOverlap(null, { start: 5, end: 9 })).toBe(true)
-		expect(timeWindowsOverlap({ start: 5, end: 9 }, null)).toBe(true)
-	})
-
-	it("counts two instant marks a second apart as overlapping, since each lasts two seconds", () => {
-		const first = annotationTimeWindow({ t: 10 })
-		const second = annotationTimeWindow({ t: 11 })
-		expect(timeWindowsOverlap(first, second)).toBe(true)
-	})
-
-	it("keeps instant marks far apart separate", () => {
-		const first = annotationTimeWindow({ t: 10 })
-		const second = annotationTimeWindow({ t: 30 })
-		expect(timeWindowsOverlap(first, second)).toBe(false)
-	})
-})
