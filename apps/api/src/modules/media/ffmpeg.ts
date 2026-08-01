@@ -4,6 +4,19 @@ import { path as ffprobeBinary } from "ffprobe-static"
 
 const MAX_REPORTED_ERROR_LINES = 6
 
+const PROBE_TIMEOUT_MS = 30000
+const STILL_RENDER_TIMEOUT_MS = 300000
+const DEFAULT_TRANSCODE_TIMEOUT_MS = 3600000
+
+const transcodeTimeoutMs = (): number => {
+	const configured = Number(process.env.FFMPEG_TRANSCODE_TIMEOUT_MS)
+	return Number.isFinite(configured) && configured > 0
+		? configured
+		: DEFAULT_TRANSCODE_TIMEOUT_MS
+}
+
+const localFilesOnly = ["-protocol_whitelist", "file"]
+
 const reportableFailure = (stderr: string): string => {
 	const lines = stderr
 		.split(/\r?\n/)
@@ -16,7 +29,11 @@ const reportableFailure = (stderr: string): string => {
 	return relevant.slice(-MAX_REPORTED_ERROR_LINES).join(" | ")
 }
 
-const run = (binary: string | null, args: string[]): Promise<string> =>
+const run = (
+	binary: string | null,
+	args: string[],
+	timeoutMs: number
+): Promise<string> =>
 	new Promise((resolve, reject) => {
 		if (!binary) {
 			reject(new Error("ffmpeg binaries are not installed"))
@@ -25,12 +42,28 @@ const run = (binary: string | null, args: string[]): Promise<string> =>
 		const child = spawn(binary, args, { windowsHide: true })
 		let stdout = ""
 		let stderr = ""
+		let timedOut = false
+		const killTimer = setTimeout(() => {
+			timedOut = true
+			child.kill("SIGKILL")
+		}, timeoutMs)
 		child.stdout.on("data", (chunk) => (stdout += chunk))
 		child.stderr.on("data", (chunk) => (stderr += chunk))
-		child.on("error", reject)
+		child.on("error", (error) => {
+			clearTimeout(killTimer)
+			reject(error)
+		})
 		child.on("close", (code) => {
-			if (code === 0) resolve(stdout)
-			else reject(new Error(`ffmpeg exited with ${code}: ${reportableFailure(stderr)}`))
+			clearTimeout(killTimer)
+			if (timedOut) {
+				reject(new Error(`ffmpeg was killed after ${timeoutMs}ms`))
+			} else if (code === 0) {
+				resolve(stdout)
+			} else {
+				reject(
+					new Error(`ffmpeg exited with ${code}: ${reportableFailure(stderr)}`)
+				)
+			}
 		})
 	})
 
@@ -38,15 +71,20 @@ export const probeDuration = async (
 	filePath: string
 ): Promise<number | null> => {
 	try {
-		const output = await run(ffprobeBinary, [
-			"-v",
-			"error",
-			"-show_entries",
-			"format=duration",
-			"-of",
-			"csv=p=0",
-			filePath,
-		])
+		const output = await run(
+			ffprobeBinary,
+			[
+				"-v",
+				"error",
+				...localFilesOnly,
+				"-show_entries",
+				"format=duration",
+				"-of",
+				"csv=p=0",
+				filePath,
+			],
+			PROBE_TIMEOUT_MS
+		)
 		const duration = Number.parseFloat(output.trim())
 		return Number.isFinite(duration) && duration >= 0 ? duration : null
 	} catch {
@@ -75,17 +113,22 @@ export const probeFrameRate = async (
 	filePath: string
 ): Promise<number | null> => {
 	try {
-		const output = await run(ffprobeBinary, [
-			"-v",
-			"error",
-			"-select_streams",
-			"v:0",
-			"-show_entries",
-			"stream=avg_frame_rate",
-			"-of",
-			"csv=p=0",
-			filePath,
-		])
+		const output = await run(
+			ffprobeBinary,
+			[
+				"-v",
+				"error",
+				...localFilesOnly,
+				"-select_streams",
+				"v:0",
+				"-show_entries",
+				"stream=avg_frame_rate",
+				"-of",
+				"csv=p=0",
+				filePath,
+			],
+			PROBE_TIMEOUT_MS
+		)
 		return parseFrameRate(output)
 	} catch {
 		return null
@@ -96,60 +139,78 @@ export const transcodeToWebProxy = async (
 	sourcePath: string,
 	outputPath: string
 ): Promise<void> => {
-	await run(ffmpegBinary, [
-		"-y",
-		"-i",
-		sourcePath,
-		"-vf",
-		"scale=w=1920:h=1080:force_original_aspect_ratio=decrease:force_divisible_by=2",
-		"-c:v",
-		"libx264",
-		"-preset",
-		"veryfast",
-		"-crf",
-		"23",
-		"-pix_fmt",
-		"yuv420p",
-		"-c:a",
-		"aac",
-		"-b:a",
-		"128k",
-		"-movflags",
-		"+faststart",
-		outputPath,
-	])
+	await run(
+		ffmpegBinary,
+		[
+			"-y",
+			"-nostdin",
+			...localFilesOnly,
+			"-i",
+			sourcePath,
+			"-vf",
+			"scale=w=1920:h=1080:force_original_aspect_ratio=decrease:force_divisible_by=2",
+			"-c:v",
+			"libx264",
+			"-preset",
+			"veryfast",
+			"-crf",
+			"23",
+			"-pix_fmt",
+			"yuv420p",
+			"-c:a",
+			"aac",
+			"-b:a",
+			"128k",
+			"-movflags",
+			"+faststart",
+			outputPath,
+		],
+		transcodeTimeoutMs()
+	)
 }
 
 export const renderBrowserSafeImage = async (
 	sourcePath: string,
 	outputPath: string
 ): Promise<void> => {
-	await run(ffmpegBinary, [
-		"-y",
-		"-i",
-		sourcePath,
-		"-frames:v",
-		"1",
-		"-vf",
-		"scale=w=4096:h=4096:force_original_aspect_ratio=decrease:force_divisible_by=2",
-		"-pix_fmt",
-		"rgba",
-		outputPath,
-	])
+	await run(
+		ffmpegBinary,
+		[
+			"-y",
+			"-nostdin",
+			...localFilesOnly,
+			"-i",
+			sourcePath,
+			"-frames:v",
+			"1",
+			"-vf",
+			"scale=w=4096:h=4096:force_original_aspect_ratio=decrease:force_divisible_by=2",
+			"-pix_fmt",
+			"rgba",
+			outputPath,
+		],
+		STILL_RENDER_TIMEOUT_MS
+	)
 }
 
 export const capturePosterFrame = async (
 	sourcePath: string,
 	outputPath: string
 ): Promise<void> => {
-	await run(ffmpegBinary, [
-		"-y",
-		"-i",
-		sourcePath,
-		"-frames:v",
-		"1",
-		"-vf",
-		"scale=w=640:h=640:force_original_aspect_ratio=decrease:force_divisible_by=2",
-		outputPath,
-	])
+	await run(
+		ffmpegBinary,
+		[
+			"-y",
+			"-nostdin",
+			...localFilesOnly,
+			"-i",
+			sourcePath,
+			"-frames:v",
+			"1",
+			"-vf",
+			"scale=w=640:h=640:force_original_aspect_ratio=decrease:force_divisible_by=2",
+			outputPath,
+		],
+		STILL_RENDER_TIMEOUT_MS
+	)
 }

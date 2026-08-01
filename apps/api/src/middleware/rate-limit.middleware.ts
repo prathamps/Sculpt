@@ -110,6 +110,14 @@ export const passwordResetRateLimit = (): RateLimitRequestHandler =>
 		"Too many password reset requests. Try again later."
 	)
 
+export const shareLinkRateLimit = (): RateLimitRequestHandler =>
+	limiter(
+		"rl:share:",
+		15 * MINUTE,
+		30,
+		"Too many share link attempts. Try again in a few minutes."
+	)
+
 export const writeRateLimit = (): RateLimitRequestHandler =>
 	limiter(
 		"rl:write:",

@@ -43,6 +43,37 @@ passport.use(
 
 const API_URL = process.env.API_URL || "http://localhost:3001"
 
+interface GitHubEmailEntry {
+	email: string
+	verified: boolean
+	primary: boolean
+}
+
+const fetchVerifiedGitHubEmail = async (
+	accessToken: string
+): Promise<string | null> => {
+	try {
+		const response = await fetch("https://api.github.com/user/emails", {
+			headers: {
+				Authorization: `Bearer ${accessToken}`,
+				Accept: "application/vnd.github+json",
+				"User-Agent": "sculpt-api",
+			},
+		})
+		if (!response.ok) return null
+		const entries = (await response.json()) as GitHubEmailEntry[]
+		if (!Array.isArray(entries)) return null
+		const verified = entries.filter((entry) => entry?.verified && entry.email)
+		return (
+			verified.find((entry) => entry.primary)?.email ??
+			verified[0]?.email ??
+			null
+		)
+	} catch {
+		return null
+	}
+}
+
 export const oauthProviders = {
 	google: false,
 	github: false,
@@ -60,18 +91,23 @@ if (process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET) {
 			},
 			async (_accessToken, _refreshToken, profile, done) => {
 				try {
-					const email = profile.emails?.[0]?.value
-					if (!email) {
-						return done(new Error("No email returned from Google"))
+					const primaryEmail = profile.emails?.[0]
+					if (!primaryEmail?.value) {
+						return done(null, false)
 					}
+					const claims = profile._json as { email_verified?: boolean | string }
+					const emailVerified =
+						String(primaryEmail.verified) === "true" ||
+						String(claims?.email_verified) === "true"
 					const user = await findOrCreateOAuthUser({
 						provider: "google",
 						providerId: profile.id,
-						email,
+						email: primaryEmail.value,
+						emailVerified,
 						name: profile.displayName,
 						avatarUrl: profile.photos?.[0]?.value ?? null,
 					})
-					return done(null, user)
+					return done(null, user ?? false)
 				} catch (error) {
 					return done(error as Error)
 				}
@@ -94,23 +130,26 @@ if (process.env.GITHUB_CLIENT_ID && process.env.GITHUB_CLIENT_SECRET) {
 				scope: ["user:email"],
 			},
 			async (
-				_accessToken: string,
+				accessToken: string,
 				_refreshToken: string,
 				profile: any,
 				done: (error: any, user?: any) => void
 			) => {
 				try {
+					const verifiedEmail = await fetchVerifiedGitHubEmail(accessToken)
 					const email =
+						verifiedEmail ||
 						profile.emails?.[0]?.value ||
 						`${profile.username}@users.noreply.github.com`
 					const user = await findOrCreateOAuthUser({
 						provider: "github",
 						providerId: String(profile.id),
 						email,
+						emailVerified: !!verifiedEmail,
 						name: profile.displayName || profile.username,
 						avatarUrl: profile.photos?.[0]?.value ?? null,
 					})
-					return done(null, user)
+					return done(null, user ?? false)
 				} catch (error) {
 					return done(error)
 				}

@@ -5,6 +5,7 @@ import { randomBytes } from "crypto"
 import { Request, RequestHandler } from "express"
 import { uploadsDir } from "../storage"
 import { logger } from "../lib/logger"
+import { fileMatchesDeclaredMime } from "./file-signature"
 
 const stagingDir = path.join(uploadsDir, ".staging")
 
@@ -176,6 +177,26 @@ const stagedFilesOf = (req: Request): Express.Multer.File[] => {
 	if (!files) return []
 	if (Array.isArray(files)) return files
 	return Object.values(files).flat()
+}
+
+export const rejectMismatchedUploads: RequestHandler = async (
+	req,
+	res,
+	next
+) => {
+	for (const file of stagedFilesOf(req)) {
+		const matches = await fileMatchesDeclaredMime(
+			file.path,
+			file.mimetype
+		).catch(() => false)
+		if (!matches) {
+			res.status(400).json({
+				message: `The content of "${file.originalname}" does not match its declared type (${file.mimetype}).`,
+			})
+			return
+		}
+	}
+	next()
 }
 
 export const discardStagedUploadsWhenRequestEnds: RequestHandler = (

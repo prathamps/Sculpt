@@ -9,6 +9,7 @@ import { validateBody } from "../../middleware/validate.middleware"
 import {
 	MAX_ATTACHMENTS_PER_COMMENT,
 	discardStagedUploadsWhenRequestEnds,
+	rejectMismatchedUploads,
 	uploadAttachments,
 } from "../../middleware/upload.middleware"
 import { createCommentSchema, updateCommentSchema } from "./comments.schema"
@@ -36,6 +37,7 @@ router.post(
 	onComment,
 	discardStagedUploadsWhenRequestEnds,
 	uploadAttachments.array("files", MAX_ATTACHMENTS_PER_COMMENT),
+	rejectMismatchedUploads,
 	commentsController.attachToComment
 )
 router.put(
