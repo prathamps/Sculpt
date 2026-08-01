@@ -756,6 +756,17 @@ check(
 	`status=${memberInternalRes.status}`
 )
 
+const memberReportRes = await api(
+	`/api/export/image/${imageForReview?.id}/report.json`
+)
+const memberReport = memberReportRes.ok ? await memberReportRes.json() : null
+check(
+	"an exported report hides internal comments from a MEMBER",
+	memberReportRes.ok &&
+		!JSON.stringify(memberReport).includes("contract is signed"),
+	`status=${memberReportRes.status}`
+)
+
 const memberSearchRes = await api(
 	`/api/search?q=${encodeURIComponent("contract is signed")}`
 )
@@ -777,6 +788,17 @@ check(
 	ownerSearchRes.ok &&
 		ownerSearch?.comments?.some((hit) => hit.id === internalComment?.id),
 	JSON.stringify(ownerSearch?.comments?.map((hit) => hit.label))
+)
+
+const ownerReportRes = await api(
+	`/api/export/image/${imageForReview?.id}/report.json`
+)
+const ownerReport = ownerReportRes.ok ? await ownerReportRes.json() : null
+check(
+	"the internal team's export still contains internal comments",
+	ownerReportRes.ok &&
+		JSON.stringify(ownerReport).includes("contract is signed"),
+	`status=${ownerReportRes.status}`
 )
 
 const typeFilterRes = await api(

@@ -40,11 +40,14 @@ const countAnnotations = (annotation: unknown): number => {
 	return 0
 }
 
-export { getImageProjectId, isProjectMember } from "../projects/access"
+export { getImageProjectId } from "../projects/access"
 
 export const buildImageReport = async (
-	imageId: string
+	imageId: string,
+	includeInternal = false
 ): Promise<ImageReport | null> => {
+	const visibility = includeInternal ? {} : { internal: false }
+
 	const image = await prisma.image.findUnique({
 		where: { id: imageId },
 		include: {
@@ -53,11 +56,12 @@ export const buildImageReport = async (
 				orderBy: { versionNumber: "asc" },
 				include: {
 					comments: {
-						where: { parentId: null },
+						where: { parentId: null, ...visibility },
 						orderBy: { createdAt: "asc" },
 						include: {
 							user: { select: { name: true, email: true } },
 							replies: {
+								where: visibility,
 								orderBy: { createdAt: "asc" },
 								include: { user: { select: { name: true, email: true } } },
 							},
