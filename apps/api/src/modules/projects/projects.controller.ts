@@ -1,20 +1,19 @@
 import { Response } from "express"
 import * as projectService from "./projects.service"
-import { AuthenticatedRequest, ProjectMemberWithUser } from "../../types";
-import { Project, Image, ImageVersion } from "@prisma/client"
+import { AuthenticatedRequest } from "../../types"
 import { recordAudit, requestIp } from "../audit/audit.service"
-import { AppError } from "../../lib/errors"
+import { respondWithError } from "../../lib/http"
+import { NotFoundError } from "../../lib/errors"
+import { requestedPage } from "../../lib/pagination"
 import { getMemberRole } from "./access"
+import { sendProjectInvitationEmail } from "../notifications/email.service"
 
-interface ExtendedImage extends Image {
-	versions?: ImageVersion[]
-	latestVersion?: ImageVersion | null
-}
-
-interface ExtendedProject extends Project {
-	images: ExtendedImage[]
-	members: ProjectMemberWithUser[]
-}
+const frontendUrl = (): string =>
+	(
+		process.env.FRONTEND_URL ||
+		process.env.NEXT_PUBLIC_APP_URL ||
+		"http://localhost:3000"
+	).replace(/\/+$/, "")
 
 export const createProject = async (
 	req: AuthenticatedRequest,
@@ -34,7 +33,7 @@ export const createProject = async (
 		})
 		res.status(201).json(project)
 	} catch (error) {
-		res.status(500).json({ message: "Error creating project", error })
+		respondWithError(res, error, "create project")
 	}
 }
 
@@ -43,31 +42,20 @@ export const getProjects = async (
 	res: Response
 ): Promise<void> => {
 	try {
-		const userId = req.user!.id
-		let projects = (await projectService.getProjectsForUser(
-			userId
-		)) as unknown as ExtendedProject[]
-
-		projects = projects.map((project) => {
-			const transformedImages = project.images.map((image: ExtendedImage) => {
-				return {
-					...image,
-					latestVersion:
-						image.versions && image.versions.length > 0
-							? image.versions[0]
-							: null,
-				}
-			})
-
-			return {
-				...project,
-				images: transformedImages,
-			}
+		const page = requestedPage(req.query)
+		const { projects, total } = await projectService.getProjectsForUser(
+			req.user!.id,
+			page
+		)
+		res.status(200).json({
+			items: projects,
+			total,
+			page: page.page,
+			pageSize: page.pageSize,
+			totalPages: Math.max(1, Math.ceil(total / page.pageSize)),
 		})
-
-		res.status(200).json(projects)
 	} catch (error) {
-		res.status(500).json({ message: "Error fetching projects", error })
+		respondWithError(res, error, "list projects")
 	}
 }
 
@@ -76,15 +64,14 @@ export const getMyRole = async (
 	res: Response
 ): Promise<void> => {
 	try {
-		const { id } = req.params
-		const role = await getMemberRole(id, req.user!.id)
+		const role = await getMemberRole(req.params.id, req.user!.id)
 		if (!role) {
 			res.status(403).json({ message: "You are not a member of this project" })
 			return
 		}
 		res.status(200).json({ role })
 	} catch (error) {
-		res.status(500).json({ message: "Error fetching role", error })
+		respondWithError(res, error, "fetch project role")
 	}
 }
 
@@ -93,35 +80,29 @@ export const getProject = async (
 	res: Response
 ): Promise<void> => {
 	try {
-		const { id } = req.params
-		const userId = req.user!.id
-		let project = (await projectService.getProjectById(
-			id,
-			userId
-		)) as unknown as ExtendedProject
-		if (!project) {
-			res.status(404).json({ message: "Project not found" })
-			return
-		}
-
-		const transformedImages = project.images.map((image: ExtendedImage) => {
-			return {
-				...image,
-				latestVersion:
-					image.versions && image.versions.length > 0
-						? image.versions[0]
-						: null,
-			}
-		})
-
-		project = {
-			...project,
-			images: transformedImages,
-		}
-
+		const project = await projectService.getProjectById(
+			req.params.id,
+			req.user!.id
+		)
+		if (!project) throw new NotFoundError("Project not found")
 		res.status(200).json(project)
 	} catch (error) {
-		res.status(500).json({ message: "Error fetching project", error })
+		respondWithError(res, error, "fetch project")
+	}
+}
+
+export const getMembers = async (
+	req: AuthenticatedRequest,
+	res: Response
+): Promise<void> => {
+	try {
+		const members = await projectService.listProjectMembers(
+			req.params.projectId,
+			req.user!.id
+		)
+		res.status(200).json(members)
+	} catch (error) {
+		respondWithError(res, error, "list project members")
 	}
 }
 
@@ -130,29 +111,23 @@ export const updateProject = async (
 	res: Response
 ): Promise<void> => {
 	try {
-		const { id } = req.params
-		const { name } = req.body
 		const userId = req.user!.id
-		const updatedProject = await projectService.updateProject(
-			id,
-			{ name },
+		const updated = await projectService.updateProject(
+			req.params.id,
+			{ name: req.body.name },
 			userId
 		)
 		await recordAudit({
 			action: "project.updated",
 			targetType: "project",
-			targetId: id,
+			targetId: req.params.id,
 			actorId: userId,
-			metadata: { name },
+			metadata: { name: req.body.name },
 			ipAddress: requestIp(req),
 		})
-		res.status(200).json(updatedProject)
+		res.status(200).json(updated)
 	} catch (error) {
-		if (error instanceof Error) {
-			res.status(403).json({ message: error.message })
-		} else {
-			res.status(500).json({ message: "An unexpected error occurred." })
-		}
+		respondWithError(res, error, "rename project")
 	}
 }
 
@@ -161,25 +136,18 @@ export const deleteProject = async (
 	res: Response
 ): Promise<void> => {
 	try {
-		const { id } = req.params
 		const userId = req.user!.id
-		await projectService.deleteProject(id, userId)
+		await projectService.deleteProject(req.params.id, userId)
 		await recordAudit({
 			action: "project.deleted",
 			targetType: "project",
-			targetId: id,
+			targetId: req.params.id,
 			actorId: userId,
 			ipAddress: requestIp(req),
 		})
 		res.status(204).send()
 	} catch (error) {
-		if (error instanceof Error) {
-			if (error.message === "Project not found or user not authorized") {
-				res.status(403).json({ message: error.message })
-			} else {
-				res.status(500).json({ message: "Error deleting project", error })
-			}
-		}
+		respondWithError(res, error, "delete project")
 	}
 }
 
@@ -201,11 +169,30 @@ export const removeMemberFromProject = async (
 		})
 		res.status(200).json({ message: "Member removed successfully." })
 	} catch (error) {
-		if (error instanceof Error) {
-			res.status(403).json({ message: error.message })
-		} else {
-			res.status(500).json({ message: "An unexpected error occurred." })
-		}
+		respondWithError(res, error, "remove project member")
+	}
+}
+
+export const changeMemberRole = async (
+	req: AuthenticatedRequest,
+	res: Response
+): Promise<void> => {
+	try {
+		const { projectId, userId } = req.params
+		const { role } = req.body
+		const requesterId = req.user!.id
+		await projectService.changeMemberRole(projectId, userId, role, requesterId)
+		await recordAudit({
+			action: "project.member_role_changed",
+			targetType: "project",
+			targetId: projectId,
+			actorId: requesterId,
+			metadata: { targetUserId: userId, role },
+			ipAddress: requestIp(req),
+		})
+		res.status(200).json({ message: "Role updated." })
+	} catch (error) {
+		respondWithError(res, error, "change member role")
 	}
 }
 
@@ -215,27 +202,100 @@ export const inviteToProject = async (
 ): Promise<void> => {
 	try {
 		const { id } = req.params
-		const { email } = req.body
-		const project = await projectService.inviteUserToProject(id, email, req.user!.id)
+		const { email, role } = req.body
+		const inviter = req.user!
+		const result = await projectService.inviteUserToProject(
+			id,
+			email,
+			inviter.id,
+			role
+		)
+
+		const project = await projectService.getProjectById(id, inviter.id)
+
+		await sendProjectInvitationEmail({
+			to: result.email,
+			inviterName: inviter.name,
+			projectName: project?.name ?? "a Sculpt project",
+			acceptUrl: result.token
+				? `${frontendUrl()}/invitations/${result.token}`
+				: `${frontendUrl()}/project/${id}`,
+			isExistingUser: result.invitedExistingUser,
+		})
+
 		await recordAudit({
-			action: "project.member_invited",
+			action: result.invitedExistingUser
+				? "project.member_invited"
+				: "project.invitation_sent",
 			targetType: "project",
 			targetId: id,
-			actorId: req.user!.id,
-			metadata: { invitedEmail: email },
+			actorId: inviter.id,
+			metadata: { invitedEmail: result.email, role: role ?? "MEMBER" },
+			ipAddress: requestIp(req),
+		})
+
+		res.status(200).json({
+			invitedExistingUser: result.invitedExistingUser,
+			email: result.email,
+			project,
+		})
+	} catch (error) {
+		respondWithError(res, error, "invite project member")
+	}
+}
+
+export const acceptInvitation = async (
+	req: AuthenticatedRequest,
+	res: Response
+): Promise<void> => {
+	try {
+		const user = req.user!
+		const project = await projectService.acceptInvitation(
+			req.params.token,
+			user.id,
+			user.email
+		)
+		await recordAudit({
+			action: "project.member_joined_via_link",
+			targetType: "project",
+			targetId: project.id,
+			actorId: user.id,
+			metadata: { via: "invitation" },
 			ipAddress: requestIp(req),
 		})
 		res.status(200).json(project)
 	} catch (error) {
-		if (error instanceof AppError) {
-			res.status(error.statusCode).json({ message: error.message })
-			return
-		}
-		if (error instanceof Error) {
-			res.status(400).json({ message: error.message })
-			return
-		}
-		res.status(500).json({ message: "An unexpected error occurred." })
+		respondWithError(res, error, "accept invitation")
+	}
+}
+
+export const getInvitations = async (
+	req: AuthenticatedRequest,
+	res: Response
+): Promise<void> => {
+	try {
+		const invitations = await projectService.listInvitations(
+			req.params.projectId,
+			req.user!.id
+		)
+		res.status(200).json(invitations)
+	} catch (error) {
+		respondWithError(res, error, "list invitations")
+	}
+}
+
+export const revokeInvitation = async (
+	req: AuthenticatedRequest,
+	res: Response
+): Promise<void> => {
+	try {
+		await projectService.revokeInvitation(
+			req.params.invitationId,
+			req.user!.id
+		)
+		res.status(204).send()
+	} catch (error) {
+		respondWithError(res, error, "revoke invitation")
 	}
 }
 
@@ -245,24 +305,27 @@ export const createShareLink = async (
 ): Promise<void> => {
 	try {
 		const { projectId } = req.params
-		const { role } = req.body
 		const userId = req.user!.id
-		const link = await projectService.createShareLink(projectId, userId, role)
+		const link = await projectService.createShareLink(projectId, userId, {
+			role: req.body.role,
+			expiresInDays: req.body.expiresInDays ?? null,
+			maxUses: req.body.maxUses ?? null,
+		})
 		await recordAudit({
 			action: "share_link.created",
 			targetType: "project",
 			targetId: projectId,
 			actorId: userId,
-			metadata: { role },
+			metadata: {
+				role: req.body.role,
+				expiresInDays: req.body.expiresInDays ?? null,
+				maxUses: req.body.maxUses ?? null,
+			},
 			ipAddress: requestIp(req),
 		})
 		res.status(201).json(link)
 	} catch (error) {
-		if (error instanceof Error) {
-			res.status(403).json({ message: error.message })
-		} else {
-			res.status(500).json({ message: "An unexpected error occurred." })
-		}
+		respondWithError(res, error, "create share link")
 	}
 }
 
@@ -271,16 +334,13 @@ export const getShareLinks = async (
 	res: Response
 ): Promise<void> => {
 	try {
-		const { projectId } = req.params
-		const userId = req.user!.id
-		const links = await projectService.getShareLinks(projectId, userId)
+		const links = await projectService.getShareLinks(
+			req.params.projectId,
+			req.user!.id
+		)
 		res.status(200).json(links)
 	} catch (error) {
-		if (error instanceof Error) {
-			res.status(403).json({ message: error.message })
-		} else {
-			res.status(500).json({ message: "An unexpected error occurred." })
-		}
+		respondWithError(res, error, "list share links")
 	}
 }
 
@@ -289,23 +349,18 @@ export const revokeShareLink = async (
 	res: Response
 ): Promise<void> => {
 	try {
-		const { linkId } = req.params
 		const userId = req.user!.id
-		await projectService.revokeShareLink(linkId, userId)
+		await projectService.revokeShareLink(req.params.linkId, userId)
 		await recordAudit({
 			action: "share_link.revoked",
 			targetType: "share_link",
-			targetId: linkId,
+			targetId: req.params.linkId,
 			actorId: userId,
 			ipAddress: requestIp(req),
 		})
 		res.status(204).send()
 	} catch (error) {
-		if (error instanceof Error) {
-			res.status(403).json({ message: error.message })
-		} else {
-			res.status(500).json({ message: "An unexpected error occurred." })
-		}
+		respondWithError(res, error, "revoke share link")
 	}
 }
 
@@ -314,9 +369,11 @@ export const joinProjectWithShareLink = async (
 	res: Response
 ): Promise<void> => {
 	try {
-		const { token } = req.params
 		const userId = req.user!.id
-		const project = await projectService.joinProjectWithShareLink(token, userId)
+		const project = await projectService.joinProjectWithShareLink(
+			req.params.token,
+			userId
+		)
 		await recordAudit({
 			action: "project.member_joined_via_link",
 			targetType: "project",
@@ -326,10 +383,6 @@ export const joinProjectWithShareLink = async (
 		})
 		res.status(200).json(project)
 	} catch (error) {
-		if (error instanceof Error) {
-			res.status(404).json({ message: error.message })
-		} else {
-			res.status(500).json({ message: "An unexpected error occurred." })
-		}
+		respondWithError(res, error, "join project via share link")
 	}
 }

@@ -1,172 +1,105 @@
 import { createClient } from "redis"
+import { logger } from "./logger"
 
-console.log("Initializing Redis client...")
+const RECONNECT_CEILING_MS = 30000
 
-const redisClient = createClient({
-	url: process.env.REDIS_URL || "redis://localhost:6379",
+export const redisUrl = process.env.REDIS_URL || "redis://localhost:6379"
+
+export const redisClient = createClient({
+	url: redisUrl,
+	socket: {
+		reconnectStrategy: (retries) =>
+			Math.min(50 * 2 ** Math.min(retries, 10), RECONNECT_CEILING_MS),
+	},
 })
 
-redisClient.on("error", (err) => {
-	console.error("Redis Client Error:", err)
-})
+let lastReportedState: "up" | "down" | "unknown" = "unknown"
 
-redisClient.on("connect", () => {
-	console.log("Redis client connected successfully")
-})
-
-redisClient.on("reconnecting", () => {
-	console.log("Redis client reconnecting...")
-})
-
-redisClient.on("ready", () => {
-	console.log("Redis client is ready")
-})
-
-;(async () => {
-	try {
-		console.log("Attempting to connect to Redis...")
-		await redisClient.connect()
-	} catch (error) {
-		console.error("Failed to connect to Redis:", error)
-		console.log(
-			"Will continue without Redis functionality. Some features may not work properly."
-		)
+const reportState = (state: "up" | "down", detail?: unknown): void => {
+	if (lastReportedState === state) return
+	lastReportedState = state
+	if (state === "up") {
+		logger.info("Redis connected")
+		return
 	}
-})()
+	logger.warn("Redis unavailable, falling back to in-process behaviour", {
+		detail: detail instanceof Error ? detail.message : undefined,
+	})
+}
+
+redisClient.on("error", (error) => reportState("down", error))
+redisClient.on("ready", () => reportState("up"))
+redisClient.on("end", () => reportState("down"))
+
+void redisClient
+	.connect()
+	.catch((error) =>
+		logger.warn("Redis initial connection failed", {
+			detail: error instanceof Error ? error.message : undefined,
+		})
+	)
+
+export const isRedisReady = (): boolean => redisClient.isReady
+
+const guarded =
+	<TArgs extends unknown[], TResult>(
+		operation: string,
+		fallback: TResult,
+		run: (...args: TArgs) => Promise<TResult>
+	) =>
+	async (...args: TArgs): Promise<TResult> => {
+		if (!redisClient.isReady) return fallback
+		try {
+			return await run(...args)
+		} catch (error) {
+			logger.warn("Redis operation failed", {
+				operation,
+				detail: error instanceof Error ? error.message : undefined,
+			})
+			return fallback
+		}
+	}
 
 const safeRedis = {
-	get: async (...args: Parameters<typeof redisClient.get>) => {
-		try {
-			if (!redisClient.isOpen) {
-				console.warn("Redis not connected, skipping get operation")
-				return null
-			}
-			return await redisClient.get(...args)
-		} catch (error) {
-			console.error("Redis get error:", error)
-			return null
-		}
-	},
-	set: async (...args: Parameters<typeof redisClient.set>) => {
-		try {
-			if (!redisClient.isOpen) {
-				console.warn("Redis not connected, skipping set operation")
-				return false
-			}
-			return await redisClient.set(...args)
-		} catch (error) {
-			console.error("Redis set error:", error)
-			return false
-		}
-	},
-	hSet: async (...args: Parameters<typeof redisClient.hSet>) => {
-		try {
-			if (!redisClient.isOpen) {
-				console.warn("Redis not connected, skipping hSet operation")
-				return 0
-			}
-			return await redisClient.hSet(...args)
-		} catch (error) {
-			console.error("Redis hSet error:", error)
-			return 0
-		}
-	},
-	hGet: async (...args: Parameters<typeof redisClient.hGet>) => {
-		try {
-			if (!redisClient.isOpen) {
-				console.warn("Redis not connected, skipping hGet operation")
-				return null
-			}
-			return await redisClient.hGet(...args)
-		} catch (error) {
-			console.error("Redis hGet error:", error)
-			return null
-		}
-	},
-	hKeys: async (...args: Parameters<typeof redisClient.hKeys>) => {
-		try {
-			if (!redisClient.isOpen) {
-				console.warn("Redis not connected, skipping hKeys operation")
-				return []
-			}
-			return await redisClient.hKeys(...args)
-		} catch (error) {
-			console.error("Redis hKeys error:", error)
-			return []
-		}
-	},
-	hVals: async (...args: Parameters<typeof redisClient.hVals>) => {
-		try {
-			if (!redisClient.isOpen) {
-				console.warn("Redis not connected, skipping hVals operation")
-				return []
-			}
-			return await redisClient.hVals(...args)
-		} catch (error) {
-			console.error("Redis hVals error:", error)
-			return []
-		}
-	},
-	sAdd: async (...args: Parameters<typeof redisClient.sAdd>) => {
-		try {
-			if (!redisClient.isOpen) {
-				console.warn("Redis not connected, skipping sAdd operation")
-				return 0
-			}
-			return await redisClient.sAdd(...args)
-		} catch (error) {
-			console.error("Redis sAdd error:", error)
-			return 0
-		}
-	},
-	sMembers: async (...args: Parameters<typeof redisClient.sMembers>) => {
-		try {
-			if (!redisClient.isOpen) {
-				console.warn("Redis not connected, skipping sMembers operation")
-				return []
-			}
-			return await redisClient.sMembers(...args)
-		} catch (error) {
-			console.error("Redis sMembers error:", error)
-			return []
-		}
-	},
-	sIsMember: async (...args: Parameters<typeof redisClient.sIsMember>) => {
-		try {
-			if (!redisClient.isOpen) {
-				console.warn("Redis not connected, skipping sIsMember operation")
-				return false
-			}
-			return await redisClient.sIsMember(...args)
-		} catch (error) {
-			console.error("Redis sIsMember error:", error)
-			return false
-		}
-	},
-	sRem: async (...args: Parameters<typeof redisClient.sRem>) => {
-		try {
-			if (!redisClient.isOpen) {
-				console.warn("Redis not connected, skipping sRem operation")
-				return 0
-			}
-			return await redisClient.sRem(...args)
-		} catch (error) {
-			console.error("Redis sRem error:", error)
-			return 0
-		}
-	},
-	del: async (...args: Parameters<typeof redisClient.del>) => {
-		try {
-			if (!redisClient.isOpen) {
-				console.warn("Redis not connected, skipping del operation")
-				return 0
-			}
-			return await redisClient.del(...args)
-		} catch (error) {
-			console.error("Redis del error:", error)
-			return 0
-		}
-	},
+	hSet: guarded("hSet", 0, (...args: Parameters<typeof redisClient.hSet>) =>
+		redisClient.hSet(...args)
+	),
+	hGet: guarded(
+		"hGet",
+		undefined as string | undefined,
+		(...args: Parameters<typeof redisClient.hGet>) => redisClient.hGet(...args)
+	),
+	hKeys: guarded(
+		"hKeys",
+		[] as string[],
+		(...args: Parameters<typeof redisClient.hKeys>) => redisClient.hKeys(...args)
+	),
+	hVals: guarded(
+		"hVals",
+		[] as string[],
+		(...args: Parameters<typeof redisClient.hVals>) => redisClient.hVals(...args)
+	),
+	sAdd: guarded("sAdd", 0, (...args: Parameters<typeof redisClient.sAdd>) =>
+		redisClient.sAdd(...args)
+	),
+	sRem: guarded("sRem", 0, (...args: Parameters<typeof redisClient.sRem>) =>
+		redisClient.sRem(...args)
+	),
+	sCard: guarded("sCard", 0, (...args: Parameters<typeof redisClient.sCard>) =>
+		redisClient.sCard(...args)
+	),
+	exists: guarded("exists", 0, (...args: Parameters<typeof redisClient.exists>) =>
+		redisClient.exists(...args)
+	),
+	expire: guarded(
+		"expire",
+		0 as number | `${number}`,
+		(...args: Parameters<typeof redisClient.expire>) => redisClient.expire(...args)
+	),
+	del: guarded("del", 0, (...args: Parameters<typeof redisClient.del>) =>
+		redisClient.del(...args)
+	),
+	ping: guarded("ping", null as string | null, () => redisClient.ping()),
 }
 
 export default safeRedis

@@ -5,14 +5,18 @@ import {
 	S3Client,
 	PutObjectCommand,
 	DeleteObjectCommand,
+	GetObjectCommand,
 } from "@aws-sdk/client-s3"
+import { getSignedUrl } from "@aws-sdk/s3-request-presigner"
 import { IncomingFile, StoragePort } from "./storage"
+import { logger } from "../lib/logger"
 
 export interface S3Config {
 	bucket: string
 	region: string
 	endpoint?: string
 	publicBaseUrl?: string
+	private?: boolean
 }
 
 export class S3Storage implements StoragePort {
@@ -45,18 +49,42 @@ export class S3Storage implements StoragePort {
 			})
 		)
 		await fs.unlink(file.path).catch(() => undefined)
-		return `${this.publicBaseUrl}/${key}`
+		return this.config.private ? `uploads/${key}` : `${this.publicBaseUrl}/${key}`
 	}
 
 	async remove(url: string): Promise<void> {
-		if (!url.startsWith(`${this.publicBaseUrl}/`)) return
-		const key = url.slice(this.publicBaseUrl.length + 1)
+		const key = this.keyFor(url)
+		if (!key) return
 		try {
 			await this.client.send(
 				new DeleteObjectCommand({ Bucket: this.config.bucket, Key: key })
 			)
 		} catch (error) {
-			console.error(`Failed to remove object ${key} from storage`, error)
+			logger.error("Failed to remove object from storage", error, { key })
 		}
+	}
+
+	async temporaryReadUrl(
+		storedPath: string,
+		ttlSeconds: number
+	): Promise<string> {
+		return getSignedUrl(
+			this.client,
+			new GetObjectCommand({
+				Bucket: this.config.bucket,
+				Key: path.basename(storedPath),
+			}),
+			{ expiresIn: ttlSeconds }
+		)
+	}
+
+	private keyFor(url: string): string | null {
+		if (url.startsWith(`${this.publicBaseUrl}/`)) {
+			return url.slice(this.publicBaseUrl.length + 1)
+		}
+		if (this.config.private && !/^https?:\/\//i.test(url)) {
+			return path.basename(url)
+		}
+		return null
 	}
 }

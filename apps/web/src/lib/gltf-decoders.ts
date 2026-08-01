@@ -27,22 +27,47 @@ export const loadCompressionModules = async (): Promise<CompressionModules> => {
 	}
 }
 
+const decoderCache = new WeakMap<
+	CompressionModules,
+	{ draco: DRACOLoader; ktx2?: KTX2Loader }
+>()
+
 export const configureGltfCompression = (
 	loader: GLTFLoader,
 	modules: CompressionModules,
 	renderer?: WebGLRenderer
 ): GLTFLoader => {
-	const draco = new modules.DRACOLoader()
-	draco.setDecoderPath(DRACO_DECODER_PATH)
-	loader.setDRACOLoader(draco)
+	let cached = decoderCache.get(modules)
+
+	if (!cached) {
+		const draco = new modules.DRACOLoader()
+		draco.setDecoderPath(DRACO_DECODER_PATH)
+		cached = { draco }
+		decoderCache.set(modules, cached)
+	}
+
+	loader.setDRACOLoader(cached.draco)
 
 	if (renderer) {
-		const ktx2 = new modules.KTX2Loader()
-		ktx2.setTranscoderPath(BASIS_TRANSCODER_PATH)
-		ktx2.detectSupport(renderer)
-		loader.setKTX2Loader(ktx2)
+		if (!cached.ktx2) {
+			const ktx2 = new modules.KTX2Loader()
+			ktx2.setTranscoderPath(BASIS_TRANSCODER_PATH)
+			cached.ktx2 = ktx2
+		}
+		cached.ktx2.detectSupport(renderer)
+		loader.setKTX2Loader(cached.ktx2)
 	}
 
 	loader.setMeshoptDecoder(modules.MeshoptDecoder)
 	return loader
+}
+
+export const disposeCompressionModules = (
+	modules: CompressionModules
+): void => {
+	const cached = decoderCache.get(modules)
+	if (!cached) return
+	cached.draco.dispose()
+	cached.ktx2?.dispose()
+	decoderCache.delete(modules)
 }

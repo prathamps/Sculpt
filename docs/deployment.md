@@ -49,12 +49,17 @@ Build both apps (`npm run build`) and run `node dist/index.js` (API, after `npx 
 | `DATABASE_URL`, `DIRECT_URL` | ✅ | Postgres connection (pooled / direct) |
 | `JWT_SECRET` | ✅ | signing key for auth cookies — use a long random value |
 | `FRONTEND_URL`, `API_URL` | ✅ in prod | CORS + OAuth redirect construction |
-| `REDIS_URL` | optional | presence mirroring; falls back to in-memory |
+| `REDIS_URL` | optional (required for >1 instance) | Socket.IO fan-out, cross-instance presence, shared rate limits |
+| `CORS_ALLOWED_HOST_SUFFIXES` | optional | apex domains whose subdomains may call the API (e.g. preview deploys) |
+| `LOG_LEVEL` | optional | `debug`/`info`/`warn`/`error`; JSON lines in production |
 | `TRUST_PROXY` | behind a proxy | number of trusted proxy hops so `req.ip` and audit IPs use `X-Forwarded-For` (leave unset when direct-facing) |
 | `GOOGLE_*`, `GITHUB_*` | optional | OAuth login buttons appear only when set |
 | `SMTP_*` | optional | email notifications for offline members |
 | `S3_BUCKET`, `S3_REGION`, `S3_ENDPOINT`, `S3_PUBLIC_URL` | optional | switch file storage to any S3-compatible store |
-| `MAX_UPLOAD_MB` | optional | upload size limit (default 200) |
+| `S3_PRIVATE` | optional | keep the bucket private and serve presigned redirects |
+| `MAX_UPLOAD_MB` | optional | upload size limit (default 2048) |
+| `VIDEO_WORKER_CONCURRENCY`, `IMAGE_WORKER_CONCURRENCY` | optional | parallel ffmpeg jobs per instance |
+| `SCULPT_INSTANCE_ID` | multi-instance | stable id so crash recovery only reclaims this instance's transcodes |
 
 ### Web
 
@@ -71,11 +76,32 @@ Set `S3_BUCKET` (plus credentials via the standard `AWS_ACCESS_KEY_ID` / `AWS_SE
 - **Cloudflare R2 / MinIO** — additionally set `S3_ENDPOINT` (path-style addressing is used automatically)
 - **CDN in front** — set `S3_PUBLIC_URL` to the CDN origin
 
-The bucket (or CDN) must serve objects publicly, since media URLs are embedded directly in the UI.
+Set `S3_PRIVATE=true` to keep the bucket private. Media then resolves through
+the API's authenticated route, which checks project membership and redirects to
+a short-lived presigned URL. Leave it off only if you accept that anyone holding
+an object URL can read your clients' media — including people you later removed
+from the project.
 
 ## Operations notes
 
 - **Migrations** — always `npx prisma migrate deploy` on release (both the Docker CMD and railway.toml already do this)
-- **Health check** — `GET /health` on the API returns `{"status":"ok"}`
-- **Audit trail** — security-relevant actions land in the `AuditLog` table and are visible at `/admin/audit`; export/retention policy is up to your compliance needs
-- **Admin bootstrap** — promote the first admin with `npx ts-node src/scripts/promote-admin.ts <email>` (or set `role = 'ADMIN'` directly in the database)
+- **Health check** — `GET /health` reports per-component status and returns
+  `503` when the database is unreachable, so load balancers drain the instance:
+  `{"status":"ok","components":{"database":"ok","redis":"ok"}}`
+- **Backups** — see [backup-and-restore.md](backup-and-restore.md). Both the
+  database and the uploads volume must be captured together.
+- **Audit trail** — security-relevant actions land in the `AuditLog` table and
+  are visible at `/admin/audit`. IP addresses are retained indefinitely by
+  default; the backup guide includes a pruning query.
+- **Admin bootstrap** — register through the UI, then promote that account. This
+  works inside the production image, which ships only compiled output:
+
+  ```bash
+  docker compose -f docker-compose.selfhost.yml exec api     npm run promote-admin -- you@example.com
+  ```
+
+- **Logs** — production logs are one JSON object per line (`level`, `message`,
+  `time`, plus context). Pipe them into whatever you already run.
+- **Scaling out** — set `REDIS_URL` and a distinct `SCULPT_INSTANCE_ID` per
+  replica. Without Redis, realtime events stay local to the instance that
+  emitted them and only half your users see new comments.

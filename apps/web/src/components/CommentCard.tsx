@@ -1,4 +1,7 @@
-import { useState } from "react"
+import { useEffect, useState } from "react"
+import { toast } from "sonner"
+import { api } from "@/lib/api"
+import { describeError } from "@/lib/errors"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { Button } from "@/components/ui/button"
 import {
@@ -12,6 +15,7 @@ import {
 	Clock,
 	FileText,
 	MapPin,
+	Lock,
 } from "lucide-react"
 import { cn, formatVideoTime } from "@/lib/utils"
 import {
@@ -21,10 +25,40 @@ import {
 	DropdownMenuSeparator,
 	DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
-import { Comment as CommentType } from "@/types"
+import { Comment as CommentType, CommentMention } from "@/types"
 import { formatDistanceToNow } from "date-fns"
 import { useAuth } from "@/context/AuthContext"
-import { Textarea } from "@/components/ui/textarea"
+import { MentionTextarea } from "@/components/MentionTextarea"
+import { CommentAttachments } from "@/components/CommentAttachments"
+import { useMentionDraft } from "@/hooks/useMentionDraft"
+
+const escapeRegExp = (value: string): string =>
+	value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
+
+const renderWithMentions = (
+	content: string,
+	mentions?: CommentMention[]
+): React.ReactNode => {
+	const labels = (mentions ?? [])
+		.map((mention) => mention.user?.name)
+		.filter((name): name is string => !!name)
+	if (labels.length === 0) return content
+
+	const tokens = new Set(labels.map((label) => `@${label}`))
+	const pattern = new RegExp(
+		`(${labels.map((label) => `@${escapeRegExp(label)}`).join("|")})`,
+		"g"
+	)
+	return content.split(pattern).map((part, index) =>
+		tokens.has(part) ? (
+			<span key={index} className="font-medium text-primary">
+				{part}
+			</span>
+		) : (
+			part
+		)
+	)
+}
 
 interface CommentCardProps {
 	comment: CommentType
@@ -48,38 +82,34 @@ export function CommentCard({
 	const { user } = useAuth()
 	const [isDeleting, setIsDeleting] = useState(false)
 	const [isLiking, setIsLiking] = useState(false)
-	const [likeCount, setLikeCount] = useState(comment.likeCount || 0)
-	const [isLiked, setIsLiked] = useState(comment.isLikedByCurrentUser || false)
+	const [pendingLike, setPendingLike] = useState<{
+		count: number
+		liked: boolean
+	} | null>(null)
 	const [isReplying, setIsReplying] = useState(false)
 	const [replyContent, setReplyContent] = useState("")
 	const [isSubmittingReply, setIsSubmittingReply] = useState(false)
+	const { addMention, mentionIdsIn, resetMentions } = useMentionDraft()
+
+	const likeCount = pendingLike?.count ?? comment.likeCount ?? 0
+	const isLiked = pendingLike?.liked ?? comment.isLikedByCurrentUser ?? false
+
+	useEffect(() => {
+		setPendingLike(null)
+	}, [comment.likeCount, comment.isLikedByCurrentUser])
 
 	const timestamp = formatDistanceToNow(new Date(comment.createdAt), {
 		addSuffix: true,
 	})
 
 	const isAuthor = user?.id === comment.userId
-	const URI = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001"
+
 	const toggleResolved = async () => {
 		try {
-			const res = await fetch(
-				`${URI}/api/images/comments/${comment.id}/resolve`,
-				{
-					method: "POST",
-					credentials: "include",
-					headers: {
-						"Content-Type": "application/json",
-					},
-				}
-			)
-
-			if (res.ok) {
-				if (onCommentUpdate) {
-					onCommentUpdate()
-				}
-			}
+			await api.post(`/api/images/comments/${comment.id}/resolve`)
+			onCommentUpdate?.()
 		} catch (error) {
-			console.error("Error updating resolved status:", error)
+			toast.error(describeError(error, "Could not update the comment."))
 		}
 	}
 
@@ -88,21 +118,12 @@ export function CommentCard({
 
 		setIsLiking(true)
 		try {
-			const res = await fetch(`${URI}/api/images/comments/${comment.id}/like`, {
-				method: "POST",
-				credentials: "include",
-				headers: {
-					"Content-Type": "application/json",
-				},
-			})
-
-			if (res.ok) {
-				const data = await res.json()
-				setLikeCount(data.count)
-				setIsLiked(data.liked)
-			}
+			const result = await api.post<{ liked: boolean; count: number }>(
+				`/api/images/comments/${comment.id}/like`
+			)
+			setPendingLike({ count: result.count, liked: result.liked })
 		} catch (error) {
-			console.error("Error toggling like:", error)
+			toast.error(describeError(error, "Could not update your like."))
 		} finally {
 			setIsLiking(false)
 		}
@@ -113,18 +134,10 @@ export function CommentCard({
 
 		setIsDeleting(true)
 		try {
-			const res = await fetch(`${URI}/api/images/comments/${comment.id}`, {
-				method: "DELETE",
-				credentials: "include",
-			})
-
-			if (res.ok) {
-				if (onCommentUpdate) {
-					onCommentUpdate()
-				}
-			}
+			await api.delete(`/api/images/comments/${comment.id}`)
+			onCommentUpdate?.()
 		} catch (error) {
-			console.error("Error deleting comment:", error)
+			toast.error(describeError(error, "Could not delete the comment."))
 		} finally {
 			setIsDeleting(false)
 		}
@@ -161,30 +174,20 @@ export function CommentCard({
 
 		setIsSubmittingReply(true)
 		try {
-			const response = await fetch(
-				`${URI}/api/images/versions/${comment.imageVersionId}/comments`,
+			await api.post(
+				`/api/images/versions/${comment.imageVersionId}/comments`,
 				{
-					method: "POST",
-					credentials: "include",
-					headers: {
-						"Content-Type": "application/json",
-					},
-					body: JSON.stringify({
-						content: replyContent,
-						parentId: comment.id,
-					}),
+					content: replyContent,
+					parentId: comment.id,
+					mentionedUserIds: mentionIdsIn(replyContent),
 				}
 			)
-
-			if (response.ok) {
-				setReplyContent("")
-				setIsReplying(false)
-				if (onCommentUpdate) {
-					onCommentUpdate()
-				}
-			}
+			setReplyContent("")
+			resetMentions()
+			setIsReplying(false)
+			onCommentUpdate?.()
 		} catch (error) {
-			console.error("Error submitting reply:", error)
+			toast.error(describeError(error, "Could not post your reply."))
 		} finally {
 			setIsSubmittingReply(false)
 		}
@@ -325,6 +328,12 @@ export function CommentCard({
 									3D pin
 								</span>
 							)}
+							{comment.internal && (
+								<span className="inline-flex items-center gap-1 rounded-full bg-amber-500/15 px-2 py-0.5 text-xs font-medium text-amber-700 dark:text-amber-300">
+									<Lock className="h-3 w-3" aria-hidden="true" />
+									Internal
+								</span>
+							)}
 							{comment.resolved && (
 								<span className="inline-flex items-center gap-1 rounded-full bg-green-500/15 px-2 py-0.5 text-xs font-medium text-green-600 dark:text-green-400">
 									<CheckCircle2 className="h-3 w-3" aria-hidden="true" />
@@ -346,8 +355,9 @@ export function CommentCard({
 						className="mt-2 text-sm leading-relaxed break-words whitespace-pre-wrap"
 						style={{ wordBreak: "break-word", overflowWrap: "break-word" }}
 					>
-						{comment.content}
+						{renderWithMentions(comment.content, comment.mentions)}
 					</p>
+					<CommentAttachments attachments={comment.attachments} />
 					<div className="mt-2 flex items-center gap-3">
 						<Button
 							variant="ghost"
@@ -394,11 +404,14 @@ export function CommentCard({
 							className="mt-2 flex flex-col gap-2"
 							onClick={(e) => e.stopPropagation()}
 						>
-							<Textarea
-								placeholder="Write a reply..."
+							<MentionTextarea
+								id={`reply-input-${comment.id}`}
+								ariaLabel="Write a reply"
+								placeholder="Write a reply... Use @ to mention a teammate"
 								className="min-h-[60px] text-xs"
 								value={replyContent}
-								onChange={(e) => setReplyContent(e.target.value)}
+								onChange={setReplyContent}
+								onMentionPicked={addMention}
 							/>
 							<div className="flex justify-end gap-2">
 								<Button

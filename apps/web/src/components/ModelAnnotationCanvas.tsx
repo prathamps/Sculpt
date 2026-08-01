@@ -68,6 +68,8 @@ const pinPosition = (anchor: ModelAnchor): Vec3 => {
 	]
 }
 
+const COMPRESSION_MODULES = { DRACOLoader, KTX2Loader, MeshoptDecoder }
+
 function NormalizedModel({
 	url,
 	canPlacePin,
@@ -81,11 +83,7 @@ function NormalizedModel({
 }) {
 	const renderer = useThree((state) => state.gl)
 	const gltf = useLoader(GLTFLoader, url, (loader) =>
-		configureGltfCompression(
-			loader,
-			{ DRACOLoader, KTX2Loader, MeshoptDecoder },
-			renderer
-		)
+		configureGltfCompression(loader, COMPRESSION_MODULES, renderer)
 	)
 
 	const scene = useMemo(() => {

@@ -67,6 +67,14 @@ export function ExportMenu({
 	const [busy, setBusy] = useState(false)
 	const isImage = (selectedVersion?.mediaType ?? "IMAGE") === "IMAGE"
 
+	const downloadOriginal = () => {
+		if (!selectedVersion) return
+		const a = document.createElement("a")
+		a.href = `${API_URL}/api/images/versions/${selectedVersion.id}/download`
+		a.rel = "noopener"
+		a.click()
+	}
+
 	const downloadAnnotatedPng = async () => {
 		if (!selectedVersion) return
 		setBusy(true)
@@ -170,6 +178,14 @@ export function ExportMenu({
 			</DropdownMenuTrigger>
 			<DropdownMenuContent align="end" className="w-56">
 				<DropdownMenuLabel className="text-xs">Export</DropdownMenuLabel>
+				<DropdownMenuItem
+					className="text-xs"
+					onClick={downloadOriginal}
+					disabled={!selectedVersion}
+				>
+					<Download className="mr-2 h-3.5 w-3.5" />
+					Original file
+				</DropdownMenuItem>
 				{isImage && (
 					<DropdownMenuItem className="text-xs" onClick={downloadAnnotatedPng}>
 						<Download className="mr-2 h-3.5 w-3.5" />

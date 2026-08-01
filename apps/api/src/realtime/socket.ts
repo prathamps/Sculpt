@@ -1,6 +1,8 @@
 import http from "http"
 import { Server, Socket } from "socket.io"
-import { markOnline, markOffline } from "../lib/presence"
+import { createAdapter } from "@socket.io/redis-adapter"
+import { markOnline, markOffline, startPresenceHeartbeat } from "../lib/presence"
+import { redisClient } from "../lib/redis"
 import { isAllowedOrigin } from "../lib/cors"
 import { socketAuth, SocketUser } from "./socketAuth"
 import {
@@ -9,7 +11,12 @@ import {
 	removeViewer,
 	getViewers,
 } from "./viewerPresence"
-import { canViewVersion } from "../modules/projects/access"
+import {
+	canViewInternalComments,
+	canViewVersion,
+	isProjectMember,
+} from "../modules/projects/access"
+import { logger } from "../lib/logger"
 
 export const io = new Server({
 	cors: {
@@ -45,11 +52,25 @@ const joinedVersions = (socket: Socket): Set<string> => {
 const versionRoom = (imageVersionId: string): string =>
 	`imageVersion:${imageVersionId}`
 
+export const internalVersionRoom = (imageVersionId: string): string =>
+	`imageVersion:${imageVersionId}:internal`
+
 const viewersStillInRoom = (imageVersionId: string) =>
 	io.to(versionRoom(imageVersionId))
 
+export const guardedHandler =
+	<TArgs extends unknown[]>(
+		event: string,
+		handler: (...args: TArgs) => Promise<void>
+	) =>
+	(...args: TArgs): Promise<void> =>
+		handler(...args).catch((error) =>
+			logger.error("socket handler failed", error, { event })
+		)
+
 const leaveVersionRoom = (socket: Socket, imageVersionId: string): void => {
 	socket.leave(versionRoom(imageVersionId))
+	socket.leave(internalVersionRoom(imageVersionId))
 	joinedVersions(socket).delete(imageVersionId)
 	removeViewer(imageVersionId, socket.id)
 	viewersStillInRoom(imageVersionId).emit("presence:leave", {
@@ -58,55 +79,69 @@ const leaveVersionRoom = (socket: Socket, imageVersionId: string): void => {
 	})
 }
 
-const registerHandlers = (socket: Socket) => {
-	socket.on("join", (userId: string) => {
-		const id = socketUser(socket)?.id ?? userId
-		if (!id) return
-		socket.join(`user:${id}`)
-		socket.data.userId = id
-		markOnline(id, socket.id).catch((e) =>
-			console.error("presence markOnline error", e)
+export const registerHandlers = (socket: Socket) => {
+	socket.on("join", () => {
+		const user = socketUser(socket)
+		if (!user) return
+		socket.join(`user:${user.id}`)
+		socket.data.userId = user.id
+		markOnline(user.id, socket.id).catch((e) =>
+			logger.error("presence markOnline failed", e)
 		)
 		socket.emit("connection_confirmed", {
 			message: "Successfully connected to notification service",
-			userId: id,
+			userId: user.id,
 		})
 	})
 
-	socket.on("joinProject", (projectId: string) => {
-		if (!projectId) return
-		socket.join(`project:${projectId}`)
-		socket.emit("project_joined", {
-			projectId,
-			message: `Successfully joined project room ${projectId}`,
+	socket.on(
+		"joinProject",
+		guardedHandler("joinProject", async (projectId: string) => {
+			if (!projectId || typeof projectId !== "string") return
+			const user = socketUser(socket)
+			if (!user || !(await isProjectMember(projectId, user.id))) {
+				socket.emit("project_join_denied", { projectId })
+				return
+			}
+			socket.join(`project:${projectId}`)
+			socket.emit("project_joined", {
+				projectId,
+				message: `Successfully joined project room ${projectId}`,
+			})
 		})
-	})
+	)
 
-	socket.on("joinImageVersion", async (imageVersionId: string) => {
-		if (!imageVersionId || typeof imageVersionId !== "string") return
-		const user = socketUser(socket)
-		if (!user || !(await canViewVersion(user.id, imageVersionId))) {
-			socket.emit("image_version_join_denied", { imageVersionId })
-			return
-		}
-		socket.join(versionRoom(imageVersionId))
-		joinedVersions(socket).add(imageVersionId)
-		addViewer(imageVersionId, socket.id, presenceUser(user))
-		socket.emit("image_version_joined", {
-			imageVersionId,
-			message: `Successfully joined image version room ${imageVersionId}`,
+	socket.on(
+		"joinImageVersion",
+		guardedHandler("joinImageVersion", async (imageVersionId: string) => {
+			if (!imageVersionId || typeof imageVersionId !== "string") return
+			const user = socketUser(socket)
+			if (!user || !(await canViewVersion(user.id, imageVersionId))) {
+				socket.emit("image_version_join_denied", { imageVersionId })
+				return
+			}
+			socket.join(versionRoom(imageVersionId))
+			if (await canViewInternalComments(user.id, imageVersionId)) {
+				socket.join(internalVersionRoom(imageVersionId))
+			}
+			joinedVersions(socket).add(imageVersionId)
+			addViewer(imageVersionId, socket.id, presenceUser(user))
+			socket.emit("image_version_joined", {
+				imageVersionId,
+				message: `Successfully joined image version room ${imageVersionId}`,
+			})
+			socket.emit("presence:state", {
+				imageVersionId,
+				peers: getViewers(imageVersionId),
+			})
+			socket.to(versionRoom(imageVersionId)).emit("presence:peer", {
+				socketId: socket.id,
+				imageVersionId,
+				user: presenceUser(user),
+				time: 0,
+			})
 		})
-		socket.emit("presence:state", {
-			imageVersionId,
-			peers: getViewers(imageVersionId),
-		})
-		socket.to(versionRoom(imageVersionId)).emit("presence:peer", {
-			socketId: socket.id,
-			imageVersionId,
-			user: presenceUser(user),
-			time: 0,
-		})
-	})
+	)
 
 	socket.on(
 		"presence:update",
@@ -139,7 +174,7 @@ const registerHandlers = (socket: Socket) => {
 	})
 
 	socket.on("error", (error) => {
-		console.error("Socket error:", error)
+		logger.error("socket error", error, { socketId: socket.id })
 	})
 
 	socket.on("disconnect", () => {
@@ -149,14 +184,34 @@ const registerHandlers = (socket: Socket) => {
 		const userId = socket.data.userId as string | undefined
 		if (userId) {
 			markOffline(userId, socket.id).catch((e) =>
-				console.error("presence markOffline error", e)
+				logger.error("presence markOffline failed", e)
 			)
 		}
 	})
 }
 
-export const attachRealtime = (server: http.Server): void => {
+const attachRedisAdapter = async (): Promise<void> => {
+	if (!redisClient.isReady) {
+		logger.warn(
+			"Socket.IO is running without the Redis adapter — realtime events stay local to this instance"
+		)
+		return
+	}
+
+	try {
+		const subscriber = redisClient.duplicate()
+		await subscriber.connect()
+		io.adapter(createAdapter(redisClient, subscriber))
+		logger.info("Socket.IO Redis adapter attached")
+	} catch (error) {
+		logger.error("Could not attach the Socket.IO Redis adapter", error)
+	}
+}
+
+export const attachRealtime = async (server: http.Server): Promise<void> => {
+	await attachRedisAdapter()
 	io.use(socketAuth)
 	io.on("connection", registerHandlers)
 	io.attach(server)
+	startPresenceHeartbeat()
 }

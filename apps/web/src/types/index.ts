@@ -2,6 +2,7 @@ export interface User {
 	id: string
 	name: string | null
 	email: string
+	avatarUrl?: string | null
 }
 
 export type ProjectRole = "OWNER" | "EDITOR" | "MEMBER" | "VIEWER"
@@ -23,6 +24,7 @@ export interface Annotation {
 	points: Point[]
 	isHighlighted?: boolean
 	dimmed?: boolean
+	pinned?: boolean
 	t?: number
 	tEnd?: number
 	page?: number
@@ -51,21 +53,40 @@ export interface ImageVersion {
 	imageId: string
 	mediaType?: MediaType
 	duration?: number | null
+	frameRate?: number | null
 	thumbnailUrl?: string | null
 	proxyUrl?: string | null
 	proxyStatus?: ProxyStatus | null
+	reviewStatus?: ReviewStatus
+	dueAt?: string | null
 	createdAt: string
 	updatedAt: string
+}
+
+export type ReviewStatus = "PENDING" | "CHANGES_REQUESTED" | "APPROVED"
+
+export type ReviewDecisionValue = "APPROVED" | "CHANGES_REQUESTED"
+
+export interface Review {
+	id: string
+	imageVersionId: string
+	decision: ReviewDecisionValue
+	note?: string | null
+	createdAt: string
+	updatedAt: string
+	user: User
 }
 
 export interface Image {
 	id: string
 	name: string
 	projectId: string
+	folderId?: string | null
 	createdAt: string
 	updatedAt: string
 	versions: ImageVersion[]
 	latestVersion?: ImageVersion
+	versionCount?: number
 	size?: number
 }
 
@@ -77,6 +98,25 @@ export interface CommentLike {
 	createdAt: string
 }
 
+export interface Folder {
+	id: string
+	name: string
+	parentId: string | null
+	imageCount: number
+}
+
+export interface CommentAttachment {
+	id: string
+	url: string
+	fileName: string
+	mimeType: string
+}
+
+export interface CommentMention {
+	userId: string
+	user?: { name: string | null }
+}
+
 export interface Comment {
 	id: string
 	content: string
@@ -86,6 +126,9 @@ export interface Comment {
 	parentId?: string
 	replies?: Comment[]
 	resolved: boolean
+	internal?: boolean
+	mentions?: CommentMention[]
+	attachments?: CommentAttachment[]
 	likes?: CommentLike[]
 	likeCount?: number
 	isLikedByCurrentUser?: boolean

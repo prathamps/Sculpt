@@ -54,6 +54,44 @@ export const probeDuration = async (
 	}
 }
 
+const MAX_PLAUSIBLE_FRAME_RATE = 1000
+
+export const parseFrameRate = (raw: string): number | null => {
+	const [numerator, denominator] = raw.trim().split("/")
+	const top = Number.parseFloat(numerator)
+	const bottom = denominator === undefined ? 1 : Number.parseFloat(denominator)
+
+	if (!Number.isFinite(top) || !Number.isFinite(bottom) || bottom === 0) {
+		return null
+	}
+
+	const frameRate = top / bottom
+	return frameRate > 0 && frameRate <= MAX_PLAUSIBLE_FRAME_RATE
+		? frameRate
+		: null
+}
+
+export const probeFrameRate = async (
+	filePath: string
+): Promise<number | null> => {
+	try {
+		const output = await run(ffprobeBinary, [
+			"-v",
+			"error",
+			"-select_streams",
+			"v:0",
+			"-show_entries",
+			"stream=avg_frame_rate",
+			"-of",
+			"csv=p=0",
+			filePath,
+		])
+		return parseFrameRate(output)
+	} catch {
+		return null
+	}
+}
+
 export const transcodeToWebProxy = async (
 	sourcePath: string,
 	outputPath: string

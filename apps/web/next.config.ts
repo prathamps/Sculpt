@@ -1,33 +1,18 @@
 import type { NextConfig } from "next"
 
-// Derive the API hostname so uploaded media can be served via next/image.
-let apiHost = "localhost"
-try {
-	apiHost = new URL(
-		process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001"
-	).hostname
-} catch {
-	// keep default
-}
+const apiOrigin = (
+	process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001"
+).replace(/\/+$/, "")
 
 const nextConfig: NextConfig = {
 	output: "standalone",
-	images: {
-		remotePatterns: [
-			{ protocol: "https", hostname: "**.railway.app", pathname: "/**" },
-			{ protocol: "https", hostname: "**.up.railway.app", pathname: "/**" },
-			{ protocol: "https", hostname: "**.vercel.app", pathname: "/**" },
-			{ protocol: "http", hostname: "localhost" },
-			...(apiHost && apiHost !== "localhost"
-				? [
-						{
-							protocol: "https" as const,
-							hostname: apiHost,
-							pathname: "/**",
-						},
-				  ]
-				: []),
-		],
+	async rewrites() {
+		return [
+			{
+				source: "/uploads/:path*",
+				destination: `${apiOrigin}/uploads/:path*`,
+			},
+		]
 	},
 	env: {
 		NEXT_PUBLIC_API_URL: process.env.NEXT_PUBLIC_API_URL,

@@ -9,23 +9,60 @@ The API is a **modular monolith**. Code is organized by feature, not by technica
 ```
 apps/api/src/
 ├── modules/
-│   ├── auth/            # register/login/logout, OAuth (passport), user profile routes
-│   ├── projects/        # projects, membership, share links
-│   ├── media/           # images/videos/PDFs/3D models, versions, uploads, video pipeline
+│   ├── auth/            # register/login/logout, OAuth, sessions, password reset, account
+│   ├── projects/        # projects, membership, roles, share links, invitations
+│   ├── media/           # images/videos/PDFs/3D models, versions, uploads, pipelines
 │   ├── comments/        # threaded comments, likes, resolution
+│   ├── reviews/         # approval workflow (decisions, status, due dates)
+│   ├── search/          # cross-entity search scoped to the caller's projects
 │   ├── notifications/   # in-app notifications + email fallback for offline users
 │   ├── export/          # JSON/CSV report generation
 │   ├── admin/           # admin auth, user/project management, stats
+│   ├── health/          # dependency-aware health probe
 │   └── audit/           # audit log write + query service
 ├── storage/             # StoragePort + LocalStorage / S3Storage adapters
 ├── realtime/            # Socket.IO server (rooms, presence hooks)
-├── middleware/          # JWT auth guards, multer upload staging
-├── lib/                 # prisma client, redis, presence, error types
+├── middleware/          # auth guards, role authorization, validation, rate limits, uploads
+├── lib/                 # prisma, redis, presence, config, tokens, cookies, logger, errors
 ├── app.ts               # express app wiring (routes, CORS, static uploads)
 └── index.ts             # entrypoint: http server + realtime attach
 ```
 
-Within a module the flow is `*.routes.ts` (paths + auth middleware) → `*.controller.ts` (HTTP concerns, status mapping) → `*.service.ts` (business logic, Prisma). Services call Prisma directly — there is deliberately no repository layer; Prisma is the data-access abstraction.
+Within a module the flow is `*.routes.ts` (paths + auth, authorization and
+validation middleware) → `*.controller.ts` (HTTP concerns) → `*.service.ts`
+(business logic, Prisma). Services call Prisma directly — there is deliberately
+no repository layer; Prisma is the data-access abstraction.
+
+### Authorization is declared at the route
+
+`middleware/authorize.middleware.ts` resolves the owning project from whatever
+id a route carries (`projectId`, `imageId`, `versionId`, `commentId`), checks the
+caller's role against a minimum, and publishes the resolved scope for the
+handler:
+
+```ts
+router.post(
+	"/:imageId/versions",
+	requireProjectRole("EDITOR", projectIdFromImageParam("imageId")),
+	discardStagedUploadsWhenRequestEnds,
+	upload.fields([...]),
+	imageController.uploadImageVersion
+)
+```
+
+Two properties matter. Authorization runs **before** multer, so an unauthorized
+request never writes bytes to disk. And handlers read the caller through
+`authorizedScope(res)`, which **throws** when the middleware is absent — a route
+added without a role check fails loudly instead of silently allowing everyone.
+
+### Sessions
+
+`lib/tokens.ts` signs cookies carrying `{id, typ, ver, jti}`. `typ` separates
+user from admin sessions so one can never be replayed as the other; `ver` is the
+user's `tokenVersion`, bumped on password change so every other session dies;
+`jti` identifies the session so logout can revoke exactly it (a `RevokedSession`
+row, pruned hourly). `lib/config.ts` refuses to boot in production without a
+strong `JWT_SECRET`.
 
 ### Ports & adapters (where they pay off)
 
@@ -39,9 +76,33 @@ Interfaces exist only at seams where implementations genuinely swap:
 
 Uploads are accepted in formats browsers cannot display, then normalised server-side so review always works on something viewable. The original is stored as the version's `url`; the viewable derivative goes in `proxyUrl`, and every consumer prefers `proxyUrl || url`. `needsBrowserSafeImageRendition()` in the upload middleware decides which images need one (TIFF, PSD, TGA, EXR, DPX, JPEG 2000, PCX → PNG via `image-pipeline.ts`); every video gets one regardless of container (`video-pipeline.ts`). Formats with no decoder anywhere in the stack — HEIC/HEIF (the bundled ffmpeg has no HEIF demuxer), camera RAW, SVG (deliberately, as an XSS vector), STEP/IGES, SBSAR — are refused at the boundary, and the browser refuses them before uploading.
 
+### Review workflow
+
+`modules/reviews` records one decision per reviewer per version
+(`APPROVED` / `CHANGES_REQUESTED`, with an optional note). The version's
+`reviewStatus` is denormalised from those decisions inside the same transaction
+so list queries stay a single indexed read; a single `CHANGES_REQUESTED`
+outweighs any number of approvals. Decisions are audited, announced on the
+version's socket room, and notified to the rest of the project.
+
 ### Video proxy pipeline
 
-Uploaded videos are transcoded in the background to a web-friendly H.264/AAC MP4 capped at 1080p (`modules/media/video-pipeline.ts`, ffmpeg via `ffmpeg-static`). The upload request copies the staged file aside, stores the original, marks the version `proxyStatus: PENDING` and returns immediately; an in-process queue transcodes, probes the real duration with ffprobe, generates a poster frame when the client didn't supply one, stores the results through the storage port and marks the version `READY` (or `FAILED` — the player falls back to the original file). Completion is pushed to viewers over the version's socket room as `version-updated`. Jobs left `PENDING` by a crashed process are marked `FAILED` at boot.
+Uploaded videos are transcoded in the background to a web-friendly H.264/AAC MP4
+capped at 1080p (`modules/media/video-pipeline.ts`, ffmpeg via `ffmpeg-static`).
+The upload request copies the staged file aside, stores the original, marks the
+version `proxyStatus: PENDING` and returns immediately; a queue transcodes,
+probes the real duration and frame rate with ffprobe, generates a poster frame
+when the client didn't supply one, stores the results through the storage port
+and marks the version `READY` (or `FAILED` — the player falls back to the
+original file). Completion is pushed to viewers over the version's socket room as
+`version-updated`.
+
+Both the video and image queues share `rendition-queue.ts`, which bounds
+concurrency (`VIDEO_WORKER_CONCURRENCY`, `IMAGE_WORKER_CONCURRENCY`) and stamps
+each job with the processing instance's id. Boot-time recovery therefore only
+fails jobs **this** instance owned, plus long-unclaimed ones — restarting one
+replica no longer cancels another's in-flight work, and each instance keeps its
+own scratch directory.
 
 ### 3D model ingest
 
@@ -51,7 +112,25 @@ Compressed glTF is handled in both the viewer and the thumbnail pass via `lib/gl
 
 ### Real-time
 
-`realtime/socket.ts` owns the Socket.IO server. Clients join rooms per user (`user:<id>`), per project (`project:<id>`) and per image version (`imageVersion:<id>`); services emit domain events (`comment-updated`, `comment-deleted`, `notification`, …) into those rooms. Presence tracking feeds the notification service so offline members get email instead.
+`realtime/socket.ts` owns the Socket.IO server. Connections are rejected unless they carry a valid session cookie, and identity
+always comes from that session — never from the client's payload. Clients join
+rooms per user (`user:<id>`), per project (`project:<id>`, membership-checked)
+and per image version (`imageVersion:<id>`, membership-checked); services emit
+domain events (`comment-updated`, `comment-deleted`, `review-updated`,
+`notification`, …) into those rooms.
+
+With `REDIS_URL` set, the Redis adapter fans events out across replicas and
+presence lives in Redis (a TTL-refreshed set per user), so `isUserOnline` — and
+therefore the offline-email fallback — is correct behind more than one instance.
+Without Redis a single instance still works fully; the log says so at boot.
+
+### Media delivery
+
+Stored media is never served anonymously. `GET /uploads/:filename` authenticates
+the caller, maps the stored path to its project through the `MediaAsset` table (a
+primary-key lookup), verifies membership, and then either streams from disk or —
+when the bucket is private — redirects to a short-lived presigned URL. Removing
+someone from a project actually revokes their access to its files.
 
 ### Audit logging
 
@@ -59,7 +138,20 @@ Every security-relevant mutation is recorded via `modules/audit/audit.service.ts
 
 ### Errors
 
-`lib/errors.ts` defines a small `AppError` hierarchy (`NotFoundError`, `ForbiddenError`, `ValidationError`) carrying HTTP status codes; controllers translate them at the boundary.
+`lib/errors.ts` defines a small `AppError` hierarchy (`NotFoundError`,
+`ForbiddenError`, `ValidationError`) carrying HTTP status codes. Controllers
+translate them through one helper, `respondWithError` (`lib/http.ts`), which maps
+known errors to their status and everything else to a logged `500` with a generic
+body — unknown failures never become 4xx, and internal error objects never reach
+a client. Request bodies and query strings are validated by zod schemas
+(`*.schema.ts`) declared on the route.
+
+### Logging
+
+`lib/logger.ts` writes one JSON object per line in production (`level`,
+`message`, `time`, plus context) and a readable form in development, filtered by
+`LOG_LEVEL`. It exists so operational output carries no user content: log lines
+reference ids, not comment text or email addresses.
 
 ## Frontend
 
@@ -71,7 +163,20 @@ Next.js 15 App Router with React 19. Conventions:
 
 ## Data model
 
-PostgreSQL via Prisma (`apps/api/prisma/schema.prisma`): `User` → `ProjectMember` → `Project` → `Image` → `ImageVersion` → `Comment` (self-referencing for threads) plus `CommentLike`, `Notification`, `ShareLink` and `AuditLog`. Media binaries live outside the database (disk or object store); rows store the URL.
+PostgreSQL via Prisma (`apps/api/prisma/schema.prisma`): `User` →
+`ProjectMember` → `Project` → `Image` → `ImageVersion` → `Comment`
+(self-referencing for threads) plus `CommentLike`, `Review`, `Notification`,
+`ShareLink`, `ProjectInvitation`, `MediaAsset`, `PasswordResetToken`,
+`RevokedSession` and `AuditLog`. Media binaries live outside the database (disk or
+object store); rows store the URL, and `MediaAsset` maps each stored path back to
+its project so delivery can be authorized in one lookup.
+
+Every foreign key used on a read path is indexed. This is load-bearing: a July
+2025 migration dropped the indexes on `Comment`, `CommentLike`, `Image` and
+`ImageVersion` and nothing restored them, so project and comment views ran
+sequential scans until they were reinstated. `@@unique([imageId, versionNumber])`
+makes concurrent version uploads a constraint violation the service retries,
+rather than silently duplicated version numbers.
 
 ## Testing
 

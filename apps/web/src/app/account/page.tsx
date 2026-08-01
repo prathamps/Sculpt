@@ -8,9 +8,10 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Loader2, LogOut } from "lucide-react"
 import { toast } from "sonner"
+import { UserAvatar } from "@/components/UserAvatar"
+import { AccountDataSection } from "@/components/AccountDataSection"
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001"
 
@@ -112,15 +113,13 @@ export default function AccountPage() {
 						<CardContent>
 							<form onSubmit={saveProfile} className="flex flex-col gap-5">
 								<div className="flex items-center gap-4">
-									<Avatar className="h-16 w-16">
-										<AvatarImage
-											src={`https://api.dicebear.com/7.x/micah/svg?seed=${user.email}`}
-											alt=""
-										/>
-										<AvatarFallback>
-											{(user.name?.charAt(0) || user.email.charAt(0)).toUpperCase()}
-										</AvatarFallback>
-									</Avatar>
+									<UserAvatar
+										className="h-16 w-16"
+										fallbackClassName="text-lg"
+										name={user.name}
+										email={user.email}
+										avatarUrl={user.avatarUrl}
+									/>
 									<div className="min-w-0">
 										<p className="truncate font-medium">{user.name || user.email}</p>
 										<p className="text-sm text-muted-foreground">
@@ -228,6 +227,8 @@ export default function AccountPage() {
 							</form>
 						</CardContent>
 					</Card>
+
+					<AccountDataSection />
 
 					<Card>
 						<CardHeader>

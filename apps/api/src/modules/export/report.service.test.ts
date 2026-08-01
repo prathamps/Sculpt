@@ -86,4 +86,38 @@ describe("buildImageReportCsv", () => {
 		expect(row).toContain(",resolved,")
 		expect(row).toContain("12.35")
 	})
+
+	it("defuses a spreadsheet formula hidden in comment content", () => {
+		const csv = buildImageReportCsv(
+			baseReport([
+				version([comment({ content: '=HYPERLINK("http://evil.test","clickme")' })]),
+			])
+		)
+		expect(csv).toContain("'=HYPERLINK")
+		expect(csv).not.toMatch(/(^|,|")=HYPERLINK/m)
+	})
+
+	it("defuses every formula trigger character a spreadsheet honours", () => {
+		for (const prefix of ["=", "+", "-", "@"]) {
+			const csv = buildImageReportCsv(
+				baseReport([version([comment({ content: `${prefix}cmd|'/c calc'!A1` })])])
+			)
+			expect(csv).toContain(`'${prefix}cmd`)
+		}
+	})
+
+	it("defuses a formula smuggled through the author name", () => {
+		const csv = buildImageReportCsv(
+			baseReport([version([comment({ author: "=1+1" })])])
+		)
+		expect(csv).toContain("'=1+1")
+	})
+
+	it("leaves ordinary content unprefixed", () => {
+		const csv = buildImageReportCsv(
+			baseReport([version([comment({ content: "looks good to me" })])])
+		)
+		expect(csv).toContain("looks good to me")
+		expect(csv).not.toContain("'looks good")
+	})
 })

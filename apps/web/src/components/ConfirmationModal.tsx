@@ -18,6 +18,7 @@ interface ConfirmationModalProps {
 	description: string
 	confirmText?: string
 	isConfirming?: boolean
+	children?: React.ReactNode
 }
 
 export function ConfirmationModal({
@@ -28,6 +29,7 @@ export function ConfirmationModal({
 	description,
 	confirmText = "Delete",
 	isConfirming = false,
+	children,
 }: ConfirmationModalProps) {
 	return (
 		<Dialog open={isOpen} onOpenChange={onClose}>
@@ -36,6 +38,7 @@ export function ConfirmationModal({
 					<DialogTitle>{title}</DialogTitle>
 					<DialogDescription>{description}</DialogDescription>
 				</DialogHeader>
+				{children}
 				<DialogFooter>
 					<Button onClick={onClose} variant="secondary" type="button">
 						Cancel

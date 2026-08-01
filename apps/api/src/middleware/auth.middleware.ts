@@ -1,8 +1,9 @@
 import passport from "passport"
 import { Request, Response, NextFunction } from "express"
 import { UserRole } from "@prisma/client"
-import jwt from "jsonwebtoken"
 import { prisma } from "../lib/prisma"
+import { ADMIN_SESSION_COOKIE } from "../lib/cookies"
+import { authenticateSessionToken } from "../modules/auth/session.service"
 import { AuthenticatedRequest, AuthenticatedUser } from "../types"
 
 export const authenticateJWT = (
@@ -31,31 +32,27 @@ export const authenticateAdmin = async (
 	res: Response,
 	next: NextFunction
 ) => {
-	const adminToken = req.cookies.admin_token
+	const claims = await authenticateSessionToken(
+		req.cookies?.[ADMIN_SESSION_COOKIE],
+		"admin"
+	)
 
-	if (!adminToken) {
+	if (!claims) {
 		return res.status(401).json({ message: "Admin authentication required" })
 	}
 
-	try {
-		const decoded = jwt.verify(
-			adminToken,
-			process.env.JWT_SECRET || "your_jwt_secret"
-		) as { id: string }
+	const admin = await prisma.user.findUnique({ where: { id: claims.id } })
 
-		const admin = await prisma.user.findUnique({
-			where: { id: decoded.id },
-		})
-
-		if (!admin || admin.role !== UserRole.ADMIN) {
-			return res.status(403).json({ message: "Admin privileges required" })
-		}
-
-		req.user = admin
-		return next()
-	} catch {
-		return res.status(401).json({ message: "Invalid admin token" })
+	if (!admin || admin.tokenVersion !== claims.ver) {
+		return res.status(401).json({ message: "Admin session is no longer valid" })
 	}
+
+	if (admin.role !== UserRole.ADMIN) {
+		return res.status(403).json({ message: "Admin privileges required" })
+	}
+
+	req.user = admin
+	return next()
 }
 
 export const adminOnly = (req: AuthenticatedRequest, res: Response, next: NextFunction) => {

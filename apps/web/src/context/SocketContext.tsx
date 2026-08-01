@@ -2,6 +2,7 @@
 
 import {
 	createContext,
+	useCallback,
 	useContext,
 	useEffect,
 	useState,
@@ -11,13 +12,15 @@ import {
 } from "react"
 import { io, Socket } from "socket.io-client"
 import { useAuth } from "./AuthContext"
+import { Paginated, api } from "@/lib/api"
+import { ignoreFailure } from "@/lib/errors"
 
 const SOCKET_URL = process.env.NEXT_PUBLIC_SOCKET_URL || "http://localhost:3001"
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001"
 
 interface SocketContextType {
 	socket: Socket | null
 	isConnected: boolean
+	reconnectCount: number
 	joinImageVersion: (imageVersionId: string) => void
 	leaveImageVersion: (imageVersionId: string) => void
 }
@@ -25,13 +28,12 @@ interface SocketContextType {
 const SocketContext = createContext<SocketContextType>({
 	socket: null,
 	isConnected: false,
+	reconnectCount: 0,
 	joinImageVersion: () => {},
 	leaveImageVersion: () => {},
 })
 
-export const useSocket = () => {
-	return useContext(SocketContext)
-}
+export const useSocket = () => useContext(SocketContext)
 
 interface SocketProviderProps {
 	children: ReactNode
@@ -39,121 +41,100 @@ interface SocketProviderProps {
 
 export const SocketProvider = ({ children }: SocketProviderProps) => {
 	const { user, isAuthenticated } = useAuth()
-	const socketRef = useRef<Socket | null>(null)
+	const userId = user?.id ?? null
+	const [socket, setSocket] = useState<Socket | null>(null)
 	const [isConnected, setIsConnected] = useState(false)
-	const currentImageVersionRef = useRef<string | null>(null)
+	const [reconnectCount, setReconnectCount] = useState(0)
+	const joinedVersionRef = useRef<string | null>(null)
+	const hasConnectedBeforeRef = useRef(false)
 
 	useEffect(() => {
-		let socketInstance: Socket | null = null
+		if (!isAuthenticated || !userId) return
 
-		if (isAuthenticated && user && !socketRef.current) {
-			console.log("Creating new socket connection...")
+		const instance = io(SOCKET_URL, {
+			withCredentials: true,
+			reconnectionAttempts: Infinity,
+			reconnectionDelay: 1000,
+			reconnectionDelayMax: 10000,
+			timeout: 20000,
+			transports: ["websocket", "polling"],
+		})
 
-			socketInstance = io(SOCKET_URL, {
-				withCredentials: true,
-				reconnectionAttempts: 10,
-				reconnectionDelay: 1000,
-				timeout: 20000,
-				autoConnect: true,
-				transports: ["websocket"],
-			})
+		const joinAccessibleProjects = () =>
+			api
+				.get<Paginated<{ id: string }>>("/api/projects?pageSize=100")
+				.then((response) =>
+					response.items.forEach((project) =>
+						instance.emit("joinProject", project.id)
+					)
+				)
+				.catch(ignoreFailure)
 
-			socketInstance.on("connect", () => {
-				console.log("Socket connected:", socketInstance?.id)
-				setIsConnected(true)
+		instance.on("connect", () => {
+			setIsConnected(true)
 
-				socketInstance?.emit("join", user.id)
-				console.log(`Joined user room: ${user.id}`)
+			instance.emit("join")
+			void joinAccessibleProjects()
 
-				if (socketInstance) {
-					fetchProjectsAndJoinRooms(socketInstance)
-				}
-			})
+			const rejoinVersionId = joinedVersionRef.current
+			if (rejoinVersionId) {
+				instance.emit("joinImageVersion", rejoinVersionId)
+			}
 
-			socketInstance.on("disconnect", (reason: string) => {
-				console.log("Socket disconnected, keeping instance for auto-reconnect:", reason)
-				setIsConnected(false)
-			})
+			if (hasConnectedBeforeRef.current) {
+				setReconnectCount((count) => count + 1)
+			}
+			hasConnectedBeforeRef.current = true
+		})
 
-			socketInstance.on("connect_error", (error: Error) => {
-				console.error("Socket connection error:", error.message)
-				setIsConnected(false)
-			})
+		instance.on("disconnect", () => setIsConnected(false))
+		instance.on("connect_error", () => setIsConnected(false))
 
-			socketRef.current = socketInstance
-		}
+		setSocket(instance)
 
 		return () => {
-			if (socketRef.current) {
-				console.log("Cleaning up socket connection")
-				socketRef.current.disconnect()
-				socketRef.current = null
-				currentImageVersionRef.current = null
-			}
+			instance.removeAllListeners()
+			instance.disconnect()
+			setSocket(null)
+			setIsConnected(false)
+			joinedVersionRef.current = null
+			hasConnectedBeforeRef.current = false
 		}
-	}, [isAuthenticated, user])
+	}, [isAuthenticated, userId])
 
-	const fetchProjectsAndJoinRooms = async (socketInstance: Socket) => {
-		try {
-			const response = await fetch(`${API_URL}/api/projects`, {
-				credentials: "include",
-			})
-			if (response.ok) {
-				const projects = await response.json()
-				if (projects && projects.length > 0) {
-					projects.forEach((project: { id: string }) => {
-						socketInstance.emit("joinProject", project.id)
-						console.log(`Requested to join project room: ${project.id}`)
-					})
-				} else {
-					console.log(
-						"No projects to join - user is not a member of any projects"
-					)
-				}
-			}
-		} catch (error) {
-			console.error("Failed to fetch projects to join rooms:", error)
-		}
-	}
+	const joinImageVersion = useCallback(
+		(imageVersionId: string) => {
+			if (!imageVersionId) return
 
-	const joinImageVersion = (imageVersionId: string) => {
-		if (!socketRef.current || !isConnected || !imageVersionId) return
+			const previous = joinedVersionRef.current
+			if (previous === imageVersionId) return
 
-		if (currentImageVersionRef.current !== imageVersionId) {
-			if (currentImageVersionRef.current) {
-				console.log(
-					`Leaving previous image version room: ${currentImageVersionRef.current}`
-				)
-				socketRef.current.emit(
-					"leaveImageVersion",
-					currentImageVersionRef.current
-				)
-			}
+			if (previous && socket) socket.emit("leaveImageVersion", previous)
 
-			console.log(`Joining image version room: ${imageVersionId}`)
-			socketRef.current.emit("joinImageVersion", imageVersionId)
-			currentImageVersionRef.current = imageVersionId
-		}
-	}
+			joinedVersionRef.current = imageVersionId
+			if (socket?.connected) socket.emit("joinImageVersion", imageVersionId)
+		},
+		[socket]
+	)
 
-	const leaveImageVersion = (imageVersionId: string) => {
-		if (!socketRef.current || !isConnected) return
-
-		if (currentImageVersionRef.current === imageVersionId) {
-			console.log(`Leaving image version room: ${imageVersionId}`)
-			socketRef.current.emit("leaveImageVersion", imageVersionId)
-			currentImageVersionRef.current = null
-		}
-	}
+	const leaveImageVersion = useCallback(
+		(imageVersionId: string) => {
+			if (joinedVersionRef.current !== imageVersionId) return
+			joinedVersionRef.current = null
+			if (socket?.connected) socket.emit("leaveImageVersion", imageVersionId)
+		},
+		[socket]
+	)
 
 	const contextValue = useMemo(
 		() => ({
-			socket: socketRef.current,
+			socket,
 			isConnected,
+			reconnectCount,
 			joinImageVersion,
 			leaveImageVersion,
 		}),
-		[isConnected, joinImageVersion, leaveImageVersion]
+		[socket, isConnected, reconnectCount, joinImageVersion, leaveImageVersion]
 	)
 
 	return (

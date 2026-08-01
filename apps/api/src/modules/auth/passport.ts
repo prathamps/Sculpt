@@ -4,31 +4,37 @@ import { Strategy as GoogleStrategy } from "passport-google-oauth20"
 import { Strategy as GitHubStrategy } from "passport-github2"
 import { Request } from "express"
 import { prisma } from "../../lib/prisma"
+import { jwtSecret } from "../../lib/config"
+import { SESSION_COOKIE } from "../../lib/cookies"
 import { findOrCreateOAuthUser } from "./auth.service"
+import { isSessionRevoked } from "./session.service"
 
 const cookieExtractor = (req: Request) => {
 	let token = null
 	if (req && req.cookies) {
-		token = req.cookies["token"]
+		token = req.cookies[SESSION_COOKIE]
 	}
 	return token
 }
 
 const opts = {
 	jwtFromRequest: cookieExtractor,
-	secretOrKey: process.env.JWT_SECRET || "your_jwt_secret",
+	secretOrKey: jwtSecret(),
 }
 
 passport.use(
 	new JwtStrategy(opts, async (jwt_payload, done) => {
 		try {
+			if (jwt_payload?.typ !== "user") return done(null, false)
+			if (typeof jwt_payload?.ver !== "number") return done(null, false)
+			if (typeof jwt_payload?.jti !== "string") return done(null, false)
+			if (await isSessionRevoked(jwt_payload.jti)) return done(null, false)
 			const user = await prisma.user.findUnique({
 				where: { id: jwt_payload.id },
 			})
-			if (user) {
-				return done(null, user)
-			}
-			return done(null, false)
+			if (!user) return done(null, false)
+			if (user.tokenVersion !== jwt_payload.ver) return done(null, false)
+			return done(null, user)
 		} catch (error) {
 			return done(error, false)
 		}

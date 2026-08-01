@@ -6,15 +6,47 @@ import {
 	logout,
 	getOAuthProviders,
 	oauthCallback,
+	requestPasswordReset,
+	completePasswordReset,
 } from "./auth.controller"
 import { oauthProviders } from "./passport"
+import { validateBody } from "../../middleware/validate.middleware"
+import {
+	completePasswordResetSchema,
+	loginSchema,
+	registerSchema,
+	requestPasswordResetSchema,
+} from "./auth.schema"
+import {
+	loginRateLimit,
+	passwordResetRateLimit,
+	registerRateLimit,
+} from "../../middleware/rate-limit.middleware"
 
 const router = Router()
 
-router.post("/register", register)
-router.post("/login", login)
+router.post(
+	"/register",
+	registerRateLimit(),
+	validateBody(registerSchema),
+	register
+)
+router.post("/login", loginRateLimit(), validateBody(loginSchema), login)
 router.post("/logout", logout)
 router.get("/providers", getOAuthProviders)
+
+router.post(
+	"/password-reset/request",
+	passwordResetRateLimit(),
+	validateBody(requestPasswordResetSchema),
+	requestPasswordReset
+)
+router.post(
+	"/password-reset/complete",
+	passwordResetRateLimit(),
+	validateBody(completePasswordResetSchema),
+	completePasswordReset
+)
 
 const FRONTEND_URL =
 	process.env.FRONTEND_URL ||

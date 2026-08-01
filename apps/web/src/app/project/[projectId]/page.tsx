@@ -8,8 +8,13 @@ import { ImageUploadModal } from "@/components/ImageUploadModal"
 import { ProjectSidebar } from "@/components/ProjectSidebar"
 import { ProjectContentView } from "@/components/ProjectContentView"
 import { Header } from "@/components/Header"
-import { Project } from "@/types"
+import { Project, ProjectRole } from "@/types"
 import { Loader2 } from "lucide-react"
+import { toast } from "sonner"
+import { Paginated, api } from "@/lib/api"
+import { describeError } from "@/lib/errors"
+import { roleAtLeast } from "@/lib/utils"
+import { useProjectFolders } from "@/hooks/useProjectFolders"
 
 export default function ProjectPage() {
 	const { loading, isAuthenticated } = useAuth()
@@ -23,31 +28,29 @@ export default function ProjectPage() {
 	const [isUploadModalOpen, setUploadModalOpen] = useState(false)
 	const [isSidebarOpen, setSidebarOpen] = useState(false)
 	const [isProjectLoading, setIsProjectLoading] = useState(true)
+	const [currentFolderId, setCurrentFolderId] = useState<string | null>(null)
+	const [role, setRole] = useState<ProjectRole | null>(null)
+	const { folders, refreshFolders } = useProjectFolders(projectId)
 
 	const handleRefreshProjects = useCallback(async () => {
 		if (!isAuthenticated) return
 		setIsProjectLoading(true)
-		const URI = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001"
 		try {
-			const res = await fetch(`${URI}/api/projects`, {
-				credentials: "include",
-			})
-			if (res.ok) {
-				const data: Project[] = await res.json()
-				setProjects(data)
+			const page = await api.get<Paginated<Project>>(
+				"/api/projects?pageSize=100"
+			)
+			setProjects(page.items)
 
-				const currentProject = data.find((p) => p.id === projectId)
-				if (currentProject) {
-					setSelectedProject(currentProject)
-				} else if (data.length > 0 && data[0]?.id) {
-					const firstProjectId = data[0]?.id
-					if (firstProjectId) {
-						router.replace(`/project/${firstProjectId}`)
-					}
-				}
+			const currentProject = page.items.find(
+				(project) => project.id === projectId
+			)
+			if (currentProject) {
+				setSelectedProject(currentProject)
+			} else if (page.items[0]?.id) {
+				router.replace(`/project/${page.items[0].id}`)
 			}
 		} catch (error) {
-			console.error("Failed to fetch projects:", error)
+			toast.error(describeError(error, "Could not load your projects."))
 		} finally {
 			setIsProjectLoading(false)
 		}
@@ -60,6 +63,24 @@ export default function ProjectPage() {
 			router.push("/login")
 		}
 	}, [isAuthenticated, loading, router, handleRefreshProjects])
+
+	useEffect(() => {
+		setCurrentFolderId(null)
+	}, [projectId])
+
+	useEffect(() => {
+		if (!isAuthenticated || !projectId) return
+		let cancelled = false
+		api
+			.get<{ role: ProjectRole }>(`/api/projects/${projectId}/my-role`)
+			.then((data) => {
+				if (!cancelled) setRole(data.role)
+			})
+			.catch((): void => undefined)
+		return (): void => {
+			cancelled = true
+		}
+	}, [isAuthenticated, projectId])
 
 	if (loading) {
 		return (
@@ -99,7 +120,15 @@ export default function ProjectPage() {
 					<ProjectContentView
 						project={selectedProject}
 						onUploadClick={() => setUploadModalOpen(true)}
-						onProjectChanged={handleRefreshProjects}
+						onProjectChanged={() => {
+							handleRefreshProjects()
+							refreshFolders()
+						}}
+						currentFolderId={currentFolderId}
+						onNavigateFolder={setCurrentFolderId}
+						folders={folders}
+						onFoldersChanged={refreshFolders}
+						canEdit={roleAtLeast(role, "EDITOR")}
 					/>
 				)}
 
@@ -114,8 +143,12 @@ export default function ProjectPage() {
 				<ImageUploadModal
 					isOpen={isUploadModalOpen}
 					onClose={() => setUploadModalOpen(false)}
-					onUploadComplete={handleRefreshProjects}
+					onUploadComplete={() => {
+						handleRefreshProjects()
+						refreshFolders()
+					}}
 					projectId={selectedProject?.id || null}
+					folderId={currentFolderId}
 				/>
 			</div>
 		</div>

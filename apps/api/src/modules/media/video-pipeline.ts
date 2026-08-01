@@ -1,25 +1,31 @@
 import fs from "fs/promises"
 import path from "path"
 import crypto from "crypto"
-import { ImageVersion, ProxyStatus } from "@prisma/client"
+import { ProxyStatus } from "@prisma/client"
 import { prisma } from "../../lib/prisma"
-import { storage, uploadsDir } from "../../storage"
-import { io } from "../../realtime/socket"
+import { storage } from "../../storage"
 import {
 	capturePosterFrame,
 	probeDuration,
+	probeFrameRate,
 	transcodeToWebProxy,
 } from "./ffmpeg"
+import {
+	RenditionJob,
+	createRenditionQueue,
+	emitVersionUpdated,
+	processingDir,
+} from "./rendition-queue"
+import { recordProjectAssets } from "./media-access.service"
 
-export interface VideoProxyJob {
-	versionId: string
-	sourcePath: string
+export interface VideoProxyJob extends RenditionJob {
 	needsPoster: boolean
 }
 
-const processingDir = path.join(uploadsDir, ".processing")
-const queue: VideoProxyJob[] = []
-let draining = false
+const DEFAULT_VIDEO_CONCURRENCY = 1
+
+const videoConcurrency = (): number =>
+	Math.max(1, Number(process.env.VIDEO_WORKER_CONCURRENCY) || DEFAULT_VIDEO_CONCURRENCY)
 
 export const stageVideoForProcessing = async (
 	stagedUploadPath: string
@@ -37,65 +43,6 @@ export const discardStagedVideo = async (workPath: string): Promise<void> => {
 	await fs.unlink(workPath).catch(() => undefined)
 }
 
-export const enqueueVideoProxy = (job: VideoProxyJob): void => {
-	queue.push(job)
-	void drainQueue()
-}
-
-export const failAbandonedProxyJobs = async (): Promise<void> => {
-	await prisma.imageVersion.updateMany({
-		where: { proxyStatus: ProxyStatus.PENDING },
-		data: { proxyStatus: ProxyStatus.FAILED },
-	})
-	await fs.rm(processingDir, { recursive: true, force: true }).catch(
-		() => undefined
-	)
-}
-
-const drainQueue = async (): Promise<void> => {
-	if (draining) return
-	draining = true
-	let job: VideoProxyJob | undefined
-	while ((job = queue.shift())) {
-		try {
-			await buildProxy(job)
-		} catch (error) {
-			await markFailed(job.versionId, error)
-		}
-		await discardStagedVideo(job.sourcePath)
-	}
-	draining = false
-}
-
-const buildProxy = async (job: VideoProxyJob): Promise<void> => {
-	const proxyPath = path.join(processingDir, `proxy-${job.versionId}.mp4`)
-	const duration = await probeDuration(job.sourcePath)
-	await transcodeToWebProxy(job.sourcePath, proxyPath)
-	const proxyUrl = await storage.store({
-		path: proxyPath,
-		originalName: `proxy-${job.versionId}.mp4`,
-		mimeType: "video/mp4",
-	})
-	const thumbnailUrl = job.needsPoster ? await buildPoster(job) : null
-
-	try {
-		const version = await prisma.imageVersion.update({
-			where: { id: job.versionId },
-			data: {
-				proxyUrl,
-				proxyStatus: ProxyStatus.READY,
-				...(duration !== null ? { duration } : {}),
-				...(thumbnailUrl ? { thumbnailUrl } : {}),
-			},
-		})
-		emitVersionUpdated(version)
-	} catch (error) {
-		await storage.remove(proxyUrl)
-		if (thumbnailUrl) await storage.remove(thumbnailUrl)
-		throw error
-	}
-}
-
 const buildPoster = async (job: VideoProxyJob): Promise<string | null> => {
 	const posterPath = path.join(processingDir, `poster-${job.versionId}.jpg`)
 	try {
@@ -111,33 +58,55 @@ const buildPoster = async (job: VideoProxyJob): Promise<string | null> => {
 	}
 }
 
-const markFailed = async (
-	versionId: string,
-	error: unknown
-): Promise<void> => {
-	console.error(`Video proxy failed for version ${versionId}:`, error)
+const buildProxy = async (job: VideoProxyJob): Promise<void> => {
+	await fs.mkdir(processingDir, { recursive: true })
+	const proxyPath = path.join(processingDir, `proxy-${job.versionId}.mp4`)
+	const [duration, frameRate] = await Promise.all([
+		probeDuration(job.sourcePath),
+		probeFrameRate(job.sourcePath),
+	])
+	await transcodeToWebProxy(job.sourcePath, proxyPath)
+
+	const proxyUrl = await storage.store({
+		path: proxyPath,
+		originalName: `proxy-${job.versionId}.mp4`,
+		mimeType: "video/mp4",
+	})
+	const thumbnailUrl = job.needsPoster ? await buildPoster(job) : null
+
 	try {
 		const version = await prisma.imageVersion.update({
-			where: { id: versionId },
-			data: { proxyStatus: ProxyStatus.FAILED },
+			where: { id: job.versionId },
+			data: {
+				proxyUrl,
+				proxyStatus: ProxyStatus.READY,
+				...(duration !== null ? { duration } : {}),
+				...(frameRate !== null ? { frameRate } : {}),
+				...(thumbnailUrl ? { thumbnailUrl } : {}),
+			},
+			include: { image: { select: { projectId: true } } },
 		})
+
+		await recordProjectAssets(
+			[proxyUrl, thumbnailUrl],
+			version.image.projectId
+		)
 		emitVersionUpdated(version)
-	} catch {
-		return
+	} catch (error) {
+		await storage.remove(proxyUrl)
+		if (thumbnailUrl) await storage.remove(thumbnailUrl)
+		throw error
 	}
 }
 
-const emitVersionUpdated = (version: ImageVersion): void => {
-	try {
-		io.to(`imageVersion:${version.id}`).emit("version-updated", {
-			id: version.id,
-			imageId: version.imageId,
-			proxyUrl: version.proxyUrl,
-			proxyStatus: version.proxyStatus,
-			duration: version.duration,
-			thumbnailUrl: version.thumbnailUrl,
-		})
-	} catch (error) {
-		console.error("version-updated emit failed:", error)
-	}
-}
+const queue = createRenditionQueue<VideoProxyJob>({
+	name: "video-proxy",
+	concurrency: videoConcurrency(),
+	run: buildProxy,
+})
+
+export const enqueueVideoProxy = (job: VideoProxyJob): void => queue.enqueue(job)
+
+export const videoQueueDepth = (): number => queue.depth()
+
+export { failAbandonedProxyJobs } from "./rendition-queue"

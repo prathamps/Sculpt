@@ -1,7 +1,7 @@
 import { prisma } from "../../lib/prisma"
 import { ProjectRole } from "@prisma/client"
 
-const ROLE_RANK: Record<ProjectRole, number> = {
+export const ROLE_RANK: Record<ProjectRole, number> = {
 	VIEWER: 0,
 	MEMBER: 1,
 	EDITOR: 2,
@@ -62,6 +62,15 @@ export const canViewVersion = async (
 	if (!projectId) return false
 	const role = await getMemberRole(projectId, userId)
 	return roleMeets(role, "VIEWER")
+}
+
+export const canViewInternalComments = async (
+	userId: string,
+	imageVersionId: string
+): Promise<boolean> => {
+	const projectId = await getVersionProjectId(imageVersionId)
+	if (!projectId) return false
+	return roleMeets(await getMemberRole(projectId, userId), "EDITOR")
 }
 
 export const isProjectMember = async (

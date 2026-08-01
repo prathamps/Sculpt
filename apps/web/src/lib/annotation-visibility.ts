@@ -6,18 +6,42 @@ export interface TimedAnnotation {
 	t?: number | null
 	tEnd?: number | null
 	isHighlighted?: boolean
+	pinned?: boolean
+}
+
+export interface TimeWindow {
+	start: number
+	end: number
+}
+
+export const annotationTimeWindow = (
+	annotation: TimedAnnotation
+): TimeWindow | null => {
+	const start = annotation.t
+	if (start === undefined || start === null) return null
+	return {
+		start,
+		end: annotation.tEnd ?? start + INSTANT_ANNOTATION_VISIBILITY_SECONDS,
+	}
+}
+
+export const timeWindowsOverlap = (
+	a: TimeWindow | null,
+	b: TimeWindow | null
+): boolean => {
+	if (!a || !b) return true
+	return a.start <= b.end && b.start <= a.end
 }
 
 export const isAnnotationVisibleAt = (
 	annotation: TimedAnnotation,
 	currentTime: number
 ): boolean => {
-	if (annotation.isHighlighted) return true
-	const start = annotation.t
-	if (start === undefined || start === null) return true
-	const end = annotation.tEnd ?? start + INSTANT_ANNOTATION_VISIBILITY_SECONDS
+	if (annotation.pinned || annotation.isHighlighted) return true
+	const window = annotationTimeWindow(annotation)
+	if (!window) return true
 	return (
-		currentTime >= start - PLAYHEAD_SAMPLING_EPSILON_SECONDS &&
-		currentTime <= end + PLAYHEAD_SAMPLING_EPSILON_SECONDS
+		currentTime >= window.start - PLAYHEAD_SAMPLING_EPSILON_SECONDS &&
+		currentTime <= window.end + PLAYHEAD_SAMPLING_EPSILON_SECONDS
 	)
 }
