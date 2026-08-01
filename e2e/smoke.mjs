@@ -216,6 +216,24 @@ check(
 	pinComments.some((c) => c.modelAnchor?.position?.length === 3)
 )
 
+let modelRefetches = 0
+const countModelFetches = (request) => {
+	if (/\.(glb|gltf)(\?|$)/i.test(request.url())) modelRefetches += 1
+}
+page.on("request", countModelFetches)
+await page.click('button[aria-label^="Go to comment 1"]')
+await page.waitForTimeout(2500)
+page.off("request", countModelFetches)
+check(
+	"selecting a 3D comment flies the camera without reloading the model",
+	modelRefetches === 0,
+	`refetches=${modelRefetches}`
+)
+check(
+	"the model stays on screen while the camera moves to the pin",
+	await page.locator("canvas").isVisible()
+)
+
 const video = await openViewer("sample-video.mp4")
 check(
 	"video viewer renders a player",
@@ -439,6 +457,71 @@ check(
 const resolveRes = await apiJson(`/api/images/comments/${createdComment?.id}/resolve`, {})
 check("resolve a comment", resolveRes.ok)
 
+const attachmentForm = new FormData()
+attachmentForm.append(
+	"files",
+	new Blob([PNG_1PX], { type: "image/png" }),
+	"reference.png"
+)
+const attachRes = await api(
+	`/api/images/comments/${createdComment?.id}/attachments`,
+	{ method: "POST", body: attachmentForm }
+)
+const attachments = attachRes.ok ? await attachRes.json() : null
+check(
+	"attach a reference image to your own comment",
+	attachRes.status === 201 &&
+		attachments?.length === 1 &&
+		attachments[0].fileName === "reference.png",
+	`status=${attachRes.status}`
+)
+
+const attachedComments = await api(
+	`/api/images/versions/${reviewVersionId}/comments`
+).then((r) => (r.ok ? r.json() : []))
+check(
+	"attachments come back with the comment thread",
+	attachedComments.find((item) => item.id === createdComment?.id)?.attachments
+		?.length === 1
+)
+
+const badAttachmentForm = new FormData()
+badAttachmentForm.append(
+	"files",
+	new Blob(["#!/bin/sh\necho pwned"], { type: "application/x-sh" }),
+	"payload.sh"
+)
+const badAttachRes = await api(
+	`/api/images/comments/${createdComment?.id}/attachments`,
+	{ method: "POST", body: badAttachmentForm }
+)
+check(
+	"an executable attachment is refused",
+	badAttachRes.status >= 400,
+	`status=${badAttachRes.status}`
+)
+
+const internalCommentRes = await apiJson(
+	`/api/images/versions/${reviewVersionId}/comments`,
+	{ content: "internal: hold this until the contract is signed", internal: true }
+)
+const internalComment = internalCommentRes.ok
+	? await internalCommentRes.json()
+	: null
+check(
+	"an owner can post an internal comment",
+	internalCommentRes.status === 201 && internalComment?.internal === true,
+	`status=${internalCommentRes.status}`
+)
+
+const ownerSeesInternal = await api(
+	`/api/images/versions/${reviewVersionId}/comments`
+).then((r) => (r.ok ? r.json() : []))
+check(
+	"the internal team sees internal comments",
+	ownerSeesInternal.some((item) => item.id === internalComment?.id)
+)
+
 const emptyCommentRes = await apiJson(
 	`/api/images/versions/${reviewVersionId}/comments`,
 	{ content: "   " }
@@ -612,6 +695,22 @@ check(
 	JSON.stringify(outsiderSearch)
 )
 
+const outsiderFolderRes = await apiJson(`/api/projects/${project.id}/folders`, {
+	name: "Sneaky",
+})
+check(
+	"a non-member cannot create folders in someone else's project",
+	outsiderFolderRes.status === 403 || outsiderFolderRes.status === 404,
+	`status=${outsiderFolderRes.status}`
+)
+
+const outsiderFolderListRes = await api(`/api/projects/${project.id}/folders`)
+check(
+	"a non-member cannot list folders",
+	outsiderFolderListRes.status === 403 || outsiderFolderListRes.status === 404,
+	`status=${outsiderFolderListRes.status}`
+)
+
 const outsiderMediaRes = await api(`/${imageForReview?.latestVersion?.url ?? "uploads/none"}`)
 check(
 	"stored media is not readable by a non-member",
@@ -654,6 +753,94 @@ const outsiderId = inviteBody?.project?.members?.find(
 	(member) => member.user.email === outsiderEmail
 )?.user?.id
 
+cookie = outsiderCookie
+const memberComments = await api(
+	`/api/images/versions/${reviewVersionId}/comments`
+).then((r) => (r.ok ? r.json() : []))
+check(
+	"a MEMBER never receives internal comments",
+	!memberComments.some((item) => item.id === internalComment?.id) &&
+		!memberComments.some((item) => item.internal),
+	`count=${memberComments.length}`
+)
+
+const memberInternalRes = await apiJson(
+	`/api/images/versions/${reviewVersionId}/comments`,
+	{ content: "sneaky internal", internal: true }
+)
+check(
+	"a MEMBER cannot post an internal comment",
+	memberInternalRes.status === 403,
+	`status=${memberInternalRes.status}`
+)
+
+const memberReportRes = await api(
+	`/api/export/image/${imageForReview?.id}/report.json`
+)
+const memberReport = memberReportRes.ok ? await memberReportRes.json() : null
+check(
+	"an exported report hides internal comments from a MEMBER",
+	memberReportRes.ok &&
+		!JSON.stringify(memberReport).includes("contract is signed"),
+	`status=${memberReportRes.status}`
+)
+
+const memberSearchRes = await api(
+	`/api/search?q=${encodeURIComponent("contract is signed")}`
+)
+const memberSearch = memberSearchRes.ok ? await memberSearchRes.json() : null
+check(
+	"search never surfaces internal comments to a MEMBER",
+	memberSearchRes.ok &&
+		!memberSearch?.comments?.some((hit) => hit.id === internalComment?.id),
+	JSON.stringify(memberSearch?.comments?.map((hit) => hit.label))
+)
+cookie = ownerCookie
+
+const ownerSearchRes = await api(
+	`/api/search?q=${encodeURIComponent("contract is signed")}`
+)
+const ownerSearch = ownerSearchRes.ok ? await ownerSearchRes.json() : null
+check(
+	"the internal team can still find internal comments",
+	ownerSearchRes.ok &&
+		ownerSearch?.comments?.some((hit) => hit.id === internalComment?.id),
+	JSON.stringify(ownerSearch?.comments?.map((hit) => hit.label))
+)
+
+const ownerReportRes = await api(
+	`/api/export/image/${imageForReview?.id}/report.json`
+)
+const ownerReport = ownerReportRes.ok ? await ownerReportRes.json() : null
+check(
+	"the internal team's export still contains internal comments",
+	ownerReportRes.ok &&
+		JSON.stringify(ownerReport).includes("contract is signed"),
+	`status=${ownerReportRes.status}`
+)
+
+const typeFilterRes = await api(
+	`/api/search?q=${encodeURIComponent("sample")}&mediaType=VIDEO`
+)
+const typeFiltered = typeFilterRes.ok ? await typeFilterRes.json() : null
+check(
+	"a media-type filter returns only that type and drops project hits",
+	typeFilterRes.ok &&
+		typeFiltered.media.length > 0 &&
+		typeFiltered.media.every((hit) => hit.mediaType === "VIDEO") &&
+		typeFiltered.projects.length === 0,
+	JSON.stringify(typeFiltered?.media?.map((hit) => hit.mediaType))
+)
+
+const badFilterRes = await api(
+	`/api/search?q=${encodeURIComponent("sample")}&mediaType=HOLOGRAM`
+)
+check(
+	"an unknown media-type filter is rejected",
+	badFilterRes.status === 400,
+	`status=${badFilterRes.status}`
+)
+
 const roleChangeRes = await apiSend(
 	"PATCH",
 	`/api/projects/${project.id}/members/${outsiderId}/role`,
@@ -675,7 +862,213 @@ check(
 	memberMediaRes.ok,
 	`status=${memberMediaRes.status}`
 )
+
+const editorComments = await api(
+	`/api/images/versions/${reviewVersionId}/comments`
+).then((r) => (r.ok ? r.json() : []))
+check(
+	"promotion to EDITOR reveals internal comments",
+	editorComments.some((item) => item.id === internalComment?.id),
+	`count=${editorComments.length}`
+)
 cookie = ownerCookie
+
+const folderRes = await apiJson(`/api/projects/${project.id}/folders`, {
+	name: "Shots",
+})
+const folder = folderRes.ok ? await folderRes.json() : null
+check("create a folder", folderRes.status === 201 && !!folder?.id)
+
+const nestedRes = await apiJson(`/api/projects/${project.id}/folders`, {
+	name: "Approved",
+	parentId: folder?.id,
+})
+const nested = nestedRes.ok ? await nestedRes.json() : null
+check("create a nested folder", nestedRes.status === 201 && !!nested?.id)
+
+const duplicateRes = await apiJson(`/api/projects/${project.id}/folders`, {
+	name: "Shots",
+})
+check(
+	"a duplicate folder name in the same parent is refused",
+	duplicateRes.status === 400,
+	`status=${duplicateRes.status}`
+)
+
+const cycleRes = await apiSend(
+	"PATCH",
+	`/api/projects/${project.id}/folders/${folder?.id}/parent`,
+	{ parentId: nested?.id }
+)
+check(
+	"a folder cannot be moved inside its own descendant",
+	cycleRes.status === 400,
+	`status=${cycleRes.status}`
+)
+
+const moveImageRes = await apiSend(
+	"PATCH",
+	`/api/projects/${project.id}/images/${imageForReview?.id}/folder`,
+	{ folderId: folder?.id }
+)
+check("move a file into a folder", moveImageRes.status === 204, `status=${moveImageRes.status}`)
+
+const inFolderRes = await api(
+	`/api/projects/${project.id}/images?folderId=${folder?.id}`
+)
+const inFolder = inFolderRes.ok ? await inFolderRes.json() : []
+check(
+	"listing a folder returns only its files",
+	inFolderRes.ok &&
+		inFolder.length === 1 &&
+		inFolder[0].id === imageForReview?.id,
+	`count=${inFolder.length}`
+)
+
+const rootListRes = await api(`/api/projects/${project.id}/images?folderId=root`)
+const rootList = rootListRes.ok ? await rootListRes.json() : []
+check(
+	"the root listing excludes files that moved into a folder",
+	rootListRes.ok && !rootList.some((item) => item.id === imageForReview?.id),
+	`count=${rootList.length}`
+)
+
+const bulkMoveRes = await apiSend(
+	"PATCH",
+	`/api/projects/${project.id}/images/folder`,
+	{ imageIds: [imageForReview?.id], folderId: nested?.id }
+)
+check(
+	"move several files at once",
+	bulkMoveRes.ok && (await bulkMoveRes.json())?.moved === 1,
+	`status=${bulkMoveRes.status}`
+)
+
+const bulkMoveStolenRes = await apiSend(
+	"PATCH",
+	`/api/projects/${project.id}/images/folder`,
+	{ imageIds: [imageForReview?.id, "not-a-real-image"], folderId: null }
+)
+check(
+	"a bulk move that names an unknown file moves nothing",
+	bulkMoveStolenRes.status === 404,
+	`status=${bulkMoveStolenRes.status}`
+)
+
+const stillNested = await api(
+	`/api/projects/${project.id}/images?folderId=${nested?.id}`
+).then((r) => (r.ok ? r.json() : []))
+check(
+	"the rejected bulk move left the files where they were",
+	stillNested.some((item) => item.id === imageForReview?.id),
+	`count=${stillNested.length}`
+)
+
+await apiSend("PATCH", `/api/projects/${project.id}/images/folder`, {
+	imageIds: [imageForReview?.id],
+	folderId: folder?.id,
+})
+
+const foldersListRes = await api(`/api/projects/${project.id}/folders`)
+const foldersList = foldersListRes.ok ? await foldersListRes.json() : []
+check(
+	"folders report how many files they hold",
+	foldersListRes.ok &&
+		foldersList.find((item) => item.id === folder?.id)?.imageCount === 1,
+	JSON.stringify(foldersList)
+)
+
+const downloadRes = await api(
+	`/api/images/versions/${reviewVersionId}/download`,
+	{ redirect: "manual" }
+)
+check(
+	"a member can download the original file",
+	(downloadRes.status === 200 &&
+		(downloadRes.headers.get("content-disposition") ?? "").includes(
+			"attachment"
+		)) ||
+		downloadRes.status === 302,
+	`status=${downloadRes.status}`
+)
+
+const membersRes = await api(`/api/projects/${project.id}/members`)
+const membersList = membersRes.ok ? await membersRes.json() : []
+check(
+	"project members are listable for the mention picker",
+	membersRes.ok && membersList.length === 2,
+	`count=${membersList.length}`
+)
+
+const mentionCommentRes = await apiJson(
+	`/api/images/versions/${reviewVersionId}/comments`,
+	{
+		content: "@Outsider please take a look",
+		mentionedUserIds: [outsiderId, "not-a-member-id"],
+	}
+)
+const mentionComment = mentionCommentRes.ok ? await mentionCommentRes.json() : null
+check(
+	"mentioning a member stores the mention and drops non-members",
+	mentionCommentRes.status === 201 &&
+		mentionComment?.mentions?.length === 1 &&
+		mentionComment?.mentions?.[0]?.userId === outsiderId,
+	JSON.stringify(mentionComment?.mentions)
+)
+
+cookie = outsiderCookie
+const mentionFeedRes = await api("/api/notifications")
+const mentionFeed = mentionFeedRes.ok ? await mentionFeedRes.json() : null
+check(
+	"the mentioned member is notified",
+	mentionFeedRes.ok &&
+		mentionFeed?.notifications?.some(
+			(item) =>
+				item.metadata?.type === "mention" &&
+				item.content.includes("mentioned you")
+		),
+	JSON.stringify(mentionFeed?.notifications?.slice(0, 3))
+)
+cookie = ownerCookie
+
+const prefsRes = await apiSend(
+	"PATCH",
+	"/api/users/me/notification-preferences",
+	{ emailOnMention: false }
+)
+const prefs = prefsRes.ok ? await prefsRes.json() : null
+check(
+	"turning off one email type leaves the others alone",
+	prefsRes.ok &&
+		prefs?.emailOnMention === false &&
+		prefs?.emailOnComment === true &&
+		prefs?.emailNotifications === true,
+	JSON.stringify(prefs)
+)
+
+const emptyPrefsRes = await apiSend(
+	"PATCH",
+	"/api/users/me/notification-preferences",
+	{}
+)
+check(
+	"an empty preference update is rejected",
+	emptyPrefsRes.status === 400,
+	`status=${emptyPrefsRes.status}`
+)
+
+const meAfterPrefs = await api("/api/users/me").then((r) =>
+	r.ok ? r.json() : null
+)
+check(
+	"the profile reports the saved preferences",
+	meAfterPrefs?.emailOnMention === false,
+	JSON.stringify(meAfterPrefs?.emailOnMention)
+)
+
+await apiSend("PATCH", "/api/users/me/notification-preferences", {
+	emailOnMention: true,
+})
 
 const resetRequestRes = await apiJson("/api/auth/password-reset/request", {
 	email,

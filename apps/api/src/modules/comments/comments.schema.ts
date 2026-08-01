@@ -53,6 +53,8 @@ export const createCommentSchema = z.object({
 	timestampEnd: finiteNumber.nonnegative().nullish(),
 	page: z.number().int().positive().max(10000).nullish(),
 	modelAnchor: modelAnchorSchema.nullish(),
+	mentionedUserIds: z.array(z.string().max(64)).max(30).optional(),
+	internal: z.boolean().optional(),
 })
 
 export const updateCommentSchema = z.object({

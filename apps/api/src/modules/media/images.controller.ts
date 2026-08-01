@@ -12,7 +12,10 @@ import {
 	stageVideoForProcessing,
 } from "./video-pipeline"
 import { enqueueImageRendition } from "./image-pipeline"
-import { storage } from "../../storage"
+import path from "path"
+import { storage, uploadsDir } from "../../storage"
+import { storedPathOf } from "./media-access.service"
+import { downloadFileName } from "./download-name"
 import { NotFoundError, ValidationError } from "../../lib/errors"
 import { respondWithError } from "../../lib/http"
 import { recordAudit, requestIp } from "../audit/audit.service"
@@ -24,6 +27,18 @@ const withLatestVersion = (
 	...image,
 	latestVersion: image.versions[0] ?? null,
 })
+
+const folderScopeOf = (req: Request): string | null | undefined => {
+	const folder = req.query.folderId
+	if (folder === undefined) return undefined
+	if (folder === "" || folder === "root") return null
+	return typeof folder === "string" ? folder : undefined
+}
+
+const uploadFolderOf = (req: Request): string | null => {
+	const folder = req.body?.folderId
+	return typeof folder === "string" && folder ? folder : null
+}
 
 type UploadFields = Record<string, Express.Multer.File[] | undefined>
 
@@ -128,6 +143,7 @@ export const uploadImage = async (
 				url: stored.url,
 				name: file.originalname,
 				projectId,
+				folderId: uploadFolderOf(req),
 				mediaType,
 				duration: metas[index].duration,
 				thumbnailUrl: stored.thumbnailUrl,
@@ -160,7 +176,11 @@ export const uploadImage = async (
 			ipAddress: requestIp(req),
 		})
 
-		res.status(201).json(await imageService.getImagesForProject(projectId))
+		res
+			.status(201)
+			.json(
+				await imageService.getImagesForProject(projectId, uploadFolderOf(req))
+			)
 	} catch (error) {
 		await Promise.all(storedUrls.map((url) => storage.remove(url)))
 		await Promise.all(
@@ -252,7 +272,10 @@ export const getProjectImages = async (
 ): Promise<void> => {
 	try {
 		const { projectId } = authorizedScope(res)
-		const images = await imageService.getImagesForProject(projectId)
+		const images = await imageService.getImagesForProject(
+			projectId,
+			folderScopeOf(req)
+		)
 		res.status(200).json(images)
 	} catch (error) {
 		respondWithError(res, error, "list project media")
@@ -279,6 +302,88 @@ export const getImageVersion = async (
 		res.status(200).json(version)
 	} catch (error) {
 		respondWithError(res, error, "fetch image version")
+	}
+}
+
+const DOWNLOAD_URL_TTL_SECONDS = 300
+
+export const downloadOriginal = async (
+	req: Request,
+	res: Response
+): Promise<void> => {
+	try {
+		const { userId } = authorizedScope(res)
+		const version = await imageService.getVersionForDownload(
+			req.params.versionId
+		)
+		const storedPath = version ? storedPathOf(version.url) : null
+		if (!version || !storedPath) {
+			throw new NotFoundError("Image version not found")
+		}
+
+		await recordAudit({
+			action: "media.downloaded",
+			targetType: "imageVersion",
+			targetId: req.params.versionId,
+			actorId: userId,
+			metadata: {
+				imageName: version.image.name,
+				versionNumber: version.versionNumber,
+			},
+			ipAddress: requestIp(req),
+		})
+
+		if (storage.temporaryReadUrl) {
+			res.redirect(
+				302,
+				await storage.temporaryReadUrl(storedPath, DOWNLOAD_URL_TTL_SECONDS)
+			)
+			return
+		}
+
+		res.download(
+			path.join(uploadsDir, storedPath),
+			downloadFileName(version.image.name, version.versionNumber, storedPath),
+			(error) => {
+				if (error && !res.headersSent) {
+					res.status(404).json({ message: "Not found" })
+				}
+			}
+		)
+	} catch (error) {
+		respondWithError(res, error, "download original media")
+	}
+}
+
+export const deleteImages = async (
+	req: Request,
+	res: Response
+): Promise<void> => {
+	try {
+		const { projectId, userId } = authorizedScope(res)
+		const imageIds: string[] = Array.from(new Set(req.body.imageIds))
+
+		const owned = await imageService.imageIdsInProject(imageIds, projectId)
+		if (owned.length !== imageIds.length) {
+			throw new NotFoundError("Image not found")
+		}
+
+		for (const imageId of owned) {
+			await imageService.deleteImage(imageId)
+		}
+
+		await recordAudit({
+			action: "media.deleted",
+			targetType: "project",
+			targetId: projectId,
+			actorId: userId,
+			metadata: { imageIds: owned },
+			ipAddress: requestIp(req),
+		})
+
+		res.status(200).json({ deleted: owned.length })
+	} catch (error) {
+		respondWithError(res, error, "delete media")
 	}
 }
 

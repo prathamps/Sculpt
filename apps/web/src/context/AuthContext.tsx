@@ -20,6 +20,10 @@ interface User {
 	role: "USER" | "ADMIN"
 	avatarUrl?: string | null
 	emailNotifications?: boolean
+	emailOnMention?: boolean
+	emailOnComment?: boolean
+	emailOnReply?: boolean
+	emailOnReview?: boolean
 }
 
 interface AuthContextType {

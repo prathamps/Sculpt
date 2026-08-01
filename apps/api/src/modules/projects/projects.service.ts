@@ -7,7 +7,12 @@ import {
 	ValidationError,
 } from "../../lib/errors"
 import { PageRequest, skipTake } from "../../lib/pagination"
-import { ROLE_RANK, getMemberRole, isProjectOwner } from "./access"
+import {
+	ROLE_RANK,
+	getMemberRole,
+	isProjectMember,
+	isProjectOwner,
+} from "./access"
 
 const INVITATION_TTL_MS = 7 * 24 * 3600000
 
@@ -111,6 +116,20 @@ export const getProjectById = async (
 	})
 
 	return project ? withLatestVersions(project) : null
+}
+
+export const listProjectMembers = async (
+	projectId: string,
+	userId: string
+) => {
+	if (!(await isProjectMember(projectId, userId))) {
+		throw new ForbiddenError("You are not a member of this project")
+	}
+	return prisma.projectMember.findMany({
+		where: { projectId },
+		select: MEMBER_SELECT.select,
+		orderBy: { createdAt: "asc" },
+	})
 }
 
 export const updateProject = async (

@@ -26,7 +26,7 @@ const notifyProject = async (
 
 	await NotificationService.createProjectNotification({
 		projectId: version.image.projectId,
-		excludeUserId: actor.id,
+		excludeUserIds: [actor.id],
 		content: `${actor.name || actor.email} ${describeDecision(decision)} ${version.image.name} (${version.versionName})`,
 		metadata: {
 			imageId: version.image.id,

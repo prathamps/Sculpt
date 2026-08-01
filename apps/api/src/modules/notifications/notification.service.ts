@@ -1,10 +1,11 @@
 import { prisma } from "../../lib/prisma"
 import { io } from "../../realtime/socket"
-import { Notification, Prisma } from "@prisma/client"
+import { Notification, Prisma, ProjectRole } from "@prisma/client"
 import { JsonValue } from "@prisma/client/runtime/library"
 import { isUserOnline } from "../../lib/presence"
 import { logger } from "../../lib/logger"
 import { sendNotificationEmail } from "./email.service"
+import { wantsEmailFor } from "./notification-preferences"
 
 export const NOTIFICATION_PAGE_SIZE = 30
 
@@ -33,10 +34,19 @@ const emailOfflineRecipient = async (
 
 	const recipient = await prisma.user.findUnique({
 		where: { id: input.userId },
-		select: { email: true, name: true, emailNotifications: true },
+		select: {
+			email: true,
+			name: true,
+			emailNotifications: true,
+			emailOnMention: true,
+			emailOnComment: true,
+			emailOnReply: true,
+			emailOnReview: true,
+		},
 	})
 
-	if (!recipient?.email || !recipient.emailNotifications) return
+	if (!recipient?.email) return
+	if (!wantsEmailFor(recipient, input.metadata)) return
 
 	await sendNotificationEmail({
 		to: recipient.email,
@@ -73,13 +83,16 @@ export class NotificationService {
 	static async createProjectNotification(data: {
 		projectId: string
 		content: string
-		excludeUserId?: string
+		excludeUserIds?: string[]
+		onlyRoles?: ProjectRole[]
 		metadata?: JsonValue
 	}): Promise<void> {
+		const excluded = data.excludeUserIds?.filter(Boolean) ?? []
 		const members = await prisma.projectMember.findMany({
 			where: {
 				projectId: data.projectId,
-				...(data.excludeUserId && { userId: { not: data.excludeUserId } }),
+				...(excluded.length > 0 && { userId: { notIn: excluded } }),
+				...(data.onlyRoles && { role: { in: data.onlyRoles } }),
 			},
 			select: { userId: true },
 		})
@@ -104,6 +117,8 @@ export class NotificationService {
 				)
 			)
 		)
+
+		if (data.onlyRoles) return
 
 		io.to(`project:${data.projectId}`).emit("project-update", {
 			type: "notification",

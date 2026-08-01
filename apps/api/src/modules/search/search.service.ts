@@ -1,6 +1,13 @@
+import { MediaType, Prisma, ReviewStatus } from "@prisma/client"
 import { prisma } from "../../lib/prisma"
+import { canSeeInternalComments } from "../comments/comments.service"
 
 export const SEARCH_RESULT_LIMIT = 20
+
+export interface SearchFilters {
+	mediaType?: MediaType
+	reviewStatus?: ReviewStatus
+}
 
 export interface SearchHit {
 	id: string
@@ -33,36 +40,73 @@ const emptyResults = (): SearchResults => ({
 	comments: [],
 })
 
-const accessibleProjectIds = async (userId: string): Promise<string[]> => {
+interface AccessibleProjects {
+	all: string[]
+	withInternalAccess: string[]
+}
+
+const accessibleProjects = async (
+	userId: string
+): Promise<AccessibleProjects> => {
 	const memberships = await prisma.projectMember.findMany({
 		where: { userId },
-		select: { projectId: true },
+		select: { projectId: true, role: true },
 	})
-	return memberships.map((membership) => membership.projectId)
+	return {
+		all: memberships.map((membership) => membership.projectId),
+		withInternalAccess: memberships
+			.filter((membership) => canSeeInternalComments(membership.role))
+			.map((membership) => membership.projectId),
+	}
+}
+
+const latestVersionMatches = (
+	filters: SearchFilters
+): Prisma.ImageWhereInput => {
+	const versionFilter: Prisma.ImageVersionWhereInput = {
+		...(filters.mediaType ? { mediaType: filters.mediaType } : {}),
+		...(filters.reviewStatus ? { reviewStatus: filters.reviewStatus } : {}),
+	}
+	return Object.keys(versionFilter).length > 0
+		? { versions: { some: versionFilter } }
+		: {}
 }
 
 export const searchForUser = async (
 	userId: string,
 	query: string,
-	limit: number = SEARCH_RESULT_LIMIT
+	limit: number = SEARCH_RESULT_LIMIT,
+	filters: SearchFilters = {}
 ): Promise<SearchResults> => {
 	const term = query.trim()
 	if (!term) return emptyResults()
 
-	const projectIds = await accessibleProjectIds(userId)
+	const { all: projectIds, withInternalAccess } = await accessibleProjects(
+		userId
+	)
 	if (projectIds.length === 0) return emptyResults()
 
 	const contains = { contains: term, mode: "insensitive" as const }
+	const isFiltered = !!(filters.mediaType || filters.reviewStatus)
 
 	const [projects, media, comments] = await Promise.all([
-		prisma.project.findMany({
-			where: { id: { in: projectIds }, name: contains },
-			select: { id: true, name: true },
-			orderBy: { updatedAt: "desc" },
-			take: limit,
-		}),
+		isFiltered
+			? []
+			: prisma.project.findMany({
+					where: { id: { in: projectIds }, name: contains },
+					select: { id: true, name: true },
+					orderBy: { updatedAt: "desc" },
+					take: limit,
+				}),
 		prisma.image.findMany({
-			where: { projectId: { in: projectIds }, name: contains },
+			where: {
+				projectId: { in: projectIds },
+				OR: [
+					{ name: contains },
+					{ versions: { some: { versionName: contains } } },
+				],
+				...latestVersionMatches(filters),
+			},
 			select: {
 				id: true,
 				name: true,
@@ -80,7 +124,22 @@ export const searchForUser = async (
 		prisma.comment.findMany({
 			where: {
 				content: contains,
-				imageVersion: { image: { projectId: { in: projectIds } } },
+				imageVersion: {
+					...(filters.mediaType ? { mediaType: filters.mediaType } : {}),
+					...(filters.reviewStatus
+						? { reviewStatus: filters.reviewStatus }
+						: {}),
+					image: { projectId: { in: projectIds } },
+				},
+				OR: [
+					{ internal: false },
+					{
+						internal: true,
+						imageVersion: {
+							image: { projectId: { in: withInternalAccess } },
+						},
+					},
+				],
 			},
 			select: {
 				id: true,

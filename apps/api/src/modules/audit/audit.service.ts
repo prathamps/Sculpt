@@ -35,7 +35,13 @@ export type AuditAction =
 	| "media.version_uploaded"
 	| "media.updated"
 	| "media.deleted"
+	| "media.downloaded"
+	| "media.moved"
 	| "media.version_deleted"
+	| "folder.created"
+	| "folder.renamed"
+	| "folder.moved"
+	| "folder.deleted"
 	| "report.exported"
 
 export interface AuditEntry {

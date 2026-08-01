@@ -11,9 +11,18 @@ import {
 } from "./users.controller"
 import { changePasswordSchema, updateProfileSchema } from "./auth.schema"
 
-const notificationPreferencesSchema = z.object({
-	emailNotifications: z.boolean(),
-})
+const notificationPreferencesSchema = z
+	.object({
+		emailNotifications: z.boolean(),
+		emailOnMention: z.boolean(),
+		emailOnComment: z.boolean(),
+		emailOnReply: z.boolean(),
+		emailOnReview: z.boolean(),
+	})
+	.partial()
+	.refine((body) => Object.keys(body).length > 0, {
+		message: "Choose at least one preference to change",
+	})
 
 const deleteAccountSchema = z.object({
 	password: z.string().min(1).optional(),

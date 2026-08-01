@@ -24,6 +24,7 @@ export interface Annotation {
 	points: Point[]
 	isHighlighted?: boolean
 	dimmed?: boolean
+	pinned?: boolean
 	t?: number
 	tEnd?: number
 	page?: number
@@ -80,6 +81,7 @@ export interface Image {
 	id: string
 	name: string
 	projectId: string
+	folderId?: string | null
 	createdAt: string
 	updatedAt: string
 	versions: ImageVersion[]
@@ -96,6 +98,25 @@ export interface CommentLike {
 	createdAt: string
 }
 
+export interface Folder {
+	id: string
+	name: string
+	parentId: string | null
+	imageCount: number
+}
+
+export interface CommentAttachment {
+	id: string
+	url: string
+	fileName: string
+	mimeType: string
+}
+
+export interface CommentMention {
+	userId: string
+	user?: { name: string | null }
+}
+
 export interface Comment {
 	id: string
 	content: string
@@ -105,6 +126,9 @@ export interface Comment {
 	parentId?: string
 	replies?: Comment[]
 	resolved: boolean
+	internal?: boolean
+	mentions?: CommentMention[]
+	attachments?: CommentAttachment[]
 	likes?: CommentLike[]
 	likeCount?: number
 	isLikedByCurrentUser?: boolean

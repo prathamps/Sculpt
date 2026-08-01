@@ -6,6 +6,10 @@ import { writeRateLimit } from "../../middleware/rate-limit.middleware"
 import { projectImagesRouter } from "../media/images.routes"
 import { projectReviewRouter } from "../reviews/reviews.routes"
 import {
+	projectFoldersRouter,
+	projectImageFolderRouter,
+} from "../folders/folders.routes"
+import {
 	changeMemberRoleSchema,
 	createProjectSchema,
 	createShareLinkSchema,
@@ -36,6 +40,7 @@ router.delete(
 	projectController.revokeInvitation
 )
 
+router.get("/:projectId/members", projectController.getMembers)
 router.patch(
 	"/:projectId/members/:userId/role",
 	validateBody(changeMemberRoleSchema),
@@ -57,6 +62,8 @@ router.delete(
 	projectController.revokeShareLink
 )
 
+router.use("/:projectId/folders", projectFoldersRouter)
+router.use("/:projectId/images", projectImageFolderRouter)
 router.use("/:projectId/images", projectImagesRouter)
 router.use("/:projectId/reviews", projectReviewRouter)
 

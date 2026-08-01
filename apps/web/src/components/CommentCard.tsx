@@ -15,6 +15,7 @@ import {
 	Clock,
 	FileText,
 	MapPin,
+	Lock,
 } from "lucide-react"
 import { cn, formatVideoTime } from "@/lib/utils"
 import {
@@ -24,10 +25,40 @@ import {
 	DropdownMenuSeparator,
 	DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
-import { Comment as CommentType } from "@/types"
+import { Comment as CommentType, CommentMention } from "@/types"
 import { formatDistanceToNow } from "date-fns"
 import { useAuth } from "@/context/AuthContext"
-import { Textarea } from "@/components/ui/textarea"
+import { MentionTextarea } from "@/components/MentionTextarea"
+import { CommentAttachments } from "@/components/CommentAttachments"
+import { useMentionDraft } from "@/hooks/useMentionDraft"
+
+const escapeRegExp = (value: string): string =>
+	value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
+
+const renderWithMentions = (
+	content: string,
+	mentions?: CommentMention[]
+): React.ReactNode => {
+	const labels = (mentions ?? [])
+		.map((mention) => mention.user?.name)
+		.filter((name): name is string => !!name)
+	if (labels.length === 0) return content
+
+	const tokens = new Set(labels.map((label) => `@${label}`))
+	const pattern = new RegExp(
+		`(${labels.map((label) => `@${escapeRegExp(label)}`).join("|")})`,
+		"g"
+	)
+	return content.split(pattern).map((part, index) =>
+		tokens.has(part) ? (
+			<span key={index} className="font-medium text-primary">
+				{part}
+			</span>
+		) : (
+			part
+		)
+	)
+}
 
 interface CommentCardProps {
 	comment: CommentType
@@ -58,6 +89,7 @@ export function CommentCard({
 	const [isReplying, setIsReplying] = useState(false)
 	const [replyContent, setReplyContent] = useState("")
 	const [isSubmittingReply, setIsSubmittingReply] = useState(false)
+	const { addMention, mentionIdsIn, resetMentions } = useMentionDraft()
 
 	const likeCount = pendingLike?.count ?? comment.likeCount ?? 0
 	const isLiked = pendingLike?.liked ?? comment.isLikedByCurrentUser ?? false
@@ -144,9 +176,14 @@ export function CommentCard({
 		try {
 			await api.post(
 				`/api/images/versions/${comment.imageVersionId}/comments`,
-				{ content: replyContent, parentId: comment.id }
+				{
+					content: replyContent,
+					parentId: comment.id,
+					mentionedUserIds: mentionIdsIn(replyContent),
+				}
 			)
 			setReplyContent("")
+			resetMentions()
 			setIsReplying(false)
 			onCommentUpdate?.()
 		} catch (error) {
@@ -291,6 +328,12 @@ export function CommentCard({
 									3D pin
 								</span>
 							)}
+							{comment.internal && (
+								<span className="inline-flex items-center gap-1 rounded-full bg-amber-500/15 px-2 py-0.5 text-xs font-medium text-amber-700 dark:text-amber-300">
+									<Lock className="h-3 w-3" aria-hidden="true" />
+									Internal
+								</span>
+							)}
 							{comment.resolved && (
 								<span className="inline-flex items-center gap-1 rounded-full bg-green-500/15 px-2 py-0.5 text-xs font-medium text-green-600 dark:text-green-400">
 									<CheckCircle2 className="h-3 w-3" aria-hidden="true" />
@@ -312,8 +355,9 @@ export function CommentCard({
 						className="mt-2 text-sm leading-relaxed break-words whitespace-pre-wrap"
 						style={{ wordBreak: "break-word", overflowWrap: "break-word" }}
 					>
-						{comment.content}
+						{renderWithMentions(comment.content, comment.mentions)}
 					</p>
+					<CommentAttachments attachments={comment.attachments} />
 					<div className="mt-2 flex items-center gap-3">
 						<Button
 							variant="ghost"
@@ -360,11 +404,14 @@ export function CommentCard({
 							className="mt-2 flex flex-col gap-2"
 							onClick={(e) => e.stopPropagation()}
 						>
-							<Textarea
-								placeholder="Write a reply..."
+							<MentionTextarea
+								id={`reply-input-${comment.id}`}
+								ariaLabel="Write a reply"
+								placeholder="Write a reply... Use @ to mention a teammate"
 								className="min-h-[60px] text-xs"
 								value={replyContent}
-								onChange={(e) => setReplyContent(e.target.value)}
+								onChange={setReplyContent}
+								onMentionPicked={addMention}
 							/>
 							<div className="flex justify-end gap-2">
 								<Button

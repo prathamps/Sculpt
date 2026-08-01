@@ -9,6 +9,7 @@ import {
 	Suspense,
 } from "react"
 import { useAuth } from "@/context/AuthContext"
+import { ProjectMembersProvider } from "@/context/ProjectMembersContext"
 import {
 	useRouter,
 	useParams,
@@ -53,6 +54,10 @@ import {
 	ProjectRole,
 } from "@/types"
 import { mediaUrl, roleAtLeast } from "@/lib/utils"
+import {
+	annotationTimeWindow,
+	timeWindowsOverlap,
+} from "@/lib/annotation-visibility"
 import {
 	captureThumbnail,
 	getVideoDuration,
@@ -493,15 +498,37 @@ function ProjectFileViewPageInner() {
 	const canvasAnnotations = useMemo(() => {
 		let derived: Annotation[]
 		if (isVideo) {
-			derived = comments.flatMap((c) =>
-				annotationsOf(c).map((a) => ({
+			const selectedWindow = selectedComment
+				? annotationTimeWindow({
+						t: selectedComment.timestamp,
+						tEnd: selectedComment.timestampEnd,
+					})
+				: null
+
+			derived = comments.flatMap((c) => {
+				const isSelected = c.id === selectedCommentId
+				const commentWindow = annotationTimeWindow({
+					t: c.timestamp,
+					tEnd: c.timestampEnd,
+				})
+
+				if (
+					selectedComment &&
+					!isSelected &&
+					!timeWindowsOverlap(commentWindow, selectedWindow)
+				) {
+					return []
+				}
+
+				return annotationsOf(c).map((a) => ({
 					...a,
 					t: typeof c.timestamp === "number" ? c.timestamp : a.t,
-					tEnd:
-						typeof c.timestampEnd === "number" ? c.timestampEnd : a.tEnd,
-					isHighlighted: c.id === selectedCommentId,
+					tEnd: typeof c.timestampEnd === "number" ? c.timestampEnd : a.tEnd,
+					isHighlighted: isSelected,
+					pinned: !!selectedComment,
+					dimmed: !!selectedComment && !isSelected,
 				}))
-			)
+			})
 			return [
 				...annotations.map(
 					(a): Annotation => ({ ...a, t: undefined, tEnd: undefined })
@@ -989,6 +1016,7 @@ function ProjectFileViewPageInner() {
 									page={isPdf ? currentPdfPage : null}
 									modelAnchor={isModel ? pendingPin : undefined}
 									onClearModelAnchor={() => setPendingPin(null)}
+									canPostInternal={canEditMedia}
 								/>
 							</div>
 						) : (
@@ -1085,6 +1113,8 @@ function ProjectFileViewPageInner() {
 }
 
 export default function ProjectFileViewPage() {
+	const params = useParams()
+	const projectId = params.projectId as string
 	return (
 		<Suspense
 			fallback={
@@ -1093,7 +1123,9 @@ export default function ProjectFileViewPage() {
 				</div>
 			}
 		>
-			<ProjectFileViewPageInner />
+			<ProjectMembersProvider projectId={projectId}>
+				<ProjectFileViewPageInner />
+			</ProjectMembersProvider>
 		</Suspense>
 	)
 }

@@ -135,6 +135,42 @@ export const upload = multer({
 	limits: { fileSize: maxUploadMb * 1024 * 1024 },
 })
 
+const ATTACHMENT_MIME_EXTENSIONS: Record<string, string> = {
+	...BROWSER_RENDERABLE_IMAGE_MIME_EXTENSIONS,
+	"application/pdf": ".pdf",
+}
+
+export const MAX_ATTACHMENTS_PER_COMMENT = 3
+const MAX_ATTACHMENT_MB = 25
+
+export const isAllowedAttachmentMime = (mimetype: string): boolean =>
+	mimetype in ATTACHMENT_MIME_EXTENSIONS
+
+const referenceFilesOnly = (
+	_req: Request,
+	file: Express.Multer.File,
+	cb: multer.FileFilterCallback
+) => {
+	if (isAllowedAttachmentMime(file.mimetype)) {
+		cb(null, true)
+	} else {
+		cb(
+			new Error(
+				"Attachments must be an image (JPEG, PNG, GIF, WebP, AVIF, BMP or ICO) or a PDF."
+			)
+		)
+	}
+}
+
+export const uploadAttachments = multer({
+	storage: staging,
+	fileFilter: referenceFilesOnly,
+	limits: {
+		fileSize: MAX_ATTACHMENT_MB * 1024 * 1024,
+		files: MAX_ATTACHMENTS_PER_COMMENT,
+	},
+})
+
 const stagedFilesOf = (req: Request): Express.Multer.File[] => {
 	const files = req.files
 	if (!files) return []

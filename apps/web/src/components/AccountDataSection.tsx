@@ -19,11 +19,36 @@ import { API_URL, api } from "@/lib/api"
 import { describeError } from "@/lib/errors"
 import { useAuth } from "@/context/AuthContext"
 
+const EVENT_PREFERENCES = [
+	{
+		key: "emailOnMention" as const,
+		label: "When someone @mentions me",
+	},
+	{
+		key: "emailOnComment" as const,
+		label: "New comments and likes on my team's files",
+	},
+	{
+		key: "emailOnReply" as const,
+		label: "Replies to my comments",
+	},
+	{
+		key: "emailOnReview" as const,
+		label: "Review decisions",
+	},
+]
+
 export function AccountDataSection() {
 	const { user, refresh, logout } = useAuth()
 	const [emailNotifications, setEmailNotifications] = useState(
 		user?.emailNotifications ?? true
 	)
+	const [eventPreferences, setEventPreferences] = useState({
+		emailOnMention: user?.emailOnMention ?? true,
+		emailOnComment: user?.emailOnComment ?? true,
+		emailOnReply: user?.emailOnReply ?? true,
+		emailOnReview: user?.emailOnReview ?? true,
+	})
 	const [isSavingPreference, setIsSavingPreference] = useState(false)
 	const [isConfirmingDelete, setIsConfirmingDelete] = useState(false)
 	const [isDeleting, setIsDeleting] = useState(false)
@@ -45,6 +70,24 @@ export function AccountDataSection() {
 			)
 		} catch (error) {
 			setEmailNotifications(!next)
+			toast.error(describeError(error, "Could not save that preference."))
+		} finally {
+			setIsSavingPreference(false)
+		}
+	}
+
+	const saveEventPreference = async (
+		key: keyof typeof eventPreferences,
+		next: boolean
+	) => {
+		const previous = eventPreferences[key]
+		setEventPreferences((current) => ({ ...current, [key]: next }))
+		setIsSavingPreference(true)
+		try {
+			await api.patch("/api/users/me/notification-preferences", { [key]: next })
+			await refresh()
+		} catch (error) {
+			setEventPreferences((current) => ({ ...current, [key]: previous }))
 			toast.error(describeError(error, "Could not save that preference."))
 		} finally {
 			setIsSavingPreference(false)
@@ -89,6 +132,33 @@ export function AccountDataSection() {
 							onCheckedChange={savePreference}
 						/>
 					</div>
+
+					<fieldset
+						disabled={!emailNotifications || isSavingPreference}
+						className="mt-4 space-y-3 border-t border-border/40 pt-4 disabled:opacity-50"
+					>
+						<legend className="sr-only">Which emails to send</legend>
+						{EVENT_PREFERENCES.map((preference) => (
+							<div
+								key={preference.key}
+								className="flex items-center justify-between gap-4"
+							>
+								<Label
+									htmlFor={preference.key}
+									className="font-normal text-muted-foreground"
+								>
+									{preference.label}
+								</Label>
+								<Switch
+									id={preference.key}
+									checked={eventPreferences[preference.key]}
+									onCheckedChange={(next) =>
+										saveEventPreference(preference.key, next)
+									}
+								/>
+							</div>
+						))}
+					</fieldset>
 				</CardContent>
 			</Card>
 

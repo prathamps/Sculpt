@@ -64,6 +64,15 @@ export const canViewVersion = async (
 	return roleMeets(role, "VIEWER")
 }
 
+export const canViewInternalComments = async (
+	userId: string,
+	imageVersionId: string
+): Promise<boolean> => {
+	const projectId = await getVersionProjectId(imageVersionId)
+	if (!projectId) return false
+	return roleMeets(await getMemberRole(projectId, userId), "EDITOR")
+}
+
 export const isProjectMember = async (
 	projectId: string,
 	userId: string

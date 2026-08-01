@@ -11,6 +11,7 @@ interface ImagePayload {
 	url: string
 	name: string
 	projectId: string
+	folderId?: string | null
 	mediaType?: MediaType
 	duration?: number | null
 	thumbnailUrl?: string | null
@@ -46,6 +47,7 @@ export const addImagesToProject = async (
 					data: {
 						name: image.name,
 						projectId: image.projectId,
+						folderId: image.folderId ?? null,
 						versions: {
 							create: {
 								url: image.url,
@@ -74,10 +76,14 @@ export const addImagesToProject = async (
 }
 
 export const getImagesForProject = async (
-	projectId: string
+	projectId: string,
+	folderId?: string | null
 ): Promise<(Image & { latestVersion: ImageVersion | null })[]> => {
 	const images = await prisma.image.findMany({
-		where: { projectId },
+		where: {
+			projectId,
+			...(folderId === undefined ? {} : { folderId }),
+		},
 		include: {
 			versions: { orderBy: { versionNumber: "desc" }, take: 1 },
 		},
@@ -102,6 +108,16 @@ export const getImageVersionById = async (
 	versionId: string
 ): Promise<ImageVersion | null> =>
 	prisma.imageVersion.findUnique({ where: { id: versionId } })
+
+export const getVersionForDownload = async (versionId: string) =>
+	prisma.imageVersion.findUnique({
+		where: { id: versionId },
+		select: {
+			url: true,
+			versionNumber: true,
+			image: { select: { name: true } },
+		},
+	})
 
 const isVersionNumberConflict = (error: unknown): boolean =>
 	error instanceof Prisma.PrismaClientKnownRequestError &&
@@ -147,6 +163,17 @@ export const addImageVersion = async (
 	throw new ValidationError(
 		"Another version was uploaded at the same time. Try again."
 	)
+}
+
+export const imageIdsInProject = async (
+	imageIds: string[],
+	projectId: string
+): Promise<string[]> => {
+	const images = await prisma.image.findMany({
+		where: { id: { in: imageIds }, projectId },
+		select: { id: true },
+	})
+	return images.map((image) => image.id)
 }
 
 export const deleteImage = async (id: string): Promise<void> => {

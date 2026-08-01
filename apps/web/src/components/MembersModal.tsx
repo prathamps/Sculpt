@@ -43,6 +43,9 @@ import {
 import { Separator } from "@/components/ui/separator"
 import { cn } from "@/lib/utils"
 import { UserAvatar } from "@/components/UserAvatar"
+import { api } from "@/lib/api"
+import { describeError } from "@/lib/errors"
+import { toast } from "sonner"
 
 interface MembersModalProps {
 	isOpen: boolean
@@ -51,10 +54,39 @@ interface MembersModalProps {
 	onMembersChanged: () => void
 }
 
+type ShareLinkRole = "EDITOR" | "MEMBER" | "VIEWER"
+
 interface ShareLink {
 	id: string
 	token: string
-	role: "EDITOR" | "VIEWER"
+	role: ShareLinkRole
+	expiresAt?: string | null
+	maxUses?: number | null
+	useCount?: number
+}
+
+const SHARE_LINK_ROLE_LABELS: Record<ShareLinkRole, string> = {
+	EDITOR: "Editor access",
+	MEMBER: "Member access",
+	VIEWER: "Viewer access",
+}
+
+const EXPIRY_CHOICES = [
+	{ value: "never", label: "No expiry" },
+	{ value: "1", label: "1 day" },
+	{ value: "7", label: "7 days" },
+	{ value: "30", label: "30 days" },
+]
+
+const shareLinkLimits = (link: ShareLink): string => {
+	const expiry = link.expiresAt
+		? `Expires ${new Date(link.expiresAt).toLocaleDateString()}`
+		: "No expiry"
+	const uses =
+		typeof link.maxUses === "number"
+			? ` · ${link.useCount ?? 0}/${link.maxUses} uses`
+			: ""
+	return expiry + uses
 }
 
 export function MembersModal({
@@ -68,7 +100,9 @@ export function MembersModal({
 	const [error, setError] = useState("")
 	const [isInviting, setIsInviting] = useState(false)
 	const [shareLinks, setShareLinks] = useState<ShareLink[]>([])
-	const [newLinkRole, setNewLinkRole] = useState<"EDITOR" | "VIEWER">("EDITOR")
+	const [newLinkRole, setNewLinkRole] = useState<ShareLinkRole>("EDITOR")
+	const [newLinkExpiry, setNewLinkExpiry] = useState("never")
+	const [newLinkMaxUses, setNewLinkMaxUses] = useState("")
 	const [copiedToken, setCopiedToken] = useState<string | null>(null)
 	const [isLoadingLinks, setIsLoadingLinks] = useState(false)
 	const [isCreatingLink, setIsCreatingLink] = useState(false)
@@ -173,22 +207,23 @@ export function MembersModal({
 	}
 
 	const handleCreateShareLink = async () => {
+		const maxUses = Number.parseInt(newLinkMaxUses, 10)
 		setIsCreatingLink(true)
 		try {
-			const res = await fetch(`${URI}/api/projects/${project.id}/share-links`, {
-				method: "POST",
-				headers: { "Content-Type": "application/json" },
-				credentials: "include",
-				body: JSON.stringify({ role: newLinkRole }),
-			})
-			if (res.ok) {
-				const newLink = await res.json()
-				setShareLinks((prev) => [...prev, newLink])
-			} else {
-				alert("Failed to create share link.")
-			}
-		} catch {
-			alert("An error occurred while creating the share link.")
+			const newLink = await api.post<ShareLink>(
+				`/api/projects/${project.id}/share-links`,
+				{
+					role: newLinkRole,
+					...(newLinkExpiry === "never"
+						? {}
+						: { expiresInDays: Number.parseInt(newLinkExpiry, 10) }),
+					...(Number.isFinite(maxUses) && maxUses > 0 ? { maxUses } : {}),
+				}
+			)
+			setShareLinks((prev) => [...prev, newLink])
+			setNewLinkMaxUses("")
+		} catch (error) {
+			toast.error(describeError(error, "Could not create the share link."))
 		} finally {
 			setIsCreatingLink(false)
 		}
@@ -358,9 +393,7 @@ export function MembersModal({
 														<div className="flex flex-col">
 															<div className="flex items-center gap-1.5">
 																<span className="text-sm font-medium">
-																	{link.role === "EDITOR"
-																		? "Editor access"
-																		: "Viewer access"}
+																	{SHARE_LINK_ROLE_LABELS[link.role]}
 																</span>
 																{getRoleIcon(link.role)}
 															</div>
@@ -370,6 +403,9 @@ export function MembersModal({
 																	{`${window.location.origin}/join/${link.token}`}
 																</span>
 															</div>
+															<span className="text-xs text-muted-foreground">
+																{shareLinkLimits(link)}
+															</span>
 														</div>
 													</div>
 													<div className="flex items-center gap-1">
@@ -437,14 +473,17 @@ export function MembersModal({
 										)}
 									</div>
 
-									<div className="flex gap-2">
+									<div className="flex flex-wrap items-center gap-2">
 										<Select
 											value={newLinkRole}
-											onValueChange={(value: "EDITOR" | "VIEWER") =>
+											onValueChange={(value: ShareLinkRole) =>
 												setNewLinkRole(value)
 											}
 										>
-											<SelectTrigger className="h-9 w-[120px]">
+											<SelectTrigger
+												className="h-9 w-[110px]"
+												aria-label="Role granted by the link"
+											>
 												<SelectValue placeholder="Role" />
 											</SelectTrigger>
 											<SelectContent>
@@ -456,6 +495,13 @@ export function MembersModal({
 													<span>Editor</span>
 												</SelectItem>
 												<SelectItem
+													value="MEMBER"
+													className="flex items-center gap-1.5"
+												>
+													<Shield className="h-3.5 w-3.5 text-emerald-500" />
+													<span>Member</span>
+												</SelectItem>
+												<SelectItem
 													value="VIEWER"
 													className="flex items-center gap-1.5"
 												>
@@ -464,6 +510,31 @@ export function MembersModal({
 												</SelectItem>
 											</SelectContent>
 										</Select>
+										<Select value={newLinkExpiry} onValueChange={setNewLinkExpiry}>
+											<SelectTrigger
+												className="h-9 w-[110px]"
+												aria-label="Link expiry"
+											>
+												<SelectValue placeholder="Expiry" />
+											</SelectTrigger>
+											<SelectContent>
+												{EXPIRY_CHOICES.map((choice) => (
+													<SelectItem key={choice.value} value={choice.value}>
+														{choice.label}
+													</SelectItem>
+												))}
+											</SelectContent>
+										</Select>
+										<Input
+											type="number"
+											min={1}
+											max={1000}
+											placeholder="Max uses"
+											aria-label="Maximum number of uses (blank for unlimited)"
+											className="h-9 w-[100px]"
+											value={newLinkMaxUses}
+											onChange={(e) => setNewLinkMaxUses(e.target.value)}
+										/>
 										<Button
 											onClick={handleCreateShareLink}
 											disabled={isCreatingLink}

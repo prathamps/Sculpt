@@ -8,6 +8,10 @@ import { SEARCH_RESULT_LIMIT } from "./search.service"
 const searchQuerySchema = z.object({
 	q: z.string().trim().min(1, "Search term is required").max(200),
 	limit: z.coerce.number().int().positive().max(SEARCH_RESULT_LIMIT).optional(),
+	mediaType: z.enum(["IMAGE", "VIDEO", "PDF", "MODEL"]).optional(),
+	reviewStatus: z
+		.enum(["PENDING", "CHANGES_REQUESTED", "APPROVED"])
+		.optional(),
 })
 
 const router = Router()

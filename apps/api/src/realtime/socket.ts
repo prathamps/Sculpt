@@ -11,7 +11,11 @@ import {
 	removeViewer,
 	getViewers,
 } from "./viewerPresence"
-import { canViewVersion, isProjectMember } from "../modules/projects/access"
+import {
+	canViewInternalComments,
+	canViewVersion,
+	isProjectMember,
+} from "../modules/projects/access"
 import { logger } from "../lib/logger"
 
 export const io = new Server({
@@ -48,6 +52,9 @@ const joinedVersions = (socket: Socket): Set<string> => {
 const versionRoom = (imageVersionId: string): string =>
 	`imageVersion:${imageVersionId}`
 
+export const internalVersionRoom = (imageVersionId: string): string =>
+	`imageVersion:${imageVersionId}:internal`
+
 const viewersStillInRoom = (imageVersionId: string) =>
 	io.to(versionRoom(imageVersionId))
 
@@ -63,6 +70,7 @@ export const guardedHandler =
 
 const leaveVersionRoom = (socket: Socket, imageVersionId: string): void => {
 	socket.leave(versionRoom(imageVersionId))
+	socket.leave(internalVersionRoom(imageVersionId))
 	joinedVersions(socket).delete(imageVersionId)
 	removeViewer(imageVersionId, socket.id)
 	viewersStillInRoom(imageVersionId).emit("presence:leave", {
@@ -113,6 +121,9 @@ export const registerHandlers = (socket: Socket) => {
 				return
 			}
 			socket.join(versionRoom(imageVersionId))
+			if (await canViewInternalComments(user.id, imageVersionId)) {
+				socket.join(internalVersionRoom(imageVersionId))
+			}
 			joinedVersions(socket).add(imageVersionId)
 			addViewer(imageVersionId, socket.id, presenceUser(user))
 			socket.emit("image_version_joined", {

@@ -16,7 +16,7 @@ const mocked = vi.mocked(prisma, true)
 
 const memberOf = (...projectIds: string[]) =>
 	mocked.projectMember.findMany.mockResolvedValue(
-		projectIds.map((projectId) => ({ projectId })) as never
+		projectIds.map((projectId) => ({ projectId, role: "OWNER" })) as never
 	)
 
 beforeEach(() => {
@@ -54,18 +54,72 @@ describe("searchForUser", () => {
 
 		expect(projectWhere.id).toEqual({ in: ["p1", "p2"] })
 		expect(imageWhere.projectId).toEqual({ in: ["p1", "p2"] })
-		expect(commentWhere.imageVersion).toEqual({
-			image: { projectId: { in: ["p1", "p2"] } },
+		expect(commentWhere.imageVersion.image).toEqual({
+			projectId: { in: ["p1", "p2"] },
 		})
 	})
 
-	it("searches case-insensitively", async () => {
+	it("searches case-insensitively across file and version names", async () => {
 		memberOf("p1")
 
 		await searchForUser("u1", "LoGo")
 
-		const imageWhere = mocked.image.findMany.mock.calls[0][0].where
-		expect(imageWhere.name).toEqual({ contains: "LoGo", mode: "insensitive" })
+		const insensitive = { contains: "LoGo", mode: "insensitive" }
+		expect(mocked.image.findMany.mock.calls[0][0].where.OR).toEqual([
+			{ name: insensitive },
+			{ versions: { some: { versionName: insensitive } } },
+		])
+	})
+
+	it("hides internal comments from projects where the caller is not on the team", async () => {
+		mocked.projectMember.findMany.mockResolvedValue([
+			{ projectId: "p1", role: "MEMBER" },
+			{ projectId: "p2", role: "EDITOR" },
+		] as never)
+
+		await searchForUser("u1", "logo")
+
+		expect(mocked.comment.findMany.mock.calls[0][0].where.OR).toEqual([
+			{ internal: false },
+			{
+				internal: true,
+				imageVersion: { image: { projectId: { in: ["p2"] } } },
+			},
+		])
+	})
+
+	it("narrows media and comments by media type", async () => {
+		memberOf("p1")
+
+		await searchForUser("u1", "logo", 20, { mediaType: "VIDEO" })
+
+		expect(mocked.image.findMany.mock.calls[0][0].where.versions).toEqual({
+			some: { mediaType: "VIDEO" },
+		})
+		expect(
+			mocked.comment.findMany.mock.calls[0][0].where.imageVersion.mediaType
+		).toBe("VIDEO")
+	})
+
+	it("narrows results by review status", async () => {
+		memberOf("p1")
+
+		await searchForUser("u1", "logo", 20, { reviewStatus: "APPROVED" })
+
+		expect(mocked.image.findMany.mock.calls[0][0].where.versions).toEqual({
+			some: { reviewStatus: "APPROVED" },
+		})
+	})
+
+	it("drops project hits when a media filter is active", async () => {
+		memberOf("p1")
+
+		const results = await searchForUser("u1", "logo", 20, {
+			mediaType: "IMAGE",
+		})
+
+		expect(mocked.project.findMany).not.toHaveBeenCalled()
+		expect(results.projects).toEqual([])
 	})
 
 	it("caps each result set at the requested limit", async () => {

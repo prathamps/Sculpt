@@ -30,6 +30,15 @@ import { MoreVertical } from "lucide-react"
 import { formatBytes } from "@/lib/utils"
 import { Button } from "./ui/button"
 import { ConfirmationModal } from "./ConfirmationModal"
+import { Checkbox } from "./ui/checkbox"
+import { ReviewStatusBadge } from "./ReviewPanel"
+import { FolderNode } from "@/hooks/useProjectFolders"
+import {
+	DropdownMenuSub,
+	DropdownMenuSubContent,
+	DropdownMenuSubTrigger,
+} from "./ui/dropdown-menu"
+import { FolderInputIcon } from "lucide-react"
 import { api } from "@/lib/api"
 import { describeError } from "@/lib/errors"
 import { toast } from "sonner"
@@ -42,6 +51,10 @@ interface FileCardProps {
 	linkTabIndex?: number
 	onRename?: (file: File) => void
 	onDelete?: (file: File) => void
+	folders?: FolderNode[]
+	canEdit?: boolean
+	isSelected?: boolean
+	onToggleSelected?: () => void
 }
 
 interface ThumbnailProps {
@@ -173,11 +186,17 @@ export function FileCard({
 	onProjectChanged,
 	viewMode = "grid",
 	linkTabIndex,
+	folders = [],
+	canEdit = true,
+	isSelected = false,
+	onToggleSelected,
 }: FileCardProps) {
 	const [isRenameModalOpen, setRenameModalOpen] = useState(false)
 	const [isConfirmingDelete, setConfirmingDelete] = useState(false)
 	const [isDeleting, setIsDeleting] = useState(false)
 	const mediaType: MediaType = file.latestVersion?.mediaType ?? "IMAGE"
+	const reviewStatus = file.latestVersion?.reviewStatus
+	const showReviewStatus = !!reviewStatus && reviewStatus !== "PENDING"
 	const fileCreatedAt = new Date(file.createdAt)
 	const formattedDate = formatDistanceToNow(fileCreatedAt, { addSuffix: true })
 	const versionCount = file.versionCount ?? 1
@@ -196,6 +215,52 @@ export function FileCard({
 		}
 	}
 
+	const selectionCheckbox = onToggleSelected && (
+		<Checkbox
+			checked={isSelected}
+			onCheckedChange={onToggleSelected}
+			onClick={(e) => e.stopPropagation()}
+			aria-label={`Select ${file.name}`}
+		/>
+	)
+
+	const moveToFolder = async (folderId: string | null) => {
+		try {
+			await api.patch(`/api/projects/${projectId}/images/${file.id}/folder`, {
+				folderId,
+			})
+			onProjectChanged()
+		} catch (error) {
+			toast.error(describeError(error, "Could not move this file."))
+		}
+	}
+
+	const moveMenu = canEdit && folders.length > 0 && (
+		<DropdownMenuSub>
+			<DropdownMenuSubTrigger>
+				<FolderInputIcon className="mr-2 h-4 w-4" />
+				Move to
+			</DropdownMenuSubTrigger>
+			<DropdownMenuSubContent className="max-h-64 overflow-y-auto">
+				<DropdownMenuItem
+					disabled={!file.folderId}
+					onClick={() => moveToFolder(null)}
+				>
+					All files
+				</DropdownMenuItem>
+				{folders.map((folder) => (
+					<DropdownMenuItem
+						key={folder.id}
+						disabled={folder.id === file.folderId}
+						onClick={() => moveToFolder(folder.id)}
+					>
+						{folder.name}
+					</DropdownMenuItem>
+				))}
+			</DropdownMenuSubContent>
+		</DropdownMenuSub>
+	)
+
 	const deleteConfirmation = (
 		<ConfirmationModal
 			isOpen={isConfirmingDelete}
@@ -212,8 +277,14 @@ export function FileCard({
 	if (viewMode === "list") {
 		return (
 			<>
-				<div className="group flex items-center justify-between rounded-md border border-border/40 bg-card p-3 hover:border-primary/40 transition-all">
+				<div
+					className={cn(
+						"group flex items-center justify-between rounded-md border bg-card p-3 transition-all hover:border-primary/40",
+						isSelected ? "border-primary" : "border-border/40"
+					)}
+				>
 					<div className="flex items-center gap-3 flex-1 min-w-0">
+						{selectionCheckbox}
 						<div className="relative h-12 w-12 shrink-0 overflow-hidden rounded-md bg-muted/50">
 							<CardThumbnail
 								file={file}
@@ -232,6 +303,12 @@ export function FileCard({
 									{formattedDate}
 								</span>
 								{file.size && <span>{formatBytes(file.size)}</span>}
+								{showReviewStatus && (
+									<ReviewStatusBadge
+										status={reviewStatus}
+										className="px-2 py-0.5 text-[10px]"
+									/>
+								)}
 							</div>
 						</div>
 					</div>
@@ -267,6 +344,7 @@ export function FileCard({
 									<PencilIcon className="mr-2 h-4 w-4 text-primary/70" />
 									Rename
 								</DropdownMenuItem>
+								{moveMenu}
 								<DropdownMenuItem asChild>
 									<Link
 										href={`/project/${projectId}/image/${file.id}`}
@@ -301,7 +379,12 @@ export function FileCard({
 
 	return (
 		<>
-			<Card className="group overflow-hidden bg-card hover:shadow-md">
+			<Card
+				className={cn(
+					"group relative overflow-hidden bg-card hover:shadow-md",
+					isSelected && "ring-2 ring-primary"
+				)}
+			>
 				<Link
 					href={`/project/${projectId}/image/${file.id}`}
 					tabIndex={linkTabIndex}
@@ -314,8 +397,26 @@ export function FileCard({
 							overlayIconSize="h-8 w-8"
 							zoomOnHover={mediaType === "IMAGE"}
 						/>
+						{showReviewStatus && (
+							<ReviewStatusBadge
+								status={reviewStatus}
+								className="absolute left-1.5 top-1.5 z-10 bg-background/90 px-2 py-0.5 text-[10px]"
+							/>
+						)}
 					</div>
 				</Link>
+				{selectionCheckbox && (
+					<div
+						className={cn(
+							"absolute right-2 top-2 z-10 rounded bg-background/90 p-1 transition-opacity",
+							isSelected
+								? "opacity-100"
+								: "opacity-0 focus-within:opacity-100 group-hover:opacity-100"
+						)}
+					>
+						{selectionCheckbox}
+					</div>
+				)}
 				<CardContent className="p-4">
 					<div className="flex items-center justify-between">
 						<div className="truncate">
@@ -349,6 +450,7 @@ export function FileCard({
 									<PencilIcon className="mr-2 h-4 w-4" />
 									Rename
 								</DropdownMenuItem>
+								{moveMenu}
 								<DropdownMenuItem
 									onClick={() => setConfirmingDelete(true)}
 									className="text-destructive focus:text-destructive"
