@@ -76,6 +76,11 @@ export function PdfAnnotationCanvas({
 
 	useEffect(() => setPageInput(String(pageNumber)), [pageNumber])
 
+	const onDocumentLoadedRef = useRef(onDocumentLoaded)
+	useEffect(() => {
+		onDocumentLoadedRef.current = onDocumentLoaded
+	})
+
 	useEffect(() => {
 		let cancelled = false
 		let loadingTask: PDFDocumentLoadingTask | null = null
@@ -91,7 +96,7 @@ export function PdfAnnotationCanvas({
 				if (cancelled) return
 				setPdfDocument(doc)
 				setNumPages(doc.numPages)
-				onDocumentLoaded?.(doc.numPages)
+				onDocumentLoadedRef.current?.(doc.numPages)
 			} catch (err) {
 				console.error("Failed to load PDF:", err)
 				if (!cancelled) {
@@ -233,10 +238,9 @@ export function PdfAnnotationCanvas({
 		ctx.beginPath()
 		if (tool === "pencil") {
 			currentPathRef.current.push(pos)
-			ctx.moveTo(
-				currentPathRef.current[0].x * width,
-				currentPathRef.current[0].y * height
-			)
+			const first = currentPathRef.current[0]
+			if (!first) return
+			ctx.moveTo(first.x * width, first.y * height)
 			currentPathRef.current.forEach((p) =>
 				ctx.lineTo(p.x * width, p.y * height)
 			)

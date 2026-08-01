@@ -36,7 +36,7 @@ describe("withMimeTypeTheApiCanMap", () => {
 			["shot.png", "image/png"],
 			["clip.mp4", "video/mp4"],
 			["spec.pdf", "application/pdf"],
-		]) {
+		] as const) {
 			const file = fileNamed(name, type)
 			expect(withMimeTypeTheApiCanMap(file)).toBe(file)
 		}

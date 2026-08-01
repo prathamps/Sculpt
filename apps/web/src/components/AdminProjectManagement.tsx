@@ -50,6 +50,8 @@ interface ProjectDetail extends Project {
 	}>
 }
 
+const URI = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001"
+
 export function AdminProjectManagement() {
 	const [projects, setProjects] = useState<Project[]>([])
 	const [loading, setLoading] = useState(true)
@@ -58,7 +60,6 @@ export function AdminProjectManagement() {
 		null
 	)
 	const [isDialogOpen, setIsDialogOpen] = useState(false)
-	const URI = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001"
 	useEffect(() => {
 		const fetchProjects = async () => {
 			try {

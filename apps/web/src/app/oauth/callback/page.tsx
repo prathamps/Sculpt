@@ -19,7 +19,7 @@ export default function OAuthCallbackPage() {
 			router.replace("/dashboard")
 		}, SESSION_HYDRATION_FALLBACK_MS)
 		return () => clearTimeout(fallbackIfSessionHydrationStalls)
-	}, [])
+	}, [refreshProfileAndRedirectToDashboard, router])
 
 	return (
 		<div className="flex h-screen w-full flex-col items-center justify-center gap-3 bg-background">

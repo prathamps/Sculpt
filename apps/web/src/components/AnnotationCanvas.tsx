@@ -250,11 +250,10 @@ export function AnnotationCanvas({
 
 		if (tool === "pencil") {
 			currentPathRef.current.push(pos)
+			const first = currentPathRef.current[0]
+			if (!first) return
 			previewCtx.beginPath()
-			previewCtx.moveTo(
-				currentPathRef.current[0]?.x * width,
-				currentPathRef.current[0]?.y * height
-			)
+			previewCtx.moveTo(first.x * width, first.y * height)
 			currentPathRef.current.forEach((p) => {
 				previewCtx.lineTo(p.x * width, p.y * height)
 			})

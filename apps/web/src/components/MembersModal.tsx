@@ -65,6 +65,8 @@ interface ShareLink {
 	useCount?: number
 }
 
+const URI = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001"
+
 const SHARE_LINK_ROLE_LABELS: Record<ShareLinkRole, string> = {
 	EDITOR: "Editor access",
 	MEMBER: "Member access",
@@ -106,7 +108,6 @@ export function MembersModal({
 	const [copiedToken, setCopiedToken] = useState<string | null>(null)
 	const [isLoadingLinks, setIsLoadingLinks] = useState(false)
 	const [isCreatingLink, setIsCreatingLink] = useState(false)
-	const URI = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001"
 	useEffect(() => {
 		if (project && isOpen) {
 			const fetchShareLinks = async () => {

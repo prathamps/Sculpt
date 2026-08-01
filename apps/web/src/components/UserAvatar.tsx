@@ -24,8 +24,9 @@ export const initialsOf = (name?: string | null, email?: string | null): string 
 	const source = name?.trim() || email?.trim() || "?"
 	const words = source.split(/[\s._-]+/).filter(Boolean)
 
-	if (words.length >= 2) {
-		return `${words[0][0]}${words[1][0]}`.toUpperCase()
+	const [firstWord, secondWord] = words
+	if (firstWord && secondWord) {
+		return `${firstWord.charAt(0)}${secondWord.charAt(0)}`.toUpperCase()
 	}
 	return source.slice(0, 2).toUpperCase()
 }

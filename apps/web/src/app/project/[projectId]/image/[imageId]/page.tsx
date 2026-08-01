@@ -262,11 +262,7 @@ function ProjectFileViewPageInner() {
 					const requested = searchParamsRef.current.get("v")
 					const fromParam = data.versions?.find((v) => v.id === requested)
 					setSelectedVersion(
-						fromParam ??
-							data.latestVersion ??
-							(data.versions && data.versions.length > 0
-								? data.versions[0]
-								: null)
+						fromParam ?? data.latestVersion ?? data.versions?.[0] ?? null
 					)
 				} else {
 					setLoadError(true)

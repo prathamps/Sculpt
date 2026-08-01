@@ -17,9 +17,7 @@ export function ImageUploadForm({
 	const [file, setFile] = useState<File | null>(null)
 	const URI = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001"
 	const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-		if (e.target.files) {
-			setFile(e.target.files[0])
-		}
+		setFile(e.target.files?.[0] ?? null)
 	}
 
 	const handleSubmit = async (e: FormEvent) => {

@@ -43,7 +43,7 @@ describe("isAcceptedUpload", () => {
 			["sprite.tga", "image/x-targa"],
 			["plate.exr", "image/x-exr"],
 			["frame.dpx", "image/x-dpx"],
-		]) {
+		] as const) {
 			expect(isAcceptedUpload(fileNamed(name, type))).toBe(true)
 		}
 	})
@@ -55,7 +55,7 @@ describe("isAcceptedUpload", () => {
 			["clip.wmv", "video/x-ms-wmv"],
 			["broadcast.mxf", "application/mxf"],
 			["stream.ts", "video/mp2t"],
-		]) {
+		] as const) {
 			expect(isAcceptedUpload(fileNamed(name, type))).toBe(true)
 		}
 	})
@@ -67,7 +67,7 @@ describe("isAcceptedUpload", () => {
 			["logo.svg", "image/svg+xml"],
 			["deck.pptx", ""],
 			["archive.zip", "application/zip"],
-		]) {
+		] as const) {
 			expect(isAcceptedUpload(fileNamed(name, type))).toBe(false)
 		}
 	})
