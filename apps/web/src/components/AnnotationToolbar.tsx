@@ -8,7 +8,7 @@ import {
 	DropdownMenuTrigger,
 	DropdownMenuLabel,
 } from "@/components/ui/dropdown-menu"
-import { AnnotationTool } from "@/app/project/[projectId]/image/[imageId]/page"
+import { AnnotationTool } from "@/types"
 import {
 	Tooltip,
 	TooltipContent,

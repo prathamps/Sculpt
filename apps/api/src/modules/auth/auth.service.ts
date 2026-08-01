@@ -2,6 +2,7 @@ import { User, UserRole } from "@prisma/client"
 import bcrypt from "bcrypt"
 import { prisma } from "../../lib/prisma"
 import { ForbiddenError, ValidationError } from "../../lib/errors"
+import { recordAudit } from "../audit/audit.service"
 
 export type SafeUser = Omit<User, "password">
 
@@ -55,31 +56,49 @@ interface OAuthUserInput {
 	provider: string
 	providerId: string
 	email: string
+	emailVerified: boolean
 	name?: string | null
 	avatarUrl?: string | null
 }
 
 export const findOrCreateOAuthUser = async (
 	data: OAuthUserInput
-): Promise<SafeUser> => {
+): Promise<SafeUser | null> => {
+	const linked = await prisma.user.findFirst({
+		where: { provider: data.provider, providerId: data.providerId },
+	})
+
+	if (linked) {
+		if (!linked.avatarUrl && data.avatarUrl) {
+			return prisma.user.update({
+				where: { id: linked.id },
+				data: { avatarUrl: data.avatarUrl },
+			})
+		}
+		return linked
+	}
+
 	const existing = await prisma.user.findUnique({
 		where: { email: data.email },
 	})
 
 	if (existing) {
-		const needsUpdate =
-			(!existing.providerId && !!data.providerId) ||
-			(!existing.avatarUrl && !!data.avatarUrl)
-		const user = needsUpdate
-			? await prisma.user.update({
-					where: { id: existing.id },
-					data: {
-						providerId: existing.providerId ?? data.providerId,
-						avatarUrl: existing.avatarUrl ?? data.avatarUrl ?? null,
-						provider: existing.provider ?? data.provider,
-					},
-			  })
-			: existing
+		if (!data.emailVerified || existing.providerId) return null
+		const user = await prisma.user.update({
+			where: { id: existing.id },
+			data: {
+				provider: data.provider,
+				providerId: data.providerId,
+				avatarUrl: existing.avatarUrl ?? data.avatarUrl ?? null,
+			},
+		})
+		await recordAudit({
+			action: "user.oauth_linked",
+			targetType: "user",
+			targetId: user.id,
+			actorId: user.id,
+			metadata: { provider: data.provider },
+		})
 		return user
 	}
 

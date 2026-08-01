@@ -21,6 +21,27 @@ try {
 
 const port = Number(process.env.PORT) || 3001
 
+const DEFAULT_SHUTDOWN_GRACE_MS = 30000
+
+const shutdownGraceMs = (): number => {
+	const configured = Number(process.env.SHUTDOWN_GRACE_MS)
+	return Number.isFinite(configured) && configured > 0
+		? configured
+		: DEFAULT_SHUTDOWN_GRACE_MS
+}
+
+const shutdownGracefully = (server: http.Server, signal: string): void => {
+	logger.info("Received shutdown signal, draining connections", { signal })
+	server.close(() => {
+		logger.info("Server drained, exiting")
+		process.exit(0)
+	})
+	setTimeout(() => {
+		logger.warn("Shutdown grace period elapsed, exiting with work in flight")
+		process.exit(1)
+	}, shutdownGraceMs()).unref()
+}
+
 const start = async (): Promise<void> => {
 	const server = http.createServer(createApp())
 
@@ -31,6 +52,9 @@ const start = async (): Promise<void> => {
 	)
 	startSessionMaintenance()
 	startStagingReaper()
+
+	process.on("SIGTERM", () => shutdownGracefully(server, "SIGTERM"))
+	process.on("SIGINT", () => shutdownGracefully(server, "SIGINT"))
 
 	server.listen(port, () => {
 		logger.info("Server listening", { port })

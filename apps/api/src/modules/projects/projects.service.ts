@@ -7,6 +7,8 @@ import {
 	ValidationError,
 } from "../../lib/errors"
 import { PageRequest, skipTake } from "../../lib/pagination"
+import { logger } from "../../lib/logger"
+import { storage } from "../../storage"
 import {
 	ROLE_RANK,
 	getMemberRole,
@@ -146,7 +148,23 @@ export const deleteProject = async (
 	userId: string
 ): Promise<void> => {
 	await requireOwner(projectId, userId, "delete a project")
+
+	const assets = await prisma.mediaAsset.findMany({
+		where: { projectId },
+		select: { storedPath: true },
+	})
+
 	await prisma.project.delete({ where: { id: projectId } })
+
+	await Promise.all(
+		assets.map((asset) =>
+			storage.remove(asset.storedPath).catch((error) =>
+				logger.error("Failed to remove media for deleted project", error, {
+					projectId,
+				})
+			)
+		)
+	)
 }
 
 export const removeUserFromProject = async (
@@ -412,15 +430,26 @@ export const joinProjectWithShareLink = async (
 	const existingRole = await getMemberRole(link.projectId, userId)
 
 	if (!existingRole) {
-		await prisma.$transaction([
-			prisma.projectMember.create({
-				data: { projectId: link.projectId, userId, role: link.role },
-			}),
-			prisma.shareLink.update({
-				where: { id: link.id },
+		await prisma.$transaction(async (tx) => {
+			const claimed = await tx.shareLink.updateMany({
+				where: {
+					id: link.id,
+					revokedAt: null,
+					...(link.maxUses !== null
+						? { useCount: { lt: link.maxUses } }
+						: {}),
+				},
 				data: { useCount: { increment: 1 } },
-			}),
-		])
+			})
+			if (claimed.count === 0) {
+				throw new NotFoundError(
+					"This share link is invalid, expired or used up."
+				)
+			}
+			await tx.projectMember.create({
+				data: { projectId: link.projectId, userId, role: link.role },
+			})
+		})
 	} else if (ROLE_RANK[link.role] > ROLE_RANK[existingRole]) {
 		await prisma.projectMember.update({
 			where: { projectId_userId: { projectId: link.projectId, userId } },

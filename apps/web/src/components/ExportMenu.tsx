@@ -36,16 +36,21 @@ function drawAnnotations(
 		ctx.lineCap = "round"
 		ctx.lineJoin = "round"
 		ctx.beginPath()
+		const [start, end] = a.points
+		if (!start) return
 		if (a.type === "pencil") {
-			ctx.moveTo(a.points[0].x * w, a.points[0].y * h)
+			ctx.moveTo(start.x * w, start.y * h)
 			a.points.forEach((p) => ctx.lineTo(p.x * w, p.y * h))
-		} else if (a.type === "rect" && a.points.length >= 2) {
-			const s = a.points[0]
-			const e = a.points[1]
-			ctx.rect(s.x * w, s.y * h, (e.x - s.x) * w, (e.y - s.y) * h)
-		} else if (a.type === "line" && a.points.length >= 2) {
-			ctx.moveTo(a.points[0].x * w, a.points[0].y * h)
-			ctx.lineTo(a.points[1].x * w, a.points[1].y * h)
+		} else if (a.type === "rect" && end) {
+			ctx.rect(
+				start.x * w,
+				start.y * h,
+				(end.x - start.x) * w,
+				(end.y - start.y) * h
+			)
+		} else if (a.type === "line" && end) {
+			ctx.moveTo(start.x * w, start.y * h)
+			ctx.lineTo(end.x * w, end.y * h)
 		}
 		ctx.stroke()
 	})

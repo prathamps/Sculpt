@@ -18,7 +18,6 @@ import {
 	DropdownMenuSeparator,
 	DropdownMenuTrigger,
 } from "./ui/dropdown-menu"
-import { Avatar, AvatarFallback, AvatarImage } from "./ui/avatar"
 import { useState } from "react"
 import { UserAvatar } from "@/components/UserAvatar"
 

@@ -6,6 +6,7 @@ import {
 	useState,
 	useEffect,
 	ReactNode,
+	useCallback,
 	useMemo,
 } from "react"
 import { useRouter, usePathname } from "next/navigation"
@@ -65,41 +66,41 @@ export const AdminAuthProvider = ({ children }: { children: ReactNode }) => {
 		}
 	}, [pathname])
 
-	const adminLogin = async (
-		email: string,
-		password: string
-	): Promise<boolean> => {
-		try {
-			const res = await fetch(`${URI}/api/admin/login`, {
-				method: "POST",
-				credentials: "include",
-				headers: {
-					"Content-Type": "application/json",
-				},
-				body: JSON.stringify({ email, password }),
-			})
-
-			if (res.ok) {
-				const profileRes = await fetch(`${URI}/api/admin/profile`, {
+	const adminLogin = useCallback(
+		async (email: string, password: string): Promise<boolean> => {
+			try {
+				const res = await fetch(`${URI}/api/admin/login`, {
+					method: "POST",
 					credentials: "include",
+					headers: {
+						"Content-Type": "application/json",
+					},
+					body: JSON.stringify({ email, password }),
 				})
 
-				if (profileRes.ok) {
-					const data = await profileRes.json()
-					setAdminUser(data)
-					router.push("/admin")
-					return true
+				if (res.ok) {
+					const profileRes = await fetch(`${URI}/api/admin/profile`, {
+						credentials: "include",
+					})
+
+					if (profileRes.ok) {
+						const data = await profileRes.json()
+						setAdminUser(data)
+						router.push("/admin")
+						return true
+					}
 				}
+
+				return false
+			} catch (error) {
+				console.error("Admin login error:", error)
+				return false
 			}
+		},
+		[router]
+	)
 
-			return false
-		} catch (error) {
-			console.error("Admin login error:", error)
-			return false
-		}
-	}
-
-	const adminLogout = async () => {
+	const adminLogout = useCallback(async () => {
 		try {
 			await fetch(`${URI}/api/admin/logout`, {
 				method: "POST",
@@ -110,7 +111,7 @@ export const AdminAuthProvider = ({ children }: { children: ReactNode }) => {
 		} catch (error) {
 			console.error("Admin logout error:", error)
 		}
-	}
+	}, [router])
 
 	const value = useMemo(
 		() => ({

@@ -15,7 +15,7 @@ export interface MentionPick {
 export const mentionLabelOf = (user: {
 	name: string | null
 	email: string
-}): string => user.name || user.email.split("@")[0]
+}): string => user.name || user.email.split("@")[0] || user.email
 
 interface MentionTextareaProps {
 	id?: string
@@ -38,7 +38,7 @@ const activeTokenAt = (text: string, caret: number): ActiveToken | null => {
 	const beforeCaret = text.slice(0, caret)
 	const atIndex = beforeCaret.lastIndexOf("@")
 	if (atIndex === -1) return null
-	if (atIndex > 0 && !/\s/.test(beforeCaret[atIndex - 1])) return null
+	if (atIndex > 0 && !/\s/.test(beforeCaret.charAt(atIndex - 1))) return null
 	const query = beforeCaret.slice(atIndex + 1)
 	if (query.includes("\n") || query.length > 40) return null
 	return { start: atIndex, query }
@@ -108,7 +108,8 @@ export function MentionTextarea({
 			)
 		} else if (e.key === "Enter" || e.key === "Tab") {
 			e.preventDefault()
-			pick(suggestions[highlighted])
+			const highlightedMember = suggestions[highlighted]
+			if (highlightedMember) pick(highlightedMember)
 		} else if (e.key === "Escape") {
 			e.preventDefault()
 			setToken(null)

@@ -6,9 +6,10 @@ import type {
 	PDFDocumentLoadingTask,
 	RenderTask,
 } from "pdfjs-dist"
-import { AnnotationTool } from "@/app/project/[projectId]/image/[imageId]/page"
+import { AnnotationTool } from "@/types"
 import { loadPdfjsInBrowser } from "@/lib/pdf"
 import { drawAnnotations } from "@/lib/annotation-drawing"
+import { useDrawingSurface } from "@/hooks/useDrawingSurface"
 import { Loader2, ChevronLeft, ChevronRight, ZoomIn, ZoomOut } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -70,11 +71,20 @@ export function PdfAnnotationCanvas({
 	const [error, setError] = useState<string | null>(null)
 	const [resizeNonce, setResizeNonce] = useState(0)
 
-	const isDrawingRef = useRef(false)
-	const startPosRef = useRef<Point | null>(null)
-	const currentPathRef = useRef<Point[]>([])
+	const { handlers } = useDrawingSurface({
+		previewCanvasRef,
+		tool,
+		color,
+		onCommit: (stroke) => onAddAnnotation?.(stroke),
+		measure: "raw",
+	})
 
 	useEffect(() => setPageInput(String(pageNumber)), [pageNumber])
+
+	const onDocumentLoadedRef = useRef(onDocumentLoaded)
+	useEffect(() => {
+		onDocumentLoadedRef.current = onDocumentLoaded
+	})
 
 	useEffect(() => {
 		let cancelled = false
@@ -91,7 +101,7 @@ export function PdfAnnotationCanvas({
 				if (cancelled) return
 				setPdfDocument(doc)
 				setNumPages(doc.numPages)
-				onDocumentLoaded?.(doc.numPages)
+				onDocumentLoadedRef.current?.(doc.numPages)
 			} catch (err) {
 				console.error("Failed to load PDF:", err)
 				if (!cancelled) {
@@ -199,89 +209,6 @@ export function PdfAnnotationCanvas({
 		else setPageInput(String(pageNumber))
 	}
 
-	const getNormalizedPos = (clientX: number, clientY: number): Point | null => {
-		const canvas = previewCanvasRef.current
-		if (!canvas) return null
-		const rect = canvas.getBoundingClientRect()
-		return {
-			x: Math.max(0, Math.min(1, (clientX - rect.left) / rect.width)),
-			y: Math.max(0, Math.min(1, (clientY - rect.top) / rect.height)),
-		}
-	}
-
-	const startDrawing = (clientX: number, clientY: number) => {
-		const pos = getNormalizedPos(clientX, clientY)
-		if (!pos) return
-		isDrawingRef.current = true
-		startPosRef.current = pos
-		currentPathRef.current = [pos]
-	}
-
-	const continueDrawing = (clientX: number, clientY: number) => {
-		if (!isDrawingRef.current) return
-		const pos = getNormalizedPos(clientX, clientY)
-		if (!pos) return
-		const canvas = previewCanvasRef.current
-		const ctx = canvas?.getContext("2d")
-		if (!ctx || !canvas) return
-		const { width, height } = canvas
-		ctx.clearRect(0, 0, width, height)
-		ctx.strokeStyle = color
-		ctx.lineWidth = 2
-		ctx.lineCap = "round"
-		ctx.lineJoin = "round"
-		ctx.beginPath()
-		if (tool === "pencil") {
-			currentPathRef.current.push(pos)
-			ctx.moveTo(
-				currentPathRef.current[0].x * width,
-				currentPathRef.current[0].y * height
-			)
-			currentPathRef.current.forEach((p) =>
-				ctx.lineTo(p.x * width, p.y * height)
-			)
-		} else {
-			const s = startPosRef.current
-			if (!s) return
-			if (tool === "rect") {
-				ctx.rect(
-					s.x * width,
-					s.y * height,
-					(pos.x - s.x) * width,
-					(pos.y - s.y) * height
-				)
-			} else if (tool === "line") {
-				ctx.moveTo(s.x * width, s.y * height)
-				ctx.lineTo(pos.x * width, pos.y * height)
-			}
-		}
-		ctx.stroke()
-	}
-
-	const finishDrawing = (clientX: number, clientY: number) => {
-		if (!isDrawingRef.current) return
-		isDrawingRef.current = false
-		const pos = getNormalizedPos(clientX, clientY)
-		const start = startPosRef.current
-		if (!pos || !start) return
-		const finalPoints =
-			tool === "pencil" ? currentPathRef.current : [start, pos]
-		if (finalPoints.length > 0) {
-			onAddAnnotation?.({ type: tool, color, points: finalPoints })
-		}
-		const previewCtx = previewCanvasRef.current?.getContext("2d")
-		if (previewCtx && previewCanvasRef.current) {
-			previewCtx.clearRect(
-				0,
-				0,
-				previewCanvasRef.current.width,
-				previewCanvasRef.current.height
-			)
-		}
-		startPosRef.current = null
-		currentPathRef.current = []
-	}
-
 	if (error) {
 		return (
 			<div className="flex h-full w-full items-center justify-center bg-muted/10">
@@ -379,48 +306,13 @@ export function PdfAnnotationCanvas({
 					/>
 					<canvas
 						ref={previewCanvasRef}
-						onMouseDown={
-							canDraw ? (e) => startDrawing(e.clientX, e.clientY) : undefined
-						}
-						onMouseMove={
-							canDraw ? (e) => continueDrawing(e.clientX, e.clientY) : undefined
-						}
-						onMouseUp={
-							canDraw ? (e) => finishDrawing(e.clientX, e.clientY) : undefined
-						}
-						onMouseLeave={
-							canDraw ? (e) => finishDrawing(e.clientX, e.clientY) : undefined
-						}
-						onTouchStart={
-							canDraw
-								? (e) => {
-										const touch = e.touches[0]
-										if (!touch) return
-										e.preventDefault()
-										startDrawing(touch.clientX, touch.clientY)
-									}
-								: undefined
-						}
-						onTouchMove={
-							canDraw
-								? (e) => {
-										const touch = e.touches[0]
-										if (!touch) return
-										e.preventDefault()
-										continueDrawing(touch.clientX, touch.clientY)
-									}
-								: undefined
-						}
-						onTouchEnd={
-							canDraw
-								? (e) => {
-										const touch = e.changedTouches[0]
-										if (!touch) return
-										e.preventDefault()
-										finishDrawing(touch.clientX, touch.clientY)
-									}
-								: undefined
-						}
+						onMouseDown={canDraw ? handlers.onMouseDown : undefined}
+						onMouseMove={canDraw ? handlers.onMouseMove : undefined}
+						onMouseUp={canDraw ? handlers.onMouseUp : undefined}
+						onMouseLeave={canDraw ? handlers.onMouseLeave : undefined}
+						onTouchStart={canDraw ? handlers.onTouchStart : undefined}
+						onTouchMove={canDraw ? handlers.onTouchMove : undefined}
+						onTouchEnd={canDraw ? handlers.onTouchEnd : undefined}
 						className={
 							canDraw
 								? "absolute left-0 top-0 cursor-crosshair"

@@ -126,11 +126,13 @@ Without Redis a single instance still works fully; the log says so at boot.
 
 ### Media delivery
 
-Stored media is never served anonymously. `GET /uploads/:filename` authenticates
+Stored media is served through `GET /uploads/:filename`, which authenticates
 the caller, maps the stored path to its project through the `MediaAsset` table (a
 primary-key lookup), verifies membership, and then either streams from disk or —
-when the bucket is private — redirects to a short-lived presigned URL. Removing
-someone from a project actually revokes their access to its files.
+for S3 — redirects to a short-lived presigned URL. Removing someone from a
+project actually revokes their access to its files. The one exception is opting
+out with `S3_PRIVATE=false`: media is then written as public bucket URLs that
+bypass the membership check entirely, and the server warns about it at startup.
 
 ### Audit logging
 

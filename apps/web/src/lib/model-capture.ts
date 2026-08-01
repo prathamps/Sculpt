@@ -75,7 +75,11 @@ const sceneParsers: Record<string, SceneParser> = {
 		const { ColladaLoader } = await import(
 			"three/examples/jsm/loaders/ColladaLoader.js"
 		)
-		return new ColladaLoader().parse(decodeText(buffer), "").scene
+		const collada = new ColladaLoader().parse(decodeText(buffer), "")
+		if (!collada?.scene) {
+			throw new Error("Collada file contains no scene")
+		}
+		return collada.scene
 	},
 	"3mf": async (_three, buffer) => {
 		const { ThreeMFLoader } = await import(

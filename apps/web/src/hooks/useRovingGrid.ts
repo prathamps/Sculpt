@@ -23,8 +23,9 @@ export function useRovingGrid<T extends HTMLElement>({
 
 	const measureColumnCountFromLayout = useCallback((): number => {
 		const items = itemRefs.current.filter(Boolean) as T[]
-		if (items.length === 0) return 1
-		const firstTop = items[0].offsetTop
+		const firstItem = items[0]
+		if (!firstItem) return 1
+		const firstTop = firstItem.offsetTop
 		let columns = 0
 		for (const item of items) {
 			if (item.offsetTop !== firstTop) break

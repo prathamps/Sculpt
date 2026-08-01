@@ -17,6 +17,7 @@ import { healthCheck } from "./modules/health/health.controller"
 import { isAllowedOrigin } from "./lib/cors"
 import { logger } from "./lib/logger"
 import { authenticateJWT } from "./middleware/auth.middleware"
+import { rejectCrossSiteMutations } from "./middleware/csrf.middleware"
 import { oversizedUploadMessage } from "./middleware/upload.middleware"
 
 const pdfJsRangedFetchHeader = "Range"
@@ -63,6 +64,7 @@ export const createApp = (): express.Express => {
 	trustProxyOnlyWithKnownHopCount(app)
 
 	app.use(cors(corsOptions))
+	app.use(rejectCrossSiteMutations)
 	app.use(applySecurityHeaders)
 	app.use(express.json({ limit: JSON_BODY_LIMIT }))
 	app.use(cookieParser())

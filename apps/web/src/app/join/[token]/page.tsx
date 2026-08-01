@@ -5,13 +5,14 @@ import { useParams, useRouter } from "next/navigation"
 import { useAuth } from "@/context/AuthContext"
 import { Loader2 } from "lucide-react"
 
+const URI = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001"
+
 export default function JoinPage() {
 	const router = useRouter()
 	const params = useParams()
 	const { isAuthenticated, loading } = useAuth()
 	const [message, setMessage] = useState("Processing your invitation...")
 	const token = params.token as string
-	const URI = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001"
 	useEffect(() => {
 		if (loading) {
 			return

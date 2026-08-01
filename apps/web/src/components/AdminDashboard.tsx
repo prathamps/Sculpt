@@ -28,12 +28,13 @@ interface DashboardStats {
 	}>
 }
 
+const URI = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001"
+
 export function AdminDashboard() {
 	const [stats, setStats] = useState<DashboardStats | null>(null)
 	const [loading, setLoading] = useState(true)
 	const [error, setError] = useState<string | null>(null)
 
-	const URI = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001"
 	useEffect(() => {
 		const fetchStats = async () => {
 			try {

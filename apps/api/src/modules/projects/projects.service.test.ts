@@ -24,14 +24,26 @@ vi.mock("../../lib/prisma", () => ({
 			findUnique: vi.fn(),
 			create: vi.fn(),
 			update: vi.fn(),
+			updateMany: vi.fn(),
 		},
 		user: {
 			findUnique: vi.fn(),
 		},
+		mediaAsset: {
+			findMany: vi.fn(),
+		},
+	},
+}))
+
+vi.mock("../../storage", () => ({
+	storage: {
+		store: vi.fn(),
+		remove: vi.fn(),
 	},
 }))
 
 import { prisma } from "../../lib/prisma"
+import { storage } from "../../storage"
 import {
 	removeUserFromProject,
 	updateProject,
@@ -170,6 +182,35 @@ describe("deleteProject", () => {
 			ForbiddenError
 		)
 		expect(mocked.project.delete).not.toHaveBeenCalled()
+	})
+
+	it("removes every stored file the project owned", async () => {
+		actingAsOwner()
+		mocked.mediaAsset.findMany.mockResolvedValue([
+			{ storedPath: "a.png" },
+			{ storedPath: "b.mp4" },
+		] as never)
+		mocked.project.delete.mockResolvedValue({} as never)
+		vi.mocked(storage.remove).mockResolvedValue(undefined)
+
+		await deleteProject("p1", "owner")
+
+		expect(mocked.project.delete).toHaveBeenCalledWith({
+			where: { id: "p1" },
+		})
+		expect(vi.mocked(storage.remove)).toHaveBeenCalledWith("a.png")
+		expect(vi.mocked(storage.remove)).toHaveBeenCalledWith("b.mp4")
+	})
+
+	it("still succeeds when storage cleanup fails", async () => {
+		actingAsOwner()
+		mocked.mediaAsset.findMany.mockResolvedValue([
+			{ storedPath: "a.png" },
+		] as never)
+		mocked.project.delete.mockResolvedValue({} as never)
+		vi.mocked(storage.remove).mockRejectedValue(new Error("s3 down"))
+
+		await expect(deleteProject("p1", "owner")).resolves.toBeUndefined()
 	})
 })
 
@@ -325,6 +366,7 @@ describe("joinProjectWithShareLink", () => {
 
 	it("adds a brand new member and counts the use", async () => {
 		mocked.shareLink.findUnique.mockResolvedValue(usableLink as never)
+		mocked.shareLink.updateMany.mockResolvedValue({ count: 1 } as never)
 		mocked.projectMember.findFirst.mockResolvedValue(null)
 		mocked.project.findUnique.mockResolvedValue({ id: "p1" } as never)
 
@@ -333,10 +375,30 @@ describe("joinProjectWithShareLink", () => {
 		expect(mocked.projectMember.create).toHaveBeenCalledWith({
 			data: { projectId: "p1", userId: "u1", role: "VIEWER" },
 		})
-		expect(mocked.shareLink.update).toHaveBeenCalledWith({
-			where: { id: "l1" },
+		expect(mocked.shareLink.updateMany).toHaveBeenCalledWith({
+			where: { id: "l1", revokedAt: null },
 			data: { useCount: { increment: 1 } },
 		})
+	})
+
+	it("claims a limited link atomically so concurrent joins cannot exceed maxUses", async () => {
+		mocked.shareLink.findUnique.mockResolvedValue({
+			...usableLink,
+			maxUses: 5,
+			useCount: 4,
+		} as never)
+		mocked.shareLink.updateMany.mockResolvedValue({ count: 0 } as never)
+		mocked.projectMember.findFirst.mockResolvedValue(null)
+
+		await expect(joinProjectWithShareLink("t", "u1")).rejects.toThrow(
+			/invalid, expired or used up/i
+		)
+
+		expect(mocked.shareLink.updateMany).toHaveBeenCalledWith({
+			where: { id: "l1", revokedAt: null, useCount: { lt: 5 } },
+			data: { useCount: { increment: 1 } },
+		})
+		expect(mocked.projectMember.create).not.toHaveBeenCalled()
 	})
 
 	it("never demotes an existing member to the link's lower role", async () => {

@@ -9,6 +9,7 @@ import {
 } from "../../middleware/authorize.middleware"
 import {
 	discardStagedUploadsWhenRequestEnds,
+	rejectMismatchedUploads,
 	upload,
 } from "../../middleware/upload.middleware"
 import { validateBody } from "../../middleware/validate.middleware"
@@ -54,6 +55,7 @@ router.post(
 		{ name: "thumbnail", maxCount: 1 },
 		{ name: "modelProxy", maxCount: 1 },
 	]),
+	rejectMismatchedUploads,
 	imageController.uploadImageVersion
 )
 router.put(
@@ -84,6 +86,7 @@ projectImagesRouter.post(
 		{ name: "thumbnails", maxCount: 10 },
 		{ name: "modelProxies", maxCount: 10 },
 	]),
+	rejectMismatchedUploads,
 	imageController.uploadImage
 )
 projectImagesRouter.get(

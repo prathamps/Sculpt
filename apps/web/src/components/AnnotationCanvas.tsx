@@ -1,13 +1,13 @@
 "use client"
 
 import React, { useRef, useEffect, useState, useCallback } from "react"
-import { AnnotationTool } from "@/app/project/[projectId]/image/[imageId]/page"
+import { AnnotationTool } from "@/types"
 import { drawAnnotations } from "@/lib/annotation-drawing"
+import { useDrawingSurface } from "@/hooks/useDrawingSurface"
 import {
 	devicePixelRatio,
 	observeElementSize,
 	scaleContextToPixelRatio,
-	cssCanvasSize,
 } from "@/lib/canvas"
 import { Loader2, Maximize2, ZoomIn, ZoomOut } from "lucide-react"
 
@@ -53,13 +53,16 @@ export function AnnotationCanvas({
 	const drawingCanvasRef = useRef<HTMLCanvasElement>(null)
 	const previewCanvasRef = useRef<HTMLCanvasElement>(null)
 
-	const [isDrawing, setIsDrawing] = useState(false)
 	const [image, setImage] = useState<HTMLImageElement | null>(null)
 	const [isLoading, setIsLoading] = useState(true)
 	const [error, setError] = useState<string | null>(null)
-	const startPosRef = useRef<Point | null>(null)
-	const lastPosRef = useRef<Point | null>(null)
-	const currentPathRef = useRef<Point[]>([])
+
+	const { handlers } = useDrawingSurface({
+		previewCanvasRef,
+		tool,
+		color,
+		onCommit: (stroke) => onAddAnnotation?.(stroke),
+	})
 
 	const [zoom, setZoom] = useState(1)
 	const [pan, setPan] = useState({ x: 0, y: 0 })
@@ -209,133 +212,6 @@ export function AnnotationCanvas({
 		}
 	}, [annotations, redrawAll, image])
 
-	const normalizedPointAt = (
-		clientX: number,
-		clientY: number
-	): Point | null => {
-		const canvas = previewCanvasRef.current
-		if (!canvas) return null
-		const rect = canvas.getBoundingClientRect()
-
-		const x = (clientX - rect.left) / rect.width
-		const y = (clientY - rect.top) / rect.height
-
-		return {
-			x: Math.max(0, Math.min(1, x)),
-			y: Math.max(0, Math.min(1, y)),
-		}
-	}
-
-	const beginStroke = (pos: Point | null) => {
-		if (readOnly || !pos) return
-		setIsDrawing(true)
-		startPosRef.current = pos
-		lastPosRef.current = pos
-		currentPathRef.current = [pos]
-	}
-
-	const extendStroke = (pos: Point | null) => {
-		if (!isDrawing || !pos) return
-		lastPosRef.current = pos
-
-		const previewCtx = previewCanvasRef.current?.getContext("2d")
-		if (!previewCtx || !previewCanvasRef.current) return
-		const { width, height } = cssCanvasSize(previewCanvasRef.current)
-		previewCtx.clearRect(0, 0, width, height)
-
-		previewCtx.strokeStyle = color
-		previewCtx.lineWidth = 2
-		previewCtx.lineCap = "round"
-		previewCtx.lineJoin = "round"
-
-		if (tool === "pencil") {
-			currentPathRef.current.push(pos)
-			previewCtx.beginPath()
-			previewCtx.moveTo(
-				currentPathRef.current[0]?.x * width,
-				currentPathRef.current[0]?.y * height
-			)
-			currentPathRef.current.forEach((p) => {
-				previewCtx.lineTo(p.x * width, p.y * height)
-			})
-			previewCtx.stroke()
-		} else {
-			const startPos = startPosRef.current
-			if (!startPos) return
-			previewCtx.beginPath()
-			if (tool === "rect") {
-				previewCtx.rect(
-					startPos.x * width,
-					startPos.y * height,
-					(pos.x - startPos.x) * width,
-					(pos.y - startPos.y) * height
-				)
-			} else if (tool === "line") {
-				previewCtx.moveTo(startPos.x * width, startPos.y * height)
-				previewCtx.lineTo(pos.x * width, pos.y * height)
-			}
-			previewCtx.stroke()
-		}
-	}
-
-	const finishStroke = (pos: Point | null) => {
-		if (!isDrawing) return
-		setIsDrawing(false)
-
-		const endPos = pos ?? lastPosRef.current
-		const startPos = startPosRef.current
-		if (!endPos || !startPos) return
-
-		let finalPoints: Point[]
-		if (tool === "pencil") {
-			finalPoints = currentPathRef.current
-		} else {
-			finalPoints = [startPos, endPos]
-		}
-
-		if (finalPoints.length > 0) {
-			onAddAnnotation?.({ type: tool, color, points: finalPoints })
-		}
-
-		const previewCanvas = previewCanvasRef.current
-		const previewCtx = previewCanvas?.getContext("2d")
-		if (previewCtx && previewCanvas) {
-			const { width, height } = cssCanvasSize(previewCanvas)
-			previewCtx.clearRect(0, 0, width, height)
-		}
-		startPosRef.current = null
-		lastPosRef.current = null
-		currentPathRef.current = []
-	}
-
-	const pointFromMouse = (e: React.MouseEvent): Point | null =>
-		normalizedPointAt(e.clientX, e.clientY)
-
-	const pointFromTouch = (touch: React.Touch | undefined): Point | null =>
-		touch ? normalizedPointAt(touch.clientX, touch.clientY) : null
-
-	const handleMouseDown = (e: React.MouseEvent) => beginStroke(pointFromMouse(e))
-	const handleMouseMove = (e: React.MouseEvent) => extendStroke(pointFromMouse(e))
-	const handleMouseUp = (e: React.MouseEvent) => finishStroke(pointFromMouse(e))
-
-	const handleTouchStart = (e: React.TouchEvent) => {
-		if (readOnly) return
-		e.preventDefault()
-		beginStroke(pointFromTouch(e.touches[0]))
-	}
-
-	const handleTouchMove = (e: React.TouchEvent) => {
-		if (!isDrawing) return
-		e.preventDefault()
-		extendStroke(pointFromTouch(e.touches[0]))
-	}
-
-	const handleTouchEnd = (e: React.TouchEvent) => {
-		if (!isDrawing) return
-		e.preventDefault()
-		finishStroke(pointFromTouch(e.changedTouches[0]))
-	}
-
 	if (isLoading) {
 		return (
 			<div className="flex h-full w-full items-center justify-center bg-muted/10">
@@ -380,24 +256,24 @@ export function AnnotationCanvas({
 							? beginPan
 							: readOnly
 								? undefined
-								: handleMouseDown
+								: handlers.onMouseDown
 					}
 					onMouseMove={
 						isZoomed
 							? continuePan
 							: readOnly
 								? undefined
-								: handleMouseMove
+								: handlers.onMouseMove
 					}
 					onMouseUp={
-						isZoomed ? endPan : readOnly ? undefined : handleMouseUp
+						isZoomed ? endPan : readOnly ? undefined : handlers.onMouseUp
 					}
 					onMouseLeave={
-						isZoomed ? endPan : readOnly ? undefined : handleMouseUp
+						isZoomed ? endPan : readOnly ? undefined : handlers.onMouseLeave
 					}
-					onTouchStart={readOnly ? undefined : handleTouchStart}
-					onTouchMove={readOnly ? undefined : handleTouchMove}
-					onTouchEnd={readOnly ? undefined : handleTouchEnd}
+					onTouchStart={readOnly ? undefined : handlers.onTouchStart}
+					onTouchMove={readOnly ? undefined : handlers.onTouchMove}
+					onTouchEnd={readOnly ? undefined : handlers.onTouchEnd}
 					className={
 						isZoomed
 							? "absolute cursor-grab active:cursor-grabbing"

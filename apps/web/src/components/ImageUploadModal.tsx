@@ -113,7 +113,7 @@ export function ImageUploadModal({
 			)
 
 			if (imageId && validFiles.length > 1) {
-				setFiles([validFiles[0]])
+				setFiles(validFiles.slice(0, 1))
 				setError("Only one file can be uploaded as a new version.")
 			} else {
 				setFiles(validFiles)
@@ -161,8 +161,9 @@ export function ImageUploadModal({
 		try {
 			let uploadPath: string
 
-			if (imageId && files.length > 0) {
-				const fileToUpload = withMimeTypeTheApiCanMap(files[0])
+			const firstFile = files[0]
+			if (imageId && firstFile) {
+				const fileToUpload = withMimeTypeTheApiCanMap(firstFile)
 				formData.append("image", fileToUpload)
 				if (fileToUpload.type.startsWith("video/")) {
 					const duration = await getVideoDuration(fileToUpload)
