@@ -5,6 +5,7 @@ import { JsonValue } from "@prisma/client/runtime/library"
 import { isUserOnline } from "../../lib/presence"
 import { logger } from "../../lib/logger"
 import { sendNotificationEmail } from "./email.service"
+import { wantsEmailFor } from "./notification-preferences"
 
 export const NOTIFICATION_PAGE_SIZE = 30
 
@@ -33,10 +34,19 @@ const emailOfflineRecipient = async (
 
 	const recipient = await prisma.user.findUnique({
 		where: { id: input.userId },
-		select: { email: true, name: true, emailNotifications: true },
+		select: {
+			email: true,
+			name: true,
+			emailNotifications: true,
+			emailOnMention: true,
+			emailOnComment: true,
+			emailOnReply: true,
+			emailOnReview: true,
+		},
 	})
 
-	if (!recipient?.email || !recipient.emailNotifications) return
+	if (!recipient?.email) return
+	if (!wantsEmailFor(recipient, input.metadata)) return
 
 	await sendNotificationEmail({
 		to: recipient.email,

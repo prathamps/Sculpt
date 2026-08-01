@@ -56,6 +56,10 @@ model User {
   avatarUrl     String?
   tokenVersion  Int             @default(0)
   emailNotifications Boolean    @default(true)
+  emailOnMention     Boolean    @default(true)
+  emailOnComment     Boolean    @default(true)
+  emailOnReply       Boolean    @default(true)
+  emailOnReview      Boolean    @default(true)
   memberships   ProjectMember[]
   notifications Notification[]
   comments      Comment[]

@@ -4,6 +4,7 @@ import { updateUserProfile, changeUserPassword } from "./auth.service"
 import { deleteAccount, exportAccountData } from "./account.service"
 import { prisma } from "../../lib/prisma"
 import { respondWithError } from "../../lib/http"
+import { NOTIFICATION_PREFERENCE_KEYS } from "../notifications/notification-preferences"
 import { recordAudit, requestIp } from "../audit/audit.service"
 import {
 	SESSION_COOKIE,
@@ -37,10 +38,20 @@ export const updateNotificationPreferences = async (
 	res: Response
 ): Promise<void> => {
 	try {
+		const requested = NOTIFICATION_PREFERENCE_KEYS.filter(
+			(key) => typeof req.body[key] === "boolean"
+		)
 		const user = await prisma.user.update({
 			where: { id: req.user!.id },
-			data: { emailNotifications: req.body.emailNotifications },
-			select: { id: true, emailNotifications: true },
+			data: Object.fromEntries(requested.map((key) => [key, req.body[key]])),
+			select: {
+				id: true,
+				emailNotifications: true,
+				emailOnMention: true,
+				emailOnComment: true,
+				emailOnReply: true,
+				emailOnReview: true,
+			},
 		})
 		res.status(200).json(user)
 	} catch (error) {

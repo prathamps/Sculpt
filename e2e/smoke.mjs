@@ -947,6 +947,45 @@ check(
 )
 cookie = ownerCookie
 
+const prefsRes = await apiSend(
+	"PATCH",
+	"/api/users/me/notification-preferences",
+	{ emailOnMention: false }
+)
+const prefs = prefsRes.ok ? await prefsRes.json() : null
+check(
+	"turning off one email type leaves the others alone",
+	prefsRes.ok &&
+		prefs?.emailOnMention === false &&
+		prefs?.emailOnComment === true &&
+		prefs?.emailNotifications === true,
+	JSON.stringify(prefs)
+)
+
+const emptyPrefsRes = await apiSend(
+	"PATCH",
+	"/api/users/me/notification-preferences",
+	{}
+)
+check(
+	"an empty preference update is rejected",
+	emptyPrefsRes.status === 400,
+	`status=${emptyPrefsRes.status}`
+)
+
+const meAfterPrefs = await api("/api/users/me").then((r) =>
+	r.ok ? r.json() : null
+)
+check(
+	"the profile reports the saved preferences",
+	meAfterPrefs?.emailOnMention === false,
+	JSON.stringify(meAfterPrefs?.emailOnMention)
+)
+
+await apiSend("PATCH", "/api/users/me/notification-preferences", {
+	emailOnMention: true,
+})
+
 const resetRequestRes = await apiJson("/api/auth/password-reset/request", {
 	email,
 })
