@@ -18,6 +18,24 @@ describe("signalsLostSession", () => {
 	it("ignores a 401 from the probe that decides whether anyone is signed in", () => {
 		expect(signalsLostSession(401, "/api/users/profile")).toBe(false)
 		expect(signalsLostSession(401, "/api/users/me")).toBe(false)
+		expect(signalsLostSession(401, "/api/users/me?fields=all")).toBe(false)
+	})
+
+	it("still reports a lost session on the account routes under /me", () => {
+		expect(signalsLostSession(401, "/api/users/me/password")).toBe(true)
+		expect(signalsLostSession(401, "/api/users/me/export")).toBe(true)
+		expect(signalsLostSession(401, "/api/users/me/notification-preferences")).toBe(
+			true
+		)
+	})
+
+	it("ignores a 401 from any password-reset step", () => {
+		expect(signalsLostSession(401, "/api/auth/password-reset/request")).toBe(
+			false
+		)
+		expect(signalsLostSession(401, "/api/auth/password-reset/complete")).toBe(
+			false
+		)
 	})
 
 	it("ignores every other status", () => {

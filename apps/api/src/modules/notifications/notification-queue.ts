@@ -35,8 +35,7 @@ export const createDeliveryQueue = <TJob>(options: {
 
 	const drain = (): void => {
 		while (active < concurrency && waiting.length > 0) {
-			const job = waiting.shift()
-			if (!job) break
+			const job = waiting.shift() as TJob
 			active += 1
 			void options
 				.run(job)

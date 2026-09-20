@@ -58,20 +58,23 @@ const buildUrl = (path: string): string =>
 
 export const SESSION_EXPIRED_EVENT = "sculpt:session-expired"
 
-const UNAUTHENTICATED_PATHS = [
+const SIGNED_OUT_PREFIXES = [
 	"/api/auth/login",
 	"/api/auth/register",
 	"/api/auth/logout",
 	"/api/auth/providers",
 	"/api/auth/password-reset",
 	"/api/admin/login",
-	"/api/users/profile",
-	"/api/users/me",
 ]
 
-export const signalsLostSession = (status: number, path: string): boolean =>
-	status === 401 &&
-	!UNAUTHENTICATED_PATHS.some((prefix) => path.startsWith(prefix))
+const SESSION_PROBE_PATHS = ["/api/users/profile", "/api/users/me"]
+
+export const signalsLostSession = (status: number, path: string): boolean => {
+	if (status !== 401) return false
+	const route = path.split("?")[0] ?? path
+	if (SESSION_PROBE_PATHS.includes(route)) return false
+	return !SIGNED_OUT_PREFIXES.some((prefix) => route.startsWith(prefix))
+}
 
 const announceLostSession = (): void => {
 	if (typeof window === "undefined") return

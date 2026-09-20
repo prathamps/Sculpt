@@ -20,7 +20,7 @@ const stateCookieAttributes = (): CookieOptions => ({
 	path: "/",
 })
 
-export const issueStateValue = (): string =>
+const issueStateValue = (): string =>
 	randomBytes(STATE_BYTES).toString("hex")
 
 export const matchesIssuedState = (
