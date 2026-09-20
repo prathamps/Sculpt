@@ -1,4 +1,4 @@
-import { UserRole } from "@prisma/client"
+import { Prisma, UserRole } from "@prisma/client"
 import { prisma } from "../../lib/prisma"
 import { PageRequest, skipTake } from "../../lib/pagination"
 import { ValidationError } from "../../lib/errors"
@@ -106,15 +106,18 @@ interface DailyCount {
 	count: number
 }
 
+const TREND_TABLES = {
+	User: Prisma.sql`"User"`,
+	Project: Prisma.sql`"Project"`,
+}
+
 const dailyCounts = async (
-	table: "User" | "Project"
+	table: keyof typeof TREND_TABLES
 ): Promise<DailyCount[]> => {
-	const rows = await prisma.$queryRawUnsafe<
-		{ date: Date; count: bigint }[]
-	>(
-		`SELECT date_trunc('day', "createdAt") AS date, COUNT(*)::bigint AS count
-		 FROM "${table}"
-		 WHERE "createdAt" >= NOW() - INTERVAL '${TREND_DAYS} days'
+	const rows = await prisma.$queryRaw<{ date: Date; count: bigint }[]>(
+		Prisma.sql`SELECT date_trunc('day', "createdAt") AS date, COUNT(*)::bigint AS count
+		 FROM ${TREND_TABLES[table]}
+		 WHERE "createdAt" >= NOW() - make_interval(days => ${TREND_DAYS})
 		 GROUP BY 1
 		 ORDER BY 1 ASC`
 	)

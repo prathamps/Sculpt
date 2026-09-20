@@ -1,20 +1,22 @@
-import { JsonValue } from "@prisma/client/runtime/library";
-import { prisma } from "../../lib/prisma"
+import { JsonValue } from "@prisma/client/runtime/library"
 import {
 	Comment,
 	CommentAttachment,
-	CommentLike,
 	MediaType,
-	User,
+	ProjectRole,
 } from "@prisma/client"
+import { prisma } from "../../lib/prisma"
+import { ForbiddenError, NotFoundError, ValidationError } from "../../lib/errors"
+import { logger } from "../../lib/logger"
 import { MAX_ATTACHMENTS_PER_COMMENT } from "../../middleware/upload.middleware"
-
-import { ProjectRole } from "@prisma/client"
 import { io, internalVersionRoom } from "../../realtime/socket"
 import { NotificationService } from "../notifications/notification.service"
-import { getVersionProjectId, roleMeets } from "../projects/access"
+import { roleMeets } from "../projects/access"
 import { storage } from "../../storage"
 import { forgetProjectAssets } from "../media/media-access.service"
+import { PageRequest, Paginated, paginated } from "../../lib/pagination"
+
+export const DEFAULT_COMMENT_PAGE_SIZE = 50
 
 export const INTERNAL_COMMENT_MIN_ROLE: ProjectRole = "EDITOR"
 
@@ -27,8 +29,6 @@ const commentRoom = (imageVersionId: string, internal: boolean): string =>
 	internal
 		? internalVersionRoom(imageVersionId)
 		: `imageVersion:${imageVersionId}`
-import { ForbiddenError, NotFoundError, ValidationError } from "../../lib/errors"
-import { logger } from "../../lib/logger"
 
 const MENTION_INCLUDE = {
 	select: {
@@ -37,18 +37,59 @@ const MENTION_INCLUDE = {
 	},
 } as const
 
+const COMMENT_AUTHOR_SELECT = {
+	select: { id: true, name: true, email: true, avatarUrl: true },
+} as const
+
+export type CommentAuthor = {
+	id: string
+	name: string | null
+	email: string
+	avatarUrl: string | null
+}
+
 type CommentMentionSummary = {
 	userId: string
 	user: { name: string | null }
 }
 
 type CommentWithLikesAndUser = Comment & {
-	likes: CommentLike[]
-	user: Omit<User, "password">
-	likeCount?: number
-	isLikedByCurrentUser?: boolean
+	user: CommentAuthor
+	likeCount: number
+	isLikedByCurrentUser: boolean
 	mentions?: CommentMentionSummary[]
 	replies?: CommentWithLikesAndUser[]
+}
+
+const LIKE_SUMMARY = {
+	_count: { select: { likes: true } },
+} as const
+
+const callerLike = (userId?: string) => ({
+	likes: {
+		where: { userId: userId ?? "" },
+		select: { id: true },
+		take: 1,
+	},
+})
+
+type LikeAnnotated = {
+	_count: { likes: number }
+	likes: { id: string }[]
+}
+
+const withLikeCount = <T extends { _count: { likes: number } }>(row: T) => {
+	const { _count, ...rest } = row
+	return { ...rest, likeCount: _count.likes }
+}
+
+const withLikeSummary = <T extends LikeAnnotated>(row: T) => {
+	const { _count, likes, ...rest } = row
+	return {
+		...rest,
+		likeCount: _count.likes,
+		isLikedByCurrentUser: likes.length > 0,
+	}
 }
 
 type Vec3 = [number, number, number]
@@ -89,6 +130,35 @@ const clampToDuration = (
 ): number | null =>
 	seconds === null || duration === null ? seconds : Math.min(seconds, duration)
 
+interface VersionContext {
+	mediaType: MediaType
+	duration: number | null
+	imageId: string
+	imageName: string
+	projectId: string
+}
+
+const versionContext = async (
+	imageVersionId: string
+): Promise<VersionContext> => {
+	const version = await prisma.imageVersion.findUnique({
+		where: { id: imageVersionId },
+		select: {
+			mediaType: true,
+			duration: true,
+			image: { select: { id: true, name: true, projectId: true } },
+		},
+	})
+	if (!version) throw new NotFoundError("Image version not found")
+	return {
+		mediaType: version.mediaType,
+		duration: version.duration,
+		imageId: version.image.id,
+		imageName: version.image.name,
+		projectId: version.image.projectId,
+	}
+}
+
 export class CommentsService {
 	private static parseModelAnchor(value: unknown): ModelAnchor {
 		if (typeof value !== "object" || value === null || Array.isArray(value)) {
@@ -125,21 +195,15 @@ export class CommentsService {
 		return anchor
 	}
 
-	private static async validateAnchors(
-		imageVersionId: string,
+	private static validateAnchors(
+		version: Pick<VersionContext, "mediaType" | "duration">,
 		requested: RequestedAnchors
-	): Promise<{
+	): {
 		timestamp: number | null
 		timestampEnd: number | null
 		page: number | null
 		modelAnchor: ModelAnchor | null
-	}> {
-		const version = await prisma.imageVersion.findUnique({
-			where: { id: imageVersionId },
-			select: { mediaType: true, duration: true },
-		})
-		if (!version) throw new NotFoundError("Image version not found")
-
+	} {
 		const { timestamp, timestampEnd, page, modelAnchor } = anchorsSupportedBy(
 			version.mediaType,
 			requested
@@ -180,7 +244,7 @@ export class CommentsService {
 	}
 
 	private static async mentionableMembers(
-		imageVersionId: string,
+		projectId: string,
 		authorId: string,
 		requestedUserIds: string[]
 	): Promise<string[]> {
@@ -188,9 +252,6 @@ export class CommentsService {
 			(id) => id !== authorId
 		)
 		if (candidates.length === 0) return []
-
-		const projectId = await getVersionProjectId(imageVersionId)
-		if (!projectId) return []
 
 		const members = await prisma.projectMember.findMany({
 			where: { projectId, userId: { in: candidates } },
@@ -213,7 +274,8 @@ export class CommentsService {
 		internal?: boolean
 		authorRole?: ProjectRole | null
 	}): Promise<Comment> {
-		const anchors = await this.validateAnchors(data.imageVersionId, {
+		const version = await versionContext(data.imageVersionId)
+		const anchors = this.validateAnchors(version, {
 			timestamp: data.timestamp ?? null,
 			timestampEnd: data.timestampEnd ?? null,
 			page: data.page ?? null,
@@ -237,7 +299,7 @@ export class CommentsService {
 		}
 
 		const mentionedUserIds = await this.mentionableMembers(
-			data.imageVersionId,
+			version.projectId,
 			data.userId,
 			data.mentionedUserIds ?? []
 		)
@@ -259,8 +321,7 @@ export class CommentsService {
 				},
 			},
 			include: {
-				user: true,
-				likes: true,
+				user: COMMENT_AUTHOR_SELECT,
 				mentions: MENTION_INCLUDE,
 			},
 		})
@@ -276,7 +337,12 @@ export class CommentsService {
 			commentWithExtras
 		)
 
-		await this.handleCommentNotifications(comment, data.userId, mentionedUserIds)
+		await this.handleCommentNotifications(
+			comment,
+			data.userId,
+			version,
+			mentionedUserIds
+		)
 
 		return comment
 	}
@@ -330,53 +396,55 @@ export class CommentsService {
 	static async getCommentsByImageVersionId(
 		imageVersionId: string,
 		currentUserId?: string,
-		callerRole?: ProjectRole | null
-	): Promise<CommentWithLikesAndUser[]> {
+		callerRole?: ProjectRole | null,
+		page: PageRequest = { page: 1, pageSize: DEFAULT_COMMENT_PAGE_SIZE }
+	): Promise<Paginated<CommentWithLikesAndUser>> {
 		const internalVisible = canSeeInternalComments(callerRole ?? null)
 		const visibility = internalVisible ? {} : { internal: false }
+		const where = { imageVersionId, parentId: null, ...visibility }
 
-		const comments = await prisma.comment.findMany({
-			where: { imageVersionId, parentId: null, ...visibility },
-			include: {
-				user: true,
-				likes: true,
-				mentions: MENTION_INCLUDE,
-				attachments: true,
-				replies: {
-					where: visibility,
-					include: {
-						user: true,
-						likes: true,
-						mentions: MENTION_INCLUDE,
-						attachments: true,
+		const [total, comments] = await Promise.all([
+			prisma.comment.count({ where }),
+			prisma.comment.findMany({
+				where,
+				include: {
+					user: COMMENT_AUTHOR_SELECT,
+					mentions: MENTION_INCLUDE,
+					attachments: true,
+					...LIKE_SUMMARY,
+					...callerLike(currentUserId),
+					replies: {
+						where: visibility,
+						include: {
+							user: COMMENT_AUTHOR_SELECT,
+							mentions: MENTION_INCLUDE,
+							attachments: true,
+							...LIKE_SUMMARY,
+							...callerLike(currentUserId),
+						},
+						orderBy: { createdAt: "asc" },
 					},
-					orderBy: { createdAt: "asc" },
 				},
-			},
-			orderBy: { createdAt: "desc" },
+				orderBy: { createdAt: "desc" },
+				skip: (page.page - 1) * page.pageSize,
+				take: page.pageSize,
+			}),
+		])
+
+		const items = comments.map((comment) => {
+			const { replies, ...top } = comment
+			return {
+				...withLikeSummary(top),
+				replies: replies.map(withLikeSummary),
+			} as CommentWithLikesAndUser
 		})
 
-		const likedByCaller = (likes: { userId: string }[]): boolean =>
-			!!currentUserId && likes.some((like) => like.userId === currentUserId)
-
-		return comments.map((comment) => ({
-			...comment,
-			likeCount: comment.likes.length,
-			isLikedByCurrentUser: likedByCaller(comment.likes),
-			replies: comment.replies?.map((reply) => ({
-				...reply,
-				likeCount: reply.likes.length,
-				isLikedByCurrentUser: likedByCaller(reply.likes),
-			})),
-		}))
+		return paginated(items, total, page)
 	}
 
 	static async updateComment(
 		commentId: string,
-		data: {
-			content: string
-			resolved?: boolean
-		},
+		data: { content: string },
 		userId: string
 	): Promise<Comment> {
 		const existingComment = await prisma.comment.findFirst({
@@ -385,46 +453,50 @@ export class CommentsService {
 
 		if (!existingComment) {
 			throw new ForbiddenError(
-				"Comment not found or you don't have permission to update it"
+				"Only the comment author can edit its text"
 			)
 		}
 
 		const updatedComment = await prisma.comment.update({
 			where: { id: commentId },
-			data: {
-				content: data.content,
-				resolved: data.resolved ?? existingComment.resolved,
-			},
-			include: { user: true, likes: true },
+			data: { content: data.content },
+			include: { user: COMMENT_AUTHOR_SELECT, ...LIKE_SUMMARY },
 		})
 
 		io.to(
 			commentRoom(existingComment.imageVersionId, existingComment.internal)
-		).emit(
-			"comment-updated",
-			{
-				...updatedComment,
-				imageVersionId: existingComment.imageVersionId,
-			}
-		)
+		).emit("comment-updated", {
+			...withLikeCount(updatedComment),
+			imageVersionId: existingComment.imageVersionId,
+		})
 
-		return updatedComment
+		return withLikeCount(updatedComment)
 	}
 
-	static async deleteComment(commentId: string, userId: string): Promise<void> {
-		const comment = await prisma.comment.findFirst({
-			where: { id: commentId, userId },
+	static async deleteComment(
+		commentId: string,
+		userId: string,
+		callerRole?: ProjectRole | null
+	): Promise<{ moderated: boolean }> {
+		const comment = await prisma.comment.findUnique({
+			where: { id: commentId },
 			select: {
 				id: true,
+				userId: true,
 				imageVersionId: true,
 				internal: true,
 				attachments: { select: { url: true } },
 			},
 		})
 
-		if (!comment) {
+		if (!comment) throw new NotFoundError("Comment not found")
+
+		const isAuthor = comment.userId === userId
+		const moderated = !isAuthor && roleMeets(callerRole ?? null, "OWNER")
+
+		if (!isAuthor && !moderated) {
 			throw new ForbiddenError(
-				"Comment not found or you don't have permission to delete it"
+				"Only the comment author or a project owner can delete it"
 			)
 		}
 
@@ -445,6 +517,8 @@ export class CommentsService {
 				imageVersionId: comment.imageVersionId,
 			}
 		)
+
+		return { moderated }
 	}
 
 	static async toggleLike(
@@ -502,8 +576,9 @@ export class CommentsService {
 
 	static async toggleResolved(
 		commentId: string,
-		userId: string
-	): Promise<{ resolved: boolean }> {
+		userId: string,
+		callerRole?: ProjectRole | null
+	): Promise<{ resolved: boolean; moderated: boolean }> {
 		const comment = await prisma.comment.findUnique({
 			where: { id: commentId },
 			select: {
@@ -515,33 +590,38 @@ export class CommentsService {
 		})
 
 		if (!comment) throw new NotFoundError("Comment not found")
-		if (comment.userId !== userId) {
-			throw new ForbiddenError("Only the comment author can resolve it")
+
+		const isAuthor = comment.userId === userId
+		const moderated = !isAuthor && roleMeets(callerRole ?? null, "EDITOR")
+
+		if (!isAuthor && !moderated) {
+			throw new ForbiddenError(
+				"Only the comment author or a project editor can resolve it"
+			)
 		}
 
 		const updated = await prisma.comment.update({
 			where: { id: commentId },
 			data: { resolved: !comment.resolved },
-			include: { user: true, likes: true },
+			include: { user: COMMENT_AUTHOR_SELECT, ...LIKE_SUMMARY },
 		})
 
 		io.to(commentRoom(comment.imageVersionId, comment.internal)).emit(
 			"comment-updated",
 			{
-			...updated,
-			imageVersionId: comment.imageVersionId,
-		})
+				...withLikeCount(updated),
+				imageVersionId: comment.imageVersionId,
+			}
+		)
 
-		return { resolved: updated.resolved }
+		return { resolved: updated.resolved, moderated }
 	}
 
 	private static async internalOnlyMentions(
-		imageVersionId: string,
+		projectId: string,
 		mentionedUserIds: string[]
 	): Promise<string[]> {
 		if (mentionedUserIds.length === 0) return []
-		const projectId = await getVersionProjectId(imageVersionId)
-		if (!projectId) return []
 		const members = await prisma.projectMember.findMany({
 			where: {
 				projectId,
@@ -554,17 +634,15 @@ export class CommentsService {
 	}
 
 	private static async handleCommentNotifications(
-		comment: Comment & { user: Omit<User, "password"> },
+		comment: Comment & { user: CommentAuthor },
 		currentUserId: string,
+		version: VersionContext,
 		mentionedUserIds: string[] = []
 	): Promise<void> {
 		try {
 			const authorName = comment.user.name || "Someone"
 			const recipients = comment.internal
-				? await this.internalOnlyMentions(
-						comment.imageVersionId,
-						mentionedUserIds
-					)
+				? await this.internalOnlyMentions(version.projectId, mentionedUserIds)
 				: mentionedUserIds
 
 			await Promise.all(
@@ -594,7 +672,7 @@ export class CommentsService {
 					!!parentComment &&
 					(!comment.internal ||
 						(
-							await this.internalOnlyMentions(comment.imageVersionId, [
+							await this.internalOnlyMentions(version.projectId, [
 								parentComment.userId,
 							])
 						).length > 0)
@@ -616,37 +694,21 @@ export class CommentsService {
 					})
 				}
 			} else {
-				const imageVersion = await prisma.imageVersion.findUnique({
-					where: { id: comment.imageVersionId },
-					select: { imageId: true },
+				NotificationService.createProjectNotification({
+					projectId: version.projectId,
+					content: comment.internal
+						? `${authorName} left an internal note on "${version.imageName}"`
+						: `${authorName} commented on image "${version.imageName}"`,
+					excludeUserIds: [currentUserId, ...recipients],
+					...(comment.internal ? { onlyRoles: INTERNAL_COMMENT_ROLES } : {}),
+					metadata: {
+						type: "new_comment",
+						commentId: comment.id,
+						imageVersionId: comment.imageVersionId,
+						imageId: version.imageId,
+						projectId: version.projectId,
+					},
 				})
-
-				if (imageVersion) {
-					const image = await prisma.image.findUnique({
-						where: { id: imageVersion.imageId },
-						select: { projectId: true, name: true },
-					})
-
-					if (image) {
-						await NotificationService.createProjectNotification({
-							projectId: image.projectId,
-							content: comment.internal
-								? `${authorName} left an internal note on "${image.name}"`
-								: `${authorName} commented on image "${image.name}"`,
-							excludeUserIds: [currentUserId, ...recipients],
-							...(comment.internal
-								? { onlyRoles: INTERNAL_COMMENT_ROLES }
-								: {}),
-							metadata: {
-								type: "new_comment",
-								commentId: comment.id,
-								imageVersionId: comment.imageVersionId,
-								imageId: imageVersion.imageId,
-								projectId: image.projectId,
-							},
-						})
-					}
-				}
 			}
 		} catch (error) {
 			logger.error("Comment notification fan-out failed", error, {

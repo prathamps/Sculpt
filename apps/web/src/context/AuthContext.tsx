@@ -10,8 +10,9 @@ import {
 	useMemo,
 } from "react"
 import { useRouter } from "next/navigation"
-import { api } from "@/lib/api"
+import { SESSION_EXPIRED_EVENT, api } from "@/lib/api"
 import { ignoreFailure } from "@/lib/errors"
+import { toast } from "sonner"
 
 interface User {
 	id: string
@@ -29,13 +30,18 @@ interface User {
 interface AuthContextType {
 	user: User | null
 	isAuthenticated: boolean
-	login: () => void
+	login: (destination?: string) => void
 	logout: () => void
 	refresh: () => Promise<void>
 	loading: boolean
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined)
+
+export const safeDestination = (destination?: string | null): string =>
+	destination && destination.startsWith("/") && !destination.startsWith("//")
+		? destination
+		: "/dashboard"
 
 export const AuthProvider = ({ children }: { children: ReactNode }) => {
 	const [user, setUser] = useState<User | null>(null)
@@ -57,15 +63,34 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 		void loadUser().finally(() => setLoading(false))
 	}, [loadUser])
 
-	const login = useCallback(() => {
-		void loadUser().then((profile) => {
-			if (profile) router.push("/dashboard")
-		})
-	}, [loadUser, router])
+	const login = useCallback(
+		(destination?: string) => {
+			void loadUser().then((profile) => {
+				if (profile) router.push(safeDestination(destination))
+			})
+		},
+		[loadUser, router]
+	)
 
 	const refresh = useCallback(async () => {
 		await loadUser()
 	}, [loadUser])
+
+	useEffect(() => {
+		const endExpiredSession = () => {
+			setUser((current) => {
+				if (current) {
+					toast.error("Your session expired. Sign in again to continue.")
+					router.push("/login")
+				}
+				return null
+			})
+		}
+
+		window.addEventListener(SESSION_EXPIRED_EVENT, endExpiredSession)
+		return () =>
+			window.removeEventListener(SESSION_EXPIRED_EVENT, endExpiredSession)
+	}, [router])
 
 	const logout = useCallback((): void => {
 		const endSession = async (): Promise<void> => {

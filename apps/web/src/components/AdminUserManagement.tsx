@@ -10,6 +10,7 @@ import {
 } from "@/components/ui/dropdown-menu"
 import { Button } from "@/components/ui/button"
 import { MoreHorizontal } from "lucide-react"
+import { cn } from "@/lib/utils"
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001"
 
@@ -114,11 +115,12 @@ export function AdminUserManagement() {
 								<td className="py-3 px-4 truncate">{user.email}</td>
 								<td className="py-3 px-4">
 									<span
-										className={`inline-block px-2 py-1 rounded-full text-xs ${
+										className={cn(
+											"inline-block rounded-full border px-2 py-1 text-xs",
 											user.role === "ADMIN"
-												? "bg-purple-100 text-purple-800"
-												: "bg-blue-100 text-blue-800"
-										}`}
+												? "border-primary/30 bg-primary/10 text-primary"
+												: "border-border bg-muted text-muted-foreground"
+										)}
 									>
 										{user.role}
 									</span>
@@ -130,7 +132,7 @@ export function AdminUserManagement() {
 									<DropdownMenu>
 										<DropdownMenuTrigger asChild>
 											<Button variant="ghost" size="icon">
-												<MoreHorizontal className="h-4 w-4" />
+												<MoreHorizontal className="h-4 w-4" aria-hidden="true" />
 											</Button>
 										</DropdownMenuTrigger>
 										<DropdownMenuContent align="end">

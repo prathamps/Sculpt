@@ -82,6 +82,27 @@ jobs:
           fi
           echo "No comments found."
 
+  # Dependency vulnerabilities are a supply-chain risk the unit tests cannot
+  # see. High and critical advisories block the merge; lower ones are reported.
+  audit:
+    name: Dependency audit
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        app: [apps/api, apps/web]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Report every advisory
+        working-directory: ${{ matrix.app }}
+        run: npm audit --audit-level=low || true
+      - name: Fail on high and critical advisories
+        working-directory: ${{ matrix.app }}
+        run: npm audit --audit-level=high
+
   # The suite that actually exercises uploads, viewers, realtime and the video
   # proxy pipeline in a real browser. Unit tests cannot catch a broken viewer.
   e2e:
@@ -111,7 +132,7 @@ jobs:
     env:
       DATABASE_URL: postgresql://sculpt:sculpt@localhost:5432/sculpt
       DIRECT_URL: postgresql://sculpt:sculpt@localhost:5432/sculpt
-      JWT_SECRET: ci-smoke-secret-not-for-production
+      JWT_SECRET: ci-smoke-secret-not-for-production-at-least-32-chars
       REDIS_URL: redis://localhost:6379
       FRONTEND_URL: http://localhost:3000
       API_URL: http://localhost:3001

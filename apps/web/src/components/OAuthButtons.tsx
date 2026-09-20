@@ -69,7 +69,7 @@ export function OAuthButtons() {
 						className="w-full"
 						onClick={() => go("google")}
 					>
-						<GoogleIcon className="mr-2 h-4 w-4" />
+						<GoogleIcon className="mr-2 h-4 w-4" aria-hidden="true" />
 						Google
 					</Button>
 				)}
@@ -80,7 +80,7 @@ export function OAuthButtons() {
 						className="w-full"
 						onClick={() => go("github")}
 					>
-						<Github className="mr-2 h-4 w-4" />
+						<Github className="mr-2 h-4 w-4" aria-hidden="true" />
 						GitHub
 					</Button>
 				)}

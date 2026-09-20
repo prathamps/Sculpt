@@ -3,15 +3,23 @@ import { io } from "../../realtime/socket"
 import { Notification, Prisma, ProjectRole } from "@prisma/client"
 import { JsonValue } from "@prisma/client/runtime/library"
 import { isUserOnline } from "../../lib/presence"
-import { logger } from "../../lib/logger"
 import { sendNotificationEmail } from "./email.service"
 import { wantsEmailFor } from "./notification-preferences"
+import { createDeliveryQueue } from "./notification-queue"
 
 export const NOTIFICATION_PAGE_SIZE = 30
 
 interface NotificationInput {
 	userId: string
 	content: string
+	metadata?: JsonValue
+}
+
+interface ProjectNotificationInput {
+	projectId: string
+	content: string
+	excludeUserIds?: string[]
+	onlyRoles?: ProjectRole[]
 	metadata?: JsonValue
 }
 
@@ -27,9 +35,14 @@ const asInputJson = (
 		? { metadata: metadata as Prisma.InputJsonValue }
 		: {}
 
-const emailOfflineRecipient = async (
-	input: NotificationInput
-): Promise<void> => {
+const announce = (notification: Notification, metadata?: JsonValue): void => {
+	io.to(`user:${notification.userId}`).emit("notification", {
+		...notification,
+		metadata: metadata ?? notification.metadata ?? {},
+	})
+}
+
+const deliverEmail = async (input: NotificationInput): Promise<void> => {
 	if (await isUserOnline(input.userId)) return
 
 	const recipient = await prisma.user.findUnique({
@@ -56,6 +69,65 @@ const emailOfflineRecipient = async (
 	})
 }
 
+const emailQueue = createDeliveryQueue<NotificationInput>({
+	name: "notification-email",
+	run: deliverEmail,
+})
+
+const fanOutProjectNotification = async (
+	input: ProjectNotificationInput
+): Promise<void> => {
+	const excluded = input.excludeUserIds?.filter(Boolean) ?? []
+	const members = await prisma.projectMember.findMany({
+		where: {
+			projectId: input.projectId,
+			...(excluded.length > 0 && { userId: { notIn: excluded } }),
+			...(input.onlyRoles && { role: { in: input.onlyRoles } }),
+		},
+		select: { userId: true },
+	})
+
+	if (members.length === 0) return
+
+	const metadata = {
+		...(typeof input.metadata === "object" && input.metadata !== null
+			? input.metadata
+			: {}),
+		projectId: input.projectId,
+	}
+
+	const created = await prisma.notification.createManyAndReturn({
+		data: members.map((member) => ({
+			userId: member.userId,
+			content: input.content,
+			metadata: metadata as Prisma.InputJsonValue,
+		})),
+	})
+
+	for (const notification of created) {
+		announce(notification, metadata)
+		emailQueue.enqueue({
+			userId: notification.userId,
+			content: input.content,
+			metadata,
+		})
+	}
+}
+
+const projectQueue = createDeliveryQueue<ProjectNotificationInput>({
+	name: "notification-fanout",
+	concurrency: 1,
+	run: fanOutProjectNotification,
+})
+
+export const notificationQueueDepth = (): number =>
+	emailQueue.depth() + projectQueue.depth()
+
+export const notificationQueueDrained = async (): Promise<void> => {
+	await projectQueue.drained()
+	await emailQueue.drained()
+}
+
 export class NotificationService {
 	static async createNotification(
 		data: NotificationInput
@@ -68,55 +140,14 @@ export class NotificationService {
 			},
 		})
 
-		io.to(`user:${data.userId}`).emit("notification", {
-			...notification,
-			metadata: data.metadata ?? {},
-		})
-
-		await emailOfflineRecipient(data).catch((error) =>
-			logger.error("Offline notification email failed", error)
-		)
+		announce(notification, data.metadata)
+		emailQueue.enqueue(data)
 
 		return notification
 	}
 
-	static async createProjectNotification(data: {
-		projectId: string
-		content: string
-		excludeUserIds?: string[]
-		onlyRoles?: ProjectRole[]
-		metadata?: JsonValue
-	}): Promise<void> {
-		const excluded = data.excludeUserIds?.filter(Boolean) ?? []
-		const members = await prisma.projectMember.findMany({
-			where: {
-				projectId: data.projectId,
-				...(excluded.length > 0 && { userId: { notIn: excluded } }),
-				...(data.onlyRoles && { role: { in: data.onlyRoles } }),
-			},
-			select: { userId: true },
-		})
-
-		const metadata = {
-			...(typeof data.metadata === "object" && data.metadata !== null
-				? data.metadata
-				: {}),
-			projectId: data.projectId,
-		}
-
-		await Promise.all(
-			members.map((member) =>
-				this.createNotification({
-					userId: member.userId,
-					content: data.content,
-					metadata,
-				}).catch((error) =>
-					logger.error("Failed to notify project member", error, {
-						projectId: data.projectId,
-					})
-				)
-			)
-		)
+	static createProjectNotification(data: ProjectNotificationInput): void {
+		projectQueue.enqueue(data)
 
 		if (data.onlyRoles) return
 

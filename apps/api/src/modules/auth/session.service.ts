@@ -10,15 +10,38 @@ import {
 export const USER_SESSION_LIFETIME_MS = 3600000
 export const ADMIN_SESSION_LIFETIME_MS = 8 * 3600000
 
+const DEFAULT_ABSOLUTE_SESSION_DAYS = 7
+
+export const absoluteSessionLifetimeMs = (): number => {
+	const configured = Number(process.env.SESSION_ABSOLUTE_LIFETIME_DAYS)
+	const days =
+		Number.isFinite(configured) && configured > 0
+			? configured
+			: DEFAULT_ABSOLUTE_SESSION_DAYS
+	return days * 24 * 3600000
+}
+
+export const sessionLifetimeMs = (kind: SessionKind): number =>
+	kind === "admin" ? ADMIN_SESSION_LIFETIME_MS : USER_SESSION_LIFETIME_MS
+
 export const issueSession = (
 	subject: { id: string; tokenVersion: number },
-	kind: SessionKind
+	kind: SessionKind,
+	sessionStartedAt?: number
 ): IssuedToken =>
-	signSessionToken(
-		subject,
-		kind,
-		kind === "admin" ? ADMIN_SESSION_LIFETIME_MS : USER_SESSION_LIFETIME_MS
-	)
+	signSessionToken(subject, kind, sessionLifetimeMs(kind), sessionStartedAt)
+
+export const shouldSlideSession = (
+	claims: SessionClaims,
+	now = Date.now()
+): boolean => {
+	if (now - claims.sst >= absoluteSessionLifetimeMs()) return false
+	if (claims.exp === undefined) return true
+
+	const lifetime = sessionLifetimeMs(claims.typ)
+	const remaining = claims.exp * 1000 - now
+	return remaining <= lifetime / 2
+}
 
 export const isSessionRevoked = async (jti: string): Promise<boolean> => {
 	const revoked = await prisma.revokedSession.findUnique({

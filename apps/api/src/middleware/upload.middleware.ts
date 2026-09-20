@@ -86,6 +86,9 @@ const SUPPORTED_MIME_EXTENSIONS: Record<string, string> = {
 export const isAllowedMime = (mimetype: string): boolean =>
 	mimetype in SUPPORTED_MIME_EXTENSIONS
 
+export const uploadMimeTypes = (): string[] =>
+	Object.keys(SUPPORTED_MIME_EXTENSIONS)
+
 export const needsBrowserSafeImageRendition = (mimetype: string): boolean =>
 	mimetype in TRANSCODED_IMAGE_MIME_EXTENSIONS
 
@@ -146,6 +149,9 @@ const MAX_ATTACHMENT_MB = 25
 
 export const isAllowedAttachmentMime = (mimetype: string): boolean =>
 	mimetype in ATTACHMENT_MIME_EXTENSIONS
+
+export const attachmentMimeTypes = (): string[] =>
+	Object.keys(ATTACHMENT_MIME_EXTENSIONS)
 
 const referenceFilesOnly = (
 	_req: Request,

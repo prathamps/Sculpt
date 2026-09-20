@@ -215,7 +215,7 @@ export function AnnotationCanvas({
 	if (isLoading) {
 		return (
 			<div className="flex h-full w-full items-center justify-center bg-muted/10">
-				<Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+				<Loader2 className="h-6 w-6 animate-spin text-muted-foreground" aria-hidden="true" />
 			</div>
 		)
 	}

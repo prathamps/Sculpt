@@ -146,7 +146,8 @@ export interface Comment {
 export interface Project {
 	id: string
 	name: string
-	images: Image[]
+	coverImage: Image | null
+	imageCount: number
 	members: ProjectMember[]
 	createdAt: string
 }

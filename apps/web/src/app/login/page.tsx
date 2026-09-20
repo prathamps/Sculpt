@@ -1,7 +1,7 @@
 "use client"
 
-import { useState, useEffect } from "react"
-import { useRouter } from "next/navigation"
+import { Suspense, useState, useEffect } from "react"
+import { useSearchParams } from "next/navigation"
 import Link from "next/link"
 import Image from "next/image"
 import { Button } from "@/components/ui/button"
@@ -12,12 +12,13 @@ import { ArrowLeft, Loader2 } from "lucide-react"
 import { Label } from "@/components/ui/label"
 import { OAuthButtons } from "@/components/OAuthButtons"
 
-export default function LoginPage() {
+function LoginPageInner() {
 	const [email, setEmail] = useState("")
 	const [password, setPassword] = useState("")
 	const [isLoading, setIsLoading] = useState(false)
-	const router = useRouter()
+	const searchParams = useSearchParams()
 	const { login } = useAuth()
+	const nextDestination = searchParams.get("next")
 
 	useEffect(() => {
 		if (
@@ -42,9 +43,8 @@ export default function LoginPage() {
 			})
 
 			if (res.ok) {
-				login()
 				authToasts.showLoginSuccess()
-				router.push("/dashboard")
+				login(nextDestination ?? undefined)
 			} else {
 				let errorResponse
 				try {
@@ -82,7 +82,7 @@ export default function LoginPage() {
 					href="/"
 					className="flex items-center gap-1 text-muted-foreground transition-colors hover:text-foreground"
 				>
-					<ArrowLeft className="h-4 w-4" />
+					<ArrowLeft className="h-4 w-4" aria-hidden="true" />
 					<span className="text-sm">Back to home</span>
 				</Link>
 			</div>
@@ -142,7 +142,7 @@ export default function LoginPage() {
 							<Button type="submit" className="w-full" disabled={isLoading}>
 								{isLoading ? (
 									<>
-										<Loader2 className="mr-2 h-4 w-4 animate-spin" />
+										<Loader2 className="mr-2 h-4 w-4 animate-spin" aria-hidden="true" />
 										Signing in...
 									</>
 								) : (
@@ -163,5 +163,23 @@ export default function LoginPage() {
 				</div>
 			</div>
 		</div>
+	)
+}
+
+export default function LoginPage() {
+	return (
+		<Suspense
+			fallback={
+				<div className="flex min-h-screen w-full items-center justify-center bg-background">
+					<Loader2
+						className="h-8 w-8 animate-spin text-primary/70"
+						aria-hidden="true"
+					/>
+					<span className="sr-only">Loading sign-in</span>
+				</div>
+			}
+		>
+			<LoginPageInner />
+		</Suspense>
 	)
 }

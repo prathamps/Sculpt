@@ -74,7 +74,7 @@ export function Header({ onMenuClick }: HeaderProps) {
 							<DropdownMenuItem asChild>
 								<Link href="/admin">
 									<span className="flex items-center">
-										<ShieldAlert className="mr-2 h-4 w-4" />
+										<ShieldAlert className="mr-2 h-4 w-4" aria-hidden="true" />
 										Admin Portal
 									</span>
 								</Link>
@@ -83,14 +83,14 @@ export function Header({ onMenuClick }: HeaderProps) {
 						<DropdownMenuItem asChild>
 							<Link href="/account">
 								<span className="flex items-center">
-									<User className="mr-2 h-4 w-4" />
+									<User className="mr-2 h-4 w-4" aria-hidden="true" />
 									Account Settings
 								</span>
 							</Link>
 						</DropdownMenuItem>
 						<DropdownMenuSeparator />
 						<DropdownMenuItem onClick={logout} className="text-destructive">
-							<LogOut className="mr-2 h-4 w-4" />
+							<LogOut className="mr-2 h-4 w-4" aria-hidden="true" />
 							Logout
 						</DropdownMenuItem>
 					</DropdownMenuContent>

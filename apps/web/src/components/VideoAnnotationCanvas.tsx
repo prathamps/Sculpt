@@ -421,7 +421,7 @@ export function VideoAnnotationCanvas({
 			>
 				{isLoading && (
 					<div className="absolute inset-0 z-10 flex items-center justify-center">
-						<Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+						<Loader2 className="h-6 w-6 animate-spin text-muted-foreground" aria-hidden="true" />
 					</div>
 				)}
 				{error ? (

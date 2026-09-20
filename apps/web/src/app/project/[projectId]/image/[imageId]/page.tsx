@@ -142,6 +142,9 @@ function ProjectFileViewPageInner() {
 	const {
 		comments,
 		isLoading: commentsLoading,
+		isLoadingMore: commentsLoadingMore,
+		hasMore: hasMoreComments,
+		loadMore: loadMoreComments,
 		refetch: refetchComments,
 	} = useVersionComments(selectedVersion?.id ?? null)
 	const peers = usePresence(
@@ -457,7 +460,7 @@ function ProjectFileViewPageInner() {
 	if (loading || !isMounted) {
 		return (
 			<div className="flex h-screen w-full items-center justify-center bg-background">
-				<Loader2 className="h-8 w-8 animate-spin text-primary/70" />
+				<Loader2 className="h-8 w-8 animate-spin text-primary/70" aria-hidden="true" />
 			</div>
 		)
 	}
@@ -559,7 +562,7 @@ function ProjectFileViewPageInner() {
 								<DropdownMenuTrigger asChild>
 									<Button variant="outline" size="sm" className="gap-1">
 										{selectedVersion?.versionName || "Select version"}
-										<ChevronDown className="h-3.5 w-3.5" />
+										<ChevronDown className="h-3.5 w-3.5" aria-hidden="true" />
 									</Button>
 								</DropdownMenuTrigger>
 								<DropdownMenuContent align="end">
@@ -594,7 +597,7 @@ function ProjectFileViewPageInner() {
 										<>
 											<DropdownMenuSeparator />
 											<DropdownMenuItem onClick={() => setIsUploadModalOpen(true)}>
-												<Upload className="mr-2 h-4 w-4" />
+												<Upload className="mr-2 h-4 w-4" aria-hidden="true" />
 												Upload new version
 											</DropdownMenuItem>
 										</>
@@ -700,6 +703,9 @@ function ProjectFileViewPageInner() {
 					</main>
 					{isSidebarOpen && selectedVersion && (
 						<CommentSidebar
+							isLoadingMore={commentsLoadingMore}
+							hasMore={hasMoreComments}
+							onLoadMore={loadMoreComments}
 							comments={comments}
 							isLoading={commentsLoading}
 							onRefresh={refetchComments}
@@ -760,7 +766,7 @@ export default function ProjectFileViewPage() {
 		<Suspense
 			fallback={
 				<div className="flex h-screen w-full items-center justify-center bg-background">
-					<Loader2 className="h-8 w-8 animate-spin text-primary/70" />
+					<Loader2 className="h-8 w-8 animate-spin text-primary/70" aria-hidden="true" />
 				</div>
 			}
 		>

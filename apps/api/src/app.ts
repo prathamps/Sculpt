@@ -15,6 +15,7 @@ import searchRoutes from "./modules/search/search.routes"
 import { serveMediaFile } from "./modules/media/media-files.controller"
 import { healthCheck } from "./modules/health/health.controller"
 import { isAllowedOrigin } from "./lib/cors"
+import { isProduction } from "./lib/config"
 import { logger } from "./lib/logger"
 import { authenticateJWT } from "./middleware/auth.middleware"
 import { rejectCrossSiteMutations } from "./middleware/csrf.middleware"
@@ -45,11 +46,28 @@ const trustProxyOnlyWithKnownHopCount = (app: express.Express): void => {
 	app.set("trust proxy", Number.isNaN(hops) ? process.env.TRUST_PROXY : hops)
 }
 
+const API_CONTENT_SECURITY_POLICY = [
+	"default-src 'none'",
+	"frame-ancestors 'none'",
+	"base-uri 'none'",
+	"form-action 'none'",
+].join("; ")
+
+const HSTS_MAX_AGE_SECONDS = 31536000
+
 const applySecurityHeaders: express.RequestHandler = (_req, res, next) => {
 	res.setHeader("X-Content-Type-Options", "nosniff")
 	res.setHeader("Referrer-Policy", "no-referrer")
 	res.setHeader("X-Frame-Options", "DENY")
 	res.setHeader("Cross-Origin-Resource-Policy", "same-site")
+	res.setHeader("Content-Security-Policy", API_CONTENT_SECURITY_POLICY)
+	res.setHeader("X-Permitted-Cross-Domain-Policies", "none")
+	if (isProduction()) {
+		res.setHeader(
+			"Strict-Transport-Security",
+			`max-age=${HSTS_MAX_AGE_SECONDS}; includeSubDomains`
+		)
+	}
 	next()
 }
 
