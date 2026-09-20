@@ -50,11 +50,17 @@ const APP_LEVEL_ROUTES = ["/health", "/uploads/:filename"]
 const asOpenApiPath = (expressPath: string): string =>
 	expressPath.replace(/:([A-Za-z0-9_]+)/g, "{$1}")
 
-const documentedPaths = (): Set<string> => {
-	const spec = fs.readFileSync(
-		path.join(__dirname, "../../../docs/openapi.yaml"),
-		"utf-8"
-	)
+const SPEC_PATH = path.join(__dirname, "../../../docs/openapi.yaml")
+
+const readSpec = (): string | null => {
+	try {
+		return fs.readFileSync(SPEC_PATH, "utf-8")
+	} catch {
+		return null
+	}
+}
+
+const documentedPaths = (spec: string): Set<string> => {
 	const paths = new Set<string>()
 	for (const line of spec.split(/\r?\n/)) {
 		const match = /^ {2}(\/\S*):\s*$/.exec(line)
@@ -64,10 +70,13 @@ const documentedPaths = (): Set<string> => {
 }
 
 describe("openapi coverage", () => {
-	const documented = documentedPaths()
+	const spec = readSpec()
+	const documented = documentedPaths(spec ?? "")
 
-	it("finds the spec", () => {
-		expect(documented.size).toBeGreaterThan(40)
+	it("finds the spec next to the API package", () => {
+		expect(
+			spec === null ? `unreadable at ${SPEC_PATH}` : documented.size
+		).toBeGreaterThan(40)
 	})
 
 	it("documents every mounted API route", () => {
