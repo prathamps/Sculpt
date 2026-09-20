@@ -24,7 +24,7 @@ const notifyProject = async (
 	})
 	if (!version) return
 
-	await NotificationService.createProjectNotification({
+	NotificationService.createProjectNotification({
 		projectId: version.image.projectId,
 		excludeUserIds: [actor.id],
 		content: `${actor.name || actor.email} ${describeDecision(decision)} ${version.image.name} (${version.versionName})`,

@@ -66,3 +66,24 @@ Out of scope:
   from a project.
 - Back up the database and the uploads volume together — see
   [docs/backup-and-restore.md](docs/backup-and-restore.md).
+
+## Known dependency advisories
+
+CI audits both apps on every push. It reports every advisory and fails the
+build on a **critical** one in the runtime dependency tree, since a
+build-time-only advisory never reaches a running server. These runtime
+advisories are currently known and accepted, because each needs a major
+upgrade that has to be done and tested deliberately:
+
+| Package | Severity | Why it is still here |
+| --- | --- | --- |
+| `prisma`, `@prisma/config`, `deepmerge-ts`, `effect` | high | Fixed only in Prisma 7, which changes client generation and configuration. Tracked as its own upgrade. |
+| `postcss` (via `next`) | high | Fixed only in Next 16. Affects CSS stringification at build time. |
+
+Neither is reachable from untrusted input in the way Sculpt uses them, but both
+should be closed out rather than carried indefinitely. Re-check with:
+
+```bash
+cd apps/api && npm audit --omit=dev
+cd apps/web && npm audit --omit=dev
+```

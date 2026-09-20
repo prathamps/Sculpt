@@ -73,7 +73,7 @@ export default function DashboardPage() {
 	if (loading) {
 		return (
 			<div className="flex h-screen w-full items-center justify-center bg-background">
-				<Loader2Icon className="h-8 w-8 animate-spin text-primary/70" />
+				<Loader2Icon className="h-8 w-8 animate-spin text-primary/70" aria-hidden="true" />
 			</div>
 		)
 	}
@@ -89,14 +89,14 @@ export default function DashboardPage() {
 							onClick={() => setCreateModalOpen(true)}
 							className="mt-4 sm:mt-0"
 						>
-							<PlusIcon className="mr-1 h-4 w-4" />
+							<PlusIcon className="mr-1 h-4 w-4" aria-hidden="true" />
 							New Project
 						</Button>
 					</div>
 
 					{isLoading ? (
 						<div className="flex h-40 items-center justify-center">
-							<Loader2Icon className="h-6 w-6 animate-spin text-muted-foreground" />
+							<Loader2Icon className="h-6 w-6 animate-spin text-muted-foreground" aria-hidden="true" />
 						</div>
 					) : loadError ? (
 						<div className="flex flex-col items-center justify-center rounded-lg border border-dashed border-destructive/40 bg-destructive/5 p-12 text-center">
@@ -129,7 +129,7 @@ export default function DashboardPage() {
 					) : (
 						<div className="flex flex-col items-center justify-center rounded-lg border border-dashed border-border bg-card/50 p-12 text-center">
 							<div className="flex h-12 w-12 items-center justify-center rounded-full bg-primary/10 text-primary">
-								<FolderPlusIcon className="h-6 w-6" />
+								<FolderPlusIcon className="h-6 w-6" aria-hidden="true" />
 							</div>
 							<h2 className="mt-4 text-xl font-medium">No projects yet</h2>
 							<p className="mt-2 max-w-sm text-muted-foreground">
@@ -137,7 +137,7 @@ export default function DashboardPage() {
 								collaborate on your images.
 							</p>
 							<Button className="mt-6" onClick={() => setCreateModalOpen(true)}>
-								<PlusIcon className="mr-2 h-4 w-4" />
+								<PlusIcon className="mr-2 h-4 w-4" aria-hidden="true" />
 								Create Project
 							</Button>
 						</div>

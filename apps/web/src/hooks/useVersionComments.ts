@@ -3,8 +3,10 @@
 import { useState, useEffect, useCallback } from "react"
 import { useAuth } from "@/context/AuthContext"
 import { useSocket } from "@/context/SocketContext"
-import { api } from "@/lib/api"
+import { Paginated, api } from "@/lib/api"
 import { Comment } from "@/types"
+
+const COMMENT_PAGE_SIZE = 50
 
 export function useVersionComments(imageVersionId: string | null) {
 	const { user } = useAuth()
@@ -17,18 +19,31 @@ export function useVersionComments(imageVersionId: string | null) {
 	} = useSocket()
 	const [comments, setComments] = useState<Comment[]>([])
 	const [isLoading, setIsLoading] = useState(false)
+	const [isLoadingMore, setIsLoadingMore] = useState(false)
 	const [error, setError] = useState<string | null>(null)
+	const [loadedPages, setLoadedPages] = useState(0)
+	const [totalPages, setTotalPages] = useState(0)
+
+	const fetchPage = useCallback(
+		async (page: number): Promise<Paginated<Comment> | null> => {
+			if (!imageVersionId) return null
+			return api.get<Paginated<Comment>>(
+				`/api/images/versions/${imageVersionId}/comments?page=${page}&pageSize=${COMMENT_PAGE_SIZE}`
+			)
+		},
+		[imageVersionId]
+	)
 
 	const refetch = useCallback(async () => {
 		if (!imageVersionId) return
 		setIsLoading(true)
 		setError(null)
 		try {
-			setComments(
-				await api.get<Comment[]>(
-					`/api/images/versions/${imageVersionId}/comments`
-				)
-			)
+			const first = await fetchPage(1)
+			if (!first) return
+			setComments(first.items)
+			setTotalPages(first.totalPages)
+			setLoadedPages(1)
 		} catch (caught) {
 			setError(
 				caught instanceof Error ? caught.message : "Could not load comments."
@@ -36,10 +51,33 @@ export function useVersionComments(imageVersionId: string | null) {
 		} finally {
 			setIsLoading(false)
 		}
-	}, [imageVersionId])
+	}, [imageVersionId, fetchPage])
+
+	const loadMore = useCallback(async () => {
+		if (isLoadingMore || loadedPages === 0 || loadedPages >= totalPages) return
+		setIsLoadingMore(true)
+		try {
+			const next = await fetchPage(loadedPages + 1)
+			if (!next) return
+			setComments((prev) => {
+				const seen = new Set(prev.map((comment) => comment.id))
+				return [...prev, ...next.items.filter((item) => !seen.has(item.id))]
+			})
+			setTotalPages(next.totalPages)
+			setLoadedPages((page) => page + 1)
+		} catch (caught) {
+			setError(
+				caught instanceof Error ? caught.message : "Could not load comments."
+			)
+		} finally {
+			setIsLoadingMore(false)
+		}
+	}, [fetchPage, isLoadingMore, loadedPages, totalPages])
 
 	useEffect(() => {
 		setComments([])
+		setLoadedPages(0)
+		setTotalPages(0)
 		void refetch()
 	}, [refetch])
 
@@ -130,5 +168,13 @@ export function useVersionComments(imageVersionId: string | null) {
 		[imageVersionId, leaveImageVersion]
 	)
 
-	return { comments, isLoading, error, refetch }
+	return {
+		comments,
+		isLoading,
+		isLoadingMore,
+		hasMore: loadedPages > 0 && loadedPages < totalPages,
+		loadMore,
+		error,
+		refetch,
+	}
 }

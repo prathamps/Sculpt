@@ -144,7 +144,7 @@ export function NotificationDropdown() {
 					className="relative"
 					aria-label="Notifications"
 				>
-					<Bell className="h-5 w-5" />
+					<Bell className="h-5 w-5" aria-hidden="true" />
 					{hasUnread && (
 						<span className="absolute right-1 top-1 h-2 w-2 rounded-full bg-red-500" />
 					)}

@@ -224,14 +224,14 @@ export function FolderBrowser({
 															setRenameValue(folder.name)
 														}}
 													>
-														<PencilIcon className="mr-2 h-3.5 w-3.5" />
+														<PencilIcon className="mr-2 h-3.5 w-3.5" aria-hidden="true" />
 														Rename
 													</DropdownMenuItem>
 													<DropdownMenuItem
 														className="text-destructive focus:text-destructive"
 														onClick={() => setDeleting(folder)}
 													>
-														<Trash2Icon className="mr-2 h-3.5 w-3.5" />
+														<Trash2Icon className="mr-2 h-3.5 w-3.5" aria-hidden="true" />
 														Delete
 													</DropdownMenuItem>
 												</DropdownMenuContent>

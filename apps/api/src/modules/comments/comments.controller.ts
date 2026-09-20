@@ -8,6 +8,8 @@ import {
 	forgetProjectAssets,
 	recordProjectAssets,
 } from "../media/media-access.service"
+import { recordAudit, requestIp } from "../audit/audit.service"
+import { requestedPage } from "../../lib/pagination"
 
 export const listComments = async (
 	req: Request,
@@ -18,7 +20,8 @@ export const listComments = async (
 		const comments = await CommentsService.getCommentsByImageVersionId(
 			req.params.imageVersionId,
 			userId,
-			role
+			role,
+			requestedPage(req.query)
 		)
 		res.status(200).json(comments)
 	} catch (error) {
@@ -130,8 +133,22 @@ export const deleteComment = async (
 	res: Response
 ): Promise<void> => {
 	try {
-		const { userId } = authorizedScope(res)
-		await CommentsService.deleteComment(req.params.commentId, userId)
+		const { userId, projectId, role } = authorizedScope(res)
+		const { moderated } = await CommentsService.deleteComment(
+			req.params.commentId,
+			userId,
+			role
+		)
+		if (moderated) {
+			await recordAudit({
+				action: "comment.deleted_by_owner",
+				targetType: "comment",
+				targetId: req.params.commentId,
+				actorId: userId,
+				metadata: { projectId },
+				ipAddress: requestIp(req),
+			})
+		}
 		res.status(204).send()
 	} catch (error) {
 		respondWithError(res, error, "delete comment")
@@ -159,12 +176,23 @@ export const toggleResolved = async (
 	res: Response
 ): Promise<void> => {
 	try {
-		const { userId } = authorizedScope(res)
+		const { userId, projectId, role } = authorizedScope(res)
 		const result = await CommentsService.toggleResolved(
 			req.params.commentId,
-			userId
+			userId,
+			role
 		)
-		res.status(200).json(result)
+		if (result.moderated) {
+			await recordAudit({
+				action: "comment.resolved_by_owner",
+				targetType: "comment",
+				targetId: req.params.commentId,
+				actorId: userId,
+				metadata: { projectId, resolved: result.resolved },
+				ipAddress: requestIp(req),
+			})
+		}
+		res.status(200).json({ resolved: result.resolved })
 	} catch (error) {
 		respondWithError(res, error, "toggle comment resolution")
 	}

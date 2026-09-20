@@ -41,6 +41,7 @@ router.delete(
 )
 
 router.get("/:projectId/members", projectController.getMembers)
+router.post("/:projectId/members/leave", projectController.leaveProject)
 router.patch(
 	"/:projectId/members/:userId/role",
 	validateBody(changeMemberRoleSchema),

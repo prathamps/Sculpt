@@ -28,7 +28,7 @@ interface ProjectCardProps {
 }
 
 export function ProjectCard({ project, onEdit, onDelete }: ProjectCardProps) {
-	const firstImage = project.images?.[0]
+	const firstImage = project.coverImage
 	const createdDate = new Date(project.createdAt).toLocaleDateString("en-US", {
 		month: "short",
 		day: "numeric",
@@ -73,8 +73,8 @@ export function ProjectCard({ project, onEdit, onDelete }: ProjectCardProps) {
 						<div>
 							<h3 className="font-medium line-clamp-1">{project.name}</h3>
 							<p className="mt-1 text-xs text-muted-foreground">
-								{project.images.length}{" "}
-								{project.images.length === 1 ? "file" : "files"} · {createdDate}
+								{project.imageCount}{" "}
+								{project.imageCount === 1 ? "file" : "files"} · {createdDate}
 							</p>
 						</div>
 					</div>
@@ -100,7 +100,7 @@ export function ProjectCard({ project, onEdit, onDelete }: ProjectCardProps) {
 
 						<span className="text-xs text-primary/80 flex items-center">
 							View
-							<ChevronRight className="ml-0.5 h-3 w-3" />
+							<ChevronRight className="ml-0.5 h-3 w-3" aria-hidden="true" />
 						</span>
 					</div>
 				</div>
@@ -123,7 +123,7 @@ export function ProjectCard({ project, onEdit, onDelete }: ProjectCardProps) {
 								onEdit(project)
 							}}
 						>
-							<Pencil className="mr-2 h-4 w-4" />
+							<Pencil className="mr-2 h-4 w-4" aria-hidden="true" />
 							Edit project
 						</DropdownMenuItem>
 						<DropdownMenuItem asChild>
@@ -132,7 +132,7 @@ export function ProjectCard({ project, onEdit, onDelete }: ProjectCardProps) {
 								target="_blank"
 								className="flex w-full cursor-default items-center"
 							>
-								<ExternalLink className="mr-2 h-4 w-4" />
+								<ExternalLink className="mr-2 h-4 w-4" aria-hidden="true" />
 								Open in new tab
 							</Link>
 						</DropdownMenuItem>
@@ -144,7 +144,7 @@ export function ProjectCard({ project, onEdit, onDelete }: ProjectCardProps) {
 							}}
 							className="text-destructive"
 						>
-							<Trash2 className="mr-2 h-4 w-4" />
+							<Trash2 className="mr-2 h-4 w-4" aria-hidden="true" />
 							Delete project
 						</DropdownMenuItem>
 					</DropdownMenuContent>

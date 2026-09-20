@@ -40,6 +40,7 @@ import { FolderNode } from "@/hooks/useProjectFolders"
 
 interface ProjectContentViewProps {
 	project: Project | null
+	images: Image[]
 	onUploadClick: () => void
 	onProjectChanged: () => void
 	currentFolderId: string | null
@@ -70,6 +71,7 @@ const MEDIA_FOR_FILTER: Record<Exclude<FileType, "all">, MediaType> = {
 
 export function ProjectContentView({
 	project,
+	images,
 	onUploadClick,
 	onProjectChanged,
 	currentFolderId,
@@ -87,11 +89,8 @@ export function ProjectContentView({
 	const [selectedIds, setSelectedIds] = useState<string[]>([])
 
 	const filesInFolder = useMemo(
-		() =>
-			(project?.images ?? []).filter(
-				(file) => (file.folderId ?? null) === currentFolderId
-			),
-		[project, currentFolderId]
+		() => images.filter((file) => (file.folderId ?? null) === currentFolderId),
+		[images, currentFolderId]
 	)
 
 	const filteredAndSortedFiles = useMemo(() => {
@@ -169,7 +168,7 @@ export function ProjectContentView({
 		return (
 			<div className="flex flex-1 items-center justify-center p-8">
 				<div className="flex w-full max-w-md flex-col items-center justify-center rounded-lg border border-dashed border-border bg-card/50 p-12 text-center">
-					<FolderIcon className="h-12 w-12 text-muted-foreground/50" />
+					<FolderIcon className="h-12 w-12 text-muted-foreground/50" aria-hidden="true" />
 					<h2 className="mt-4 text-xl font-medium">No project selected</h2>
 					<p className="mt-2 text-sm text-muted-foreground">
 						Select a project from the sidebar or create a new one.
@@ -249,7 +248,7 @@ export function ProjectContentView({
 						)}
 						onClick={() => setShowFilterBar(!showFilterBar)}
 					>
-						<SlidersHorizontal className="h-3.5 w-3.5" />
+						<SlidersHorizontal className="h-3.5 w-3.5" aria-hidden="true" />
 						<span className="text-xs">Filter</span>
 					</Button>
 					<Button
@@ -257,7 +256,7 @@ export function ProjectContentView({
 						className="h-7 gap-1 bg-primary hover:bg-primary/90 text-primary-foreground"
 						onClick={onUploadClick}
 					>
-						<PlusIcon className="h-3.5 w-3.5" />
+						<PlusIcon className="h-3.5 w-3.5" aria-hidden="true" />
 						<span className="text-xs">Upload</span>
 					</Button>
 				</div>
@@ -295,7 +294,7 @@ export function ProjectContentView({
 									size="sm"
 									className="h-8 gap-1.5 px-3 hover:text-primary"
 								>
-									<FileImageIcon className="h-3.5 w-3.5" />
+									<FileImageIcon className="h-3.5 w-3.5" aria-hidden="true" />
 									<span className="text-xs">{FILE_TYPE_LABELS[fileType]}</span>
 								</Button>
 							</DropdownMenuTrigger>
@@ -342,7 +341,7 @@ export function ProjectContentView({
 									size="sm"
 									className="h-8 gap-1.5 px-3 hover:text-primary"
 								>
-									<ClockIcon className="h-3.5 w-3.5" />
+									<ClockIcon className="h-3.5 w-3.5" aria-hidden="true" />
 									<span className="text-xs">
 										{sortBy === "newest"
 											? "Newest first"
@@ -478,7 +477,7 @@ export function ProjectContentView({
 					) : (
 						<div className="flex flex-col items-center justify-center rounded-lg border border-dashed border-border bg-card/50 p-12 text-center">
 							<div className="flex h-12 w-12 items-center justify-center rounded-full bg-muted/60">
-								<Search className="h-6 w-6 text-muted-foreground" />
+								<Search className="h-6 w-6 text-muted-foreground" aria-hidden="true" />
 							</div>
 							<h2 className="mt-4 text-lg font-medium">
 								No files match your filters
@@ -504,7 +503,7 @@ export function ProjectContentView({
 			) : (
 				<div className="flex flex-col items-center justify-center rounded-lg border border-dashed border-border bg-card/50 p-12 text-center">
 					<div className="flex h-12 w-12 items-center justify-center rounded-full bg-primary/10 text-primary">
-						<PlusIcon className="h-6 w-6" />
+						<PlusIcon className="h-6 w-6" aria-hidden="true" />
 					</div>
 					<h2 className="mt-4 text-lg font-medium">No files yet</h2>
 					<p className="mt-2 max-w-md text-sm text-muted-foreground">
@@ -514,7 +513,7 @@ export function ProjectContentView({
 						onClick={onUploadClick}
 						className="mt-6 bg-primary hover:bg-primary/90 text-primary-foreground"
 					>
-						<PlusIcon className="mr-2 h-4 w-4" />
+						<PlusIcon className="mr-2 h-4 w-4" aria-hidden="true" />
 						Upload File
 					</Button>
 				</div>

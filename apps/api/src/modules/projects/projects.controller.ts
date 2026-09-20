@@ -6,7 +6,12 @@ import { respondWithError } from "../../lib/http"
 import { NotFoundError } from "../../lib/errors"
 import { requestedPage } from "../../lib/pagination"
 import { getMemberRole } from "./access"
-import { sendProjectInvitationEmail } from "../notifications/email.service"
+import {
+	isEmailConfigured,
+	sendProjectInvitationEmail,
+} from "../notifications/email.service"
+import { NotificationService } from "../notifications/notification.service"
+import { logger } from "../../lib/logger"
 
 const frontendUrl = (): string =>
 	(
@@ -212,16 +217,26 @@ export const inviteToProject = async (
 		)
 
 		const project = await projectService.getProjectById(id, inviter.id)
+		const projectName = project?.name ?? "a Sculpt project"
+		const acceptUrl = `${frontendUrl()}/invitations/${result.token}`
 
 		await sendProjectInvitationEmail({
 			to: result.email,
 			inviterName: inviter.name,
-			projectName: project?.name ?? "a Sculpt project",
-			acceptUrl: result.token
-				? `${frontendUrl()}/invitations/${result.token}`
-				: `${frontendUrl()}/project/${id}`,
+			projectName,
+			acceptUrl,
 			isExistingUser: result.invitedExistingUser,
 		})
+
+		if (result.invitedUserId) {
+			await NotificationService.createNotification({
+				userId: result.invitedUserId,
+				content: `${inviter.name || "Someone"} invited you to join "${projectName}"`,
+				metadata: { type: "project_invitation", projectId: id },
+			}).catch((error) =>
+				logger.error("Project invitation notification failed", error)
+			)
+		}
 
 		await recordAudit({
 			action: result.invitedExistingUser
@@ -237,10 +252,34 @@ export const inviteToProject = async (
 		res.status(200).json({
 			invitedExistingUser: result.invitedExistingUser,
 			email: result.email,
+			token: result.token,
+			acceptUrl,
+			emailDelivered: isEmailConfigured(),
 			project,
 		})
 	} catch (error) {
 		respondWithError(res, error, "invite project member")
+	}
+}
+
+export const leaveProject = async (
+	req: AuthenticatedRequest,
+	res: Response
+): Promise<void> => {
+	try {
+		const { projectId } = req.params
+		const userId = req.user!.id
+		await projectService.leaveProject(projectId, userId)
+		await recordAudit({
+			action: "project.member_left",
+			targetType: "project",
+			targetId: projectId,
+			actorId: userId,
+			ipAddress: requestIp(req),
+		})
+		res.status(204).send()
+	} catch (error) {
+		respondWithError(res, error, "leave project")
 	}
 }
 

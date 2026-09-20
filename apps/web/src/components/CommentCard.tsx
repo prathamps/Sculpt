@@ -244,7 +244,7 @@ export function CommentCard({
 										aria-label="Comment actions"
 										onClick={(e) => e.stopPropagation()}
 									>
-										<MoreHorizontal className="h-4 w-4" />
+										<MoreHorizontal className="h-4 w-4" aria-hidden="true" />
 									</Button>
 								</DropdownMenuTrigger>
 								<DropdownMenuContent align="end" className="w-48">
@@ -266,7 +266,7 @@ export function CommentCard({
 										}}
 										disabled={isDeleting}
 									>
-										<Trash2 className="mr-2 h-3.5 w-3.5" />
+										<Trash2 className="mr-2 h-3.5 w-3.5" aria-hidden="true" />
 										{isDeleting ? "Deleting..." : "Delete comment"}
 									</DropdownMenuItem>
 								</DropdownMenuContent>
@@ -430,12 +430,12 @@ export function CommentCard({
 								>
 									{isSubmittingReply ? (
 										<>
-											<Send className="mr-1 h-3 w-3 animate-pulse" />
+											<Send className="mr-1 h-3 w-3 animate-pulse" aria-hidden="true" />
 											Sending...
 										</>
 									) : (
 										<>
-											<Send className="mr-1 h-3 w-3" />
+											<Send className="mr-1 h-3 w-3" aria-hidden="true" />
 											Reply
 										</>
 									)}

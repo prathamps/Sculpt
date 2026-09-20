@@ -56,6 +56,31 @@ export interface RequestOptions {
 const buildUrl = (path: string): string =>
 	path.startsWith("http") ? path : `${API_URL}${path}`
 
+export const SESSION_EXPIRED_EVENT = "sculpt:session-expired"
+
+const SIGNED_OUT_PREFIXES = [
+	"/api/auth/login",
+	"/api/auth/register",
+	"/api/auth/logout",
+	"/api/auth/providers",
+	"/api/auth/password-reset",
+	"/api/admin/login",
+]
+
+const SESSION_PROBE_PATHS = ["/api/users/profile", "/api/users/me"]
+
+export const signalsLostSession = (status: number, path: string): boolean => {
+	if (status !== 401) return false
+	const route = path.split("?")[0] ?? path
+	if (SESSION_PROBE_PATHS.includes(route)) return false
+	return !SIGNED_OUT_PREFIXES.some((prefix) => route.startsWith(prefix))
+}
+
+const announceLostSession = (): void => {
+	if (typeof window === "undefined") return
+	window.dispatchEvent(new Event(SESSION_EXPIRED_EVENT))
+}
+
 export const apiRequest = async <T>(
 	path: string,
 	options: RequestOptions = {}
@@ -81,6 +106,7 @@ export const apiRequest = async <T>(
 	})
 
 	if (!response.ok) {
+		if (signalsLostSession(response.status, path)) announceLostSession()
 		throw new ApiError(response.status, await messageFor(response))
 	}
 
@@ -158,6 +184,7 @@ export const uploadWithProgress = <T>(
 				return
 			}
 
+			if (signalsLostSession(request.status, path)) announceLostSession()
 			reject(
 				new ApiError(request.status, uploadFailureMessage(raw, request.status))
 			)

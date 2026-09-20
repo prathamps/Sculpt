@@ -31,7 +31,7 @@ export function TopHeader({
 					href={`/project/${projectId}`}
 					className="flex items-center gap-1.5 text-muted-foreground transition-colors hover:text-foreground"
 				>
-					<ChevronLeft className="h-4 w-4" />
+					<ChevronLeft className="h-4 w-4" aria-hidden="true" />
 					<span className="text-sm">Back</span>
 				</Link>
 				<div className="mx-1 h-4 w-px bg-border/60" />

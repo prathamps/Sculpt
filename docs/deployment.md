@@ -49,7 +49,7 @@ Build both apps (`npm run build`) and run `node dist/index.js` (API, after `npx 
 | `DATABASE_URL`, `DIRECT_URL` | ✅ | Postgres connection (pooled / direct) |
 | `JWT_SECRET` | ✅ | signing key for auth cookies — use a long random value |
 | `FRONTEND_URL`, `API_URL` | ✅ in prod | CORS + OAuth redirect construction |
-| `REDIS_URL` | optional (required for >1 instance) | Socket.IO fan-out, cross-instance presence, shared rate limits |
+| `REDIS_URL` | optional (required for >1 instance) | Socket.IO fan-out, cross-instance presence (both online status and per-file viewers), shared rate limits |
 | `CORS_ALLOWED_HOST_SUFFIXES` | optional | apex domains whose subdomains may call the API (e.g. preview deploys) |
 | `LOG_LEVEL` | optional | `debug`/`info`/`warn`/`error`; JSON lines in production |
 | `TRUST_PROXY` | behind a proxy | number of trusted proxy hops so `req.ip` and audit IPs use `X-Forwarded-For` (leave unset when direct-facing) |
@@ -58,6 +58,9 @@ Build both apps (`npm run build`) and run `node dist/index.js` (API, after `npx 
 | `S3_BUCKET`, `S3_REGION`, `S3_ENDPOINT`, `S3_PUBLIC_URL` | optional | switch file storage to any S3-compatible store |
 | `S3_PRIVATE` | optional | keep the bucket private and serve presigned redirects |
 | `MAX_UPLOAD_MB` | optional | upload size limit (default 2048) |
+| `SESSION_ABSOLUTE_LIFETIME_DAYS` | optional | how long an active session may keep renewing before re-login (default 7) |
+| `NOTIFICATION_WORKER_CONCURRENCY` | optional | parallel notification emails per instance (default 4) |
+| `NOTIFICATION_QUEUE_MAX_DEPTH` | optional | queued notification deliveries before shedding (default 10000) |
 | `VIDEO_WORKER_CONCURRENCY`, `IMAGE_WORKER_CONCURRENCY` | optional | parallel ffmpeg jobs per instance |
 | `SCULPT_INSTANCE_ID` | multi-instance | stable id so crash recovery only reclaims this instance's transcodes |
 

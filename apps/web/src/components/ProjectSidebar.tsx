@@ -86,15 +86,15 @@ export function ProjectSidebar({
 				<div className="mb-4 flex items-center justify-between">
 					<div className="flex items-center gap-2">
 						<div className="flex h-7 w-7 items-center justify-center rounded-md bg-sidebar-primary text-sidebar-primary-foreground">
-							<FolderOpen className="h-4 w-4" />
+							<FolderOpen className="h-4 w-4" aria-hidden="true" />
 						</div>
 						<span className="text-sm font-medium">My Workspace</span>
 					</div>
-					<ChevronDown className="h-4 w-4 text-muted-foreground" />
+					<ChevronDown className="h-4 w-4 text-muted-foreground" aria-hidden="true" />
 				</div>
 
 				<div className="relative mb-5">
-					<Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+					<Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" aria-hidden="true" />
 					<Input
 						type="search"
 						placeholder="Search projects..."
@@ -144,7 +144,7 @@ export function ProjectSidebar({
 								className="flex flex-1 items-center gap-2 truncate"
 							>
 								{selectedProject?.id === project.id && (
-									<Check className="h-3.5 w-3.5 text-sidebar-primary flex-shrink-0" />
+									<Check className="h-3.5 w-3.5 text-sidebar-primary flex-shrink-0" aria-hidden="true" />
 								)}
 								<span
 									className={cn(
@@ -167,11 +167,11 @@ export function ProjectSidebar({
 								</DropdownMenuTrigger>
 								<DropdownMenuContent align="end" className="w-52">
 									<DropdownMenuItem onClick={() => setSettingsModalOpen(true)}>
-										<Settings className="mr-2 h-4 w-4" />
+										<Settings className="mr-2 h-4 w-4" aria-hidden="true" />
 										Project settings
 									</DropdownMenuItem>
 									<DropdownMenuItem onClick={() => setMembersModalOpen(true)}>
-										<Users className="mr-2 h-4 w-4" />
+										<Users className="mr-2 h-4 w-4" aria-hidden="true" />
 										Manage members
 									</DropdownMenuItem>
 									<DropdownMenuSeparator />

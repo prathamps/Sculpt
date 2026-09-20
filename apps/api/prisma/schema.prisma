@@ -120,6 +120,8 @@ model Project {
   invitations ProjectInvitation[]
   createdAt  DateTime        @default(now())
   updatedAt  DateTime        @updatedAt
+
+  @@index([name(ops: raw("gin_trgm_ops"))], type: Gin)
 }
 
 model Folder {
@@ -175,6 +177,7 @@ model Image {
   @@index([projectId, updatedAt])
   @@index([projectId, name])
   @@index([folderId])
+  @@index([name(ops: raw("gin_trgm_ops"))], type: Gin)
 }
 
 model ImageVersion {
@@ -201,6 +204,7 @@ model ImageVersion {
   @@unique([imageId, versionNumber])
   @@index([imageId])
   @@index([proxyStatus])
+  @@index([versionName(ops: raw("gin_trgm_ops"))], type: Gin)
 }
 
 model Review {
@@ -244,6 +248,7 @@ model Comment {
   @@index([imageVersionId, createdAt])
   @@index([parentId])
   @@index([userId])
+  @@index([content(ops: raw("gin_trgm_ops"))], type: Gin)
 }
 
 model CommentAttachment {
@@ -297,7 +302,7 @@ model Notification {
 
 model ShareLink {
   id        String      @id @default(cuid())
-  token     String      @unique
+  tokenHash String      @unique
   projectId String
   project   Project     @relation(fields: [projectId], references: [id], onDelete: Cascade)
   role      ProjectRole
