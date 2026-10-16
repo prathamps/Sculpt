@@ -69,6 +69,9 @@ const safeRedis = {
 		undefined as string | undefined,
 		(...args: Parameters<typeof redisClient.hGet>) => redisClient.hGet(...args)
 	),
+	hDel: guarded("hDel", 0, (...args: Parameters<typeof redisClient.hDel>) =>
+		redisClient.hDel(...args)
+	),
 	hKeys: guarded(
 		"hKeys",
 		[] as string[],

@@ -22,7 +22,7 @@ export default function AdminLayout({
 	if (loading) {
 		return (
 			<div className="flex h-screen w-screen items-center justify-center">
-				<Loader2 className="h-8 w-8 animate-spin text-primary" />
+				<Loader2 className="h-8 w-8 animate-spin text-primary" aria-hidden="true" />
 				<span className="ml-2">Loading...</span>
 			</div>
 		)

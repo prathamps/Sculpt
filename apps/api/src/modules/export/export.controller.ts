@@ -8,6 +8,7 @@ import {
 import { getMemberRole } from "../projects/access"
 import { canSeeInternalComments } from "../comments/comments.service"
 import { recordAudit, requestIp } from "../audit/audit.service"
+import { respondWithError } from "../../lib/http"
 
 const auditExport = (req: Request, imageId: string, format: string) =>
 	recordAudit({
@@ -66,7 +67,7 @@ export const getImageReportJson = async (
 		await auditExport(req, imageId, "json")
 		res.status(200).json(report)
 	} catch (error) {
-		res.status(500).json({ message: "Error generating report", error })
+		respondWithError(res, error, "generate report")
 	}
 }
 
@@ -94,6 +95,6 @@ export const getImageReportCsv = async (
 		await auditExport(req, imageId, "csv")
 		res.status(200).send(csv)
 	} catch (error) {
-		res.status(500).json({ message: "Error generating report", error })
+		respondWithError(res, error, "generate report")
 	}
 }

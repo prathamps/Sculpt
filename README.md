@@ -50,7 +50,7 @@ viz or printable parts alongside ordinary media, that is the gap this fills.
 | Frontend  | Next.js 15 (App Router), React 19, Tailwind CSS v4, shadcn/ui |
 | Backend   | Node.js, Express 5, TypeScript                       |
 | Database  | PostgreSQL with Prisma ORM                           |
-| Real-time | Socket.IO (Redis adapter + presence for multi-instance) |
+| Real-time | Socket.IO (Redis adapter, presence and viewer state for multi-instance) |
 | Auth      | JWT cookies, Passport (Google / GitHub OAuth)        |
 | Storage   | Local disk or S3-compatible object storage           |
 
@@ -61,7 +61,9 @@ The fastest way to run the whole platform:
 ```bash
 git clone https://github.com/prathamps/sculpt.git
 cd sculpt
-JWT_SECRET=$(openssl rand -base64 48) docker compose -f docker-compose.selfhost.yml up -d --build
+POSTGRES_PASSWORD=$(openssl rand -base64 32) \
+JWT_SECRET=$(openssl rand -base64 48) \
+docker compose -f docker-compose.selfhost.yml up -d --build
 ```
 
 Open http://localhost:3000, register, then promote yourself to administrator:
@@ -78,7 +80,9 @@ with automatic certificates:
 SCULPT_DOMAIN=sculpt.example.com TLS_EMAIL=you@example.com \
 FRONTEND_URL=https://sculpt.example.com \
 API_URL=https://sculpt.example.com/api-origin \
+POSTGRES_PASSWORD=$(openssl rand -base64 32) \
 JWT_SECRET=$(openssl rand -base64 48) \
+TRUST_PROXY=1 \
 docker compose -f docker-compose.selfhost.yml --profile tls up -d --build
 ```
 

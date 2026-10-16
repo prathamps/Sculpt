@@ -8,6 +8,9 @@ import { jwtSecret } from "../../lib/config"
 import { SESSION_COOKIE } from "../../lib/cookies"
 import { findOrCreateOAuthUser } from "./auth.service"
 import { isSessionRevoked } from "./session.service"
+import { SessionClaims } from "../../lib/tokens"
+import { CookieOAuthStateStore } from "./oauth-state"
+import { logger } from "../../lib/logger"
 
 const cookieExtractor = (req: Request) => {
 	let token = null
@@ -20,10 +23,11 @@ const cookieExtractor = (req: Request) => {
 const opts = {
 	jwtFromRequest: cookieExtractor,
 	secretOrKey: jwtSecret(),
+	passReqToCallback: true as const,
 }
 
 passport.use(
-	new JwtStrategy(opts, async (jwt_payload, done) => {
+	new JwtStrategy(opts, async (req: Request, jwt_payload, done) => {
 		try {
 			if (jwt_payload?.typ !== "user") return done(null, false)
 			if (typeof jwt_payload?.ver !== "number") return done(null, false)
@@ -34,6 +38,7 @@ passport.use(
 			})
 			if (!user) return done(null, false)
 			if (user.tokenVersion !== jwt_payload.ver) return done(null, false)
+			req.sessionClaims = jwt_payload as SessionClaims
 			return done(null, user)
 		} catch (error) {
 			return done(error, false)
@@ -42,6 +47,13 @@ passport.use(
 )
 
 const API_URL = process.env.API_URL || "http://localhost:3001"
+
+const STATE_STORE_ENABLED = true as unknown as string
+
+const csrfProtectedState = () => ({
+	state: STATE_STORE_ENABLED,
+	store: new CookieOAuthStateStore(),
+})
 
 interface GitHubEmailEntry {
 	email: string
@@ -88,6 +100,7 @@ if (process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET) {
 				callbackURL:
 					process.env.GOOGLE_CALLBACK_URL ||
 					`${API_URL}/api/auth/google/callback`,
+				...csrfProtectedState(),
 			},
 			async (_accessToken, _refreshToken, profile, done) => {
 				try {
@@ -115,7 +128,7 @@ if (process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET) {
 		)
 	)
 	oauthProviders.google = true
-	console.log("[auth] Google OAuth enabled")
+	logger.info("Google OAuth enabled")
 }
 
 if (process.env.GITHUB_CLIENT_ID && process.env.GITHUB_CLIENT_SECRET) {
@@ -128,6 +141,7 @@ if (process.env.GITHUB_CLIENT_ID && process.env.GITHUB_CLIENT_SECRET) {
 					process.env.GITHUB_CALLBACK_URL ||
 					`${API_URL}/api/auth/github/callback`,
 				scope: ["user:email"],
+				...csrfProtectedState(),
 			},
 			async (
 				accessToken: string,
@@ -157,7 +171,7 @@ if (process.env.GITHUB_CLIENT_ID && process.env.GITHUB_CLIENT_SECRET) {
 		)
 	)
 	oauthProviders.github = true
-	console.log("[auth] GitHub OAuth enabled")
+	logger.info("GitHub OAuth enabled")
 }
 
 export default passport

@@ -46,6 +46,15 @@ const requireFolderInProject = async (
 	return folder
 }
 
+export const assertFolderInProject = async (
+	folderId: string | null,
+	projectId: string
+): Promise<string | null> => {
+	if (!folderId) return null
+	await requireFolderInProject(folderId, projectId)
+	return folderId
+}
+
 export const listFolders = async (projectId: string): Promise<FolderNode[]> => {
 	const folders = await prisma.folder.findMany({
 		where: { projectId },

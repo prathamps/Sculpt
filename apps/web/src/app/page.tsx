@@ -29,7 +29,7 @@ const Header = () => {
 					onClick={() => setMenuOpen(!menuOpen)}
 					aria-label="Toggle navigation menu"
 				>
-					{menuOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
+					{menuOpen ? <X className="h-5 w-5" aria-hidden="true" /> : <Menu className="h-5 w-5" aria-hidden="true" />}
 				</button>
 				<ul
 					className={`fixed inset-x-0 top-16 z-50 flex-col border-b border-border/10 bg-background/95 px-4 pb-6 pt-4 backdrop-blur-sm transition-all md:static md:inset-auto md:z-auto md:flex md:flex-row md:items-center md:gap-6 md:border-0 md:bg-transparent md:p-0 md:backdrop-blur-none ${
@@ -95,7 +95,7 @@ const Hero = () => (
 			<div className="flex flex-col justify-center gap-4 sm:flex-row">
 				<Button asChild size="lg">
 					<Link href="/register">
-						Get Started <ChevronRight className="ml-1 h-4 w-4" />
+						Get Started <ChevronRight className="ml-1 h-4 w-4" aria-hidden="true" />
 					</Link>
 				</Button>
 				<Button asChild variant="outline" size="lg">
@@ -127,7 +127,7 @@ const FeatureCard = ({
 }) => (
 	<div className="flex flex-col rounded-lg border border-border/40 bg-card/30 p-6 transition-all hover:bg-card/50 hover:shadow-md">
 		<div className="mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-primary/10 text-primary">
-			<Icon className="h-6 w-6" />
+			<Icon className="h-6 w-6" aria-hidden="true" />
 		</div>
 		<h3 className="mb-2 text-xl font-medium">{title}</h3>
 		<p className="text-muted-foreground">{description}</p>

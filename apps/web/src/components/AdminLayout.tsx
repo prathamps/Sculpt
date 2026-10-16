@@ -101,7 +101,7 @@ export function AdminLayout({ children }: AdminLayoutProps) {
 					onClick={adminLogout}
 					className="text-muted-foreground"
 				>
-					<LogOut className="mr-2 h-4 w-4" />
+					<LogOut className="mr-2 h-4 w-4" aria-hidden="true" />
 					Logout
 				</Button>
 			</header>

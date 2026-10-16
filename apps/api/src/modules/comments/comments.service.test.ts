@@ -7,8 +7,10 @@ vi.mock("../../lib/prisma", () => ({
 		comment: {
 			findUnique: vi.fn(),
 			findMany: vi.fn(),
+			count: vi.fn(),
 			update: vi.fn(),
 			create: vi.fn(),
+			delete: vi.fn(),
 		},
 		imageVersion: {
 			findUnique: vi.fn(),
@@ -79,6 +81,7 @@ describe("CommentsService.createComment anchors", () => {
 		mocked.imageVersion.findUnique.mockResolvedValue({
 			mediaType,
 			duration,
+			image: { id: "img1", name: "shot.png", projectId: "p1" },
 		} as never)
 
 	const create = (anchors: {
@@ -289,7 +292,7 @@ describe("CommentsService.createComment mentions", () => {
 		mocked.imageVersion.findUnique.mockResolvedValue({
 			mediaType: "IMAGE",
 			duration: null,
-			imageId: "img1",
+			image: { id: "img1", name: "shot.png", projectId: "p1" },
 		} as never)
 		mocked.image.findUnique.mockResolvedValue({
 			projectId: "p1",
@@ -396,6 +399,7 @@ describe("CommentsService.createComment parent threading", () => {
 		mocked.imageVersion.findUnique.mockResolvedValue({
 			mediaType: "IMAGE",
 			duration: null,
+			image: { id: "img1", name: "shot.png", projectId: "p1" },
 		} as never)
 	})
 
@@ -453,7 +457,7 @@ describe("CommentsService internal comments", () => {
 		mocked.imageVersion.findUnique.mockResolvedValue({
 			mediaType: "IMAGE",
 			duration: null,
-			imageId: "img1",
+			image: { id: "img1", name: "shot.png", projectId: "p1" },
 		} as never)
 		mocked.image.findUnique.mockResolvedValue({
 			projectId: "p1",
@@ -510,6 +514,7 @@ describe("CommentsService internal comments", () => {
 
 	it("hides internal comments from readers below EDITOR", async () => {
 		mocked.comment.findMany.mockResolvedValue([] as never)
+		mocked.comment.count.mockResolvedValue(0 as never)
 
 		await CommentsService.getCommentsByImageVersionId("v1", "u1", "MEMBER")
 
@@ -522,6 +527,7 @@ describe("CommentsService internal comments", () => {
 
 	it("shows internal comments to editors", async () => {
 		mocked.comment.findMany.mockResolvedValue([] as never)
+		mocked.comment.count.mockResolvedValue(0 as never)
 
 		await CommentsService.getCommentsByImageVersionId("v1", "u1", "EDITOR")
 
@@ -638,11 +644,12 @@ describe("CommentsService.toggleResolved", () => {
 		mocked.comment.update.mockResolvedValue({
 			id: "c1",
 			resolved: true,
+			_count: { likes: 0 },
 		} as never)
 
 		const result = await CommentsService.toggleResolved("c1", "author")
 
-		expect(result).toEqual({ resolved: true })
+		expect(result).toEqual({ resolved: true, moderated: false })
 		expect(mocked.comment.update).toHaveBeenCalledWith(
 			expect.objectContaining({ data: { resolved: true } })
 		)
@@ -651,5 +658,78 @@ describe("CommentsService.toggleResolved", () => {
 			"comment-updated",
 			expect.objectContaining({ id: "c1", imageVersionId: "v1" })
 		)
+	})
+})
+
+describe("CommentsService moderation", () => {
+	beforeEach(() => vi.clearAllMocks())
+
+	const othersComment = {
+		id: "c1",
+		userId: "author",
+		resolved: false,
+		imageVersionId: "v1",
+		internal: false,
+		attachments: [],
+	}
+
+	it("lets a project owner delete someone else's comment", async () => {
+		mocked.comment.findUnique.mockResolvedValue(othersComment as never)
+
+		const result = await CommentsService.deleteComment("c1", "owner", "OWNER")
+
+		expect(result).toEqual({ moderated: true })
+		expect(mocked.comment.delete).toHaveBeenCalledWith({ where: { id: "c1" } })
+	})
+
+	it("reports an author deleting their own comment as unmoderated", async () => {
+		mocked.comment.findUnique.mockResolvedValue(othersComment as never)
+
+		const result = await CommentsService.deleteComment("c1", "author", "MEMBER")
+
+		expect(result).toEqual({ moderated: false })
+	})
+
+	it("refuses deletion by a non-author below OWNER", async () => {
+		mocked.comment.findUnique.mockResolvedValue(othersComment as never)
+
+		await expect(
+			CommentsService.deleteComment("c1", "someone-else", "EDITOR")
+		).rejects.toBeInstanceOf(ForbiddenError)
+		expect(mocked.comment.delete).not.toHaveBeenCalled()
+	})
+
+	it("lets an editor resolve someone else's comment", async () => {
+		mocked.comment.findUnique.mockResolvedValue(othersComment as never)
+		mocked.comment.update.mockResolvedValue({
+			id: "c1",
+			resolved: true,
+			_count: { likes: 0 },
+		} as never)
+
+		const result = await CommentsService.toggleResolved(
+			"c1",
+			"editor",
+			"EDITOR"
+		)
+
+		expect(result).toEqual({ resolved: true, moderated: true })
+	})
+
+	it("refuses resolution by a non-author below EDITOR", async () => {
+		mocked.comment.findUnique.mockResolvedValue(othersComment as never)
+
+		await expect(
+			CommentsService.toggleResolved("c1", "someone-else", "MEMBER")
+		).rejects.toBeInstanceOf(ForbiddenError)
+		expect(mocked.comment.update).not.toHaveBeenCalled()
+	})
+
+	it("still refuses edits by anyone but the author", async () => {
+		mocked.comment.findFirst = vi.fn().mockResolvedValue(null)
+
+		await expect(
+			CommentsService.updateComment("c1", { content: "hi" }, "owner")
+		).rejects.toBeInstanceOf(ForbiddenError)
 	})
 })

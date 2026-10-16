@@ -41,11 +41,13 @@ import {
 	TooltipTrigger,
 } from "@/components/ui/tooltip"
 import { Separator } from "@/components/ui/separator"
-import { cn } from "@/lib/utils"
 import { UserAvatar } from "@/components/UserAvatar"
 import { api } from "@/lib/api"
 import { describeError } from "@/lib/errors"
 import { toast } from "sonner"
+import { useRouter } from "next/navigation"
+import { ConfirmationModal } from "@/components/ConfirmationModal"
+import { LogOut } from "lucide-react"
 
 interface MembersModalProps {
 	isOpen: boolean
@@ -58,12 +60,25 @@ type ShareLinkRole = "EDITOR" | "MEMBER" | "VIEWER"
 
 interface ShareLink {
 	id: string
-	token: string
 	role: ShareLinkRole
+	createdAt?: string
 	expiresAt?: string | null
 	maxUses?: number | null
 	useCount?: number
 }
+
+interface IssuedShareLink extends ShareLink {
+	token: string
+}
+
+const summaryOf = (link: IssuedShareLink): ShareLink => ({
+	id: link.id,
+	role: link.role,
+	createdAt: link.createdAt,
+	expiresAt: link.expiresAt,
+	maxUses: link.maxUses,
+	useCount: link.useCount,
+})
 
 const URI = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001"
 
@@ -98,6 +113,7 @@ export function MembersModal({
 	onMembersChanged,
 }: MembersModalProps) {
 	const { user: currentUser } = useAuth()
+	const router = useRouter()
 	const [email, setEmail] = useState("")
 	const [error, setError] = useState("")
 	const [isInviting, setIsInviting] = useState(false)
@@ -105,7 +121,16 @@ export function MembersModal({
 	const [newLinkRole, setNewLinkRole] = useState<ShareLinkRole>("EDITOR")
 	const [newLinkExpiry, setNewLinkExpiry] = useState("never")
 	const [newLinkMaxUses, setNewLinkMaxUses] = useState("")
-	const [copiedToken, setCopiedToken] = useState<string | null>(null)
+	const [pendingInvite, setPendingInvite] = useState<{
+		email: string
+		acceptUrl: string
+		emailDelivered: boolean
+	} | null>(null)
+	const [hasCopiedInvite, setHasCopiedInvite] = useState(false)
+	const [isLeaving, setIsLeaving] = useState(false)
+	const [isConfirmingLeave, setIsConfirmingLeave] = useState(false)
+	const [issuedLink, setIssuedLink] = useState<IssuedShareLink | null>(null)
+	const [hasCopiedIssuedLink, setHasCopiedIssuedLink] = useState(false)
 	const [isLoadingLinks, setIsLoadingLinks] = useState(false)
 	const [isCreatingLink, setIsCreatingLink] = useState(false)
 	useEffect(() => {
@@ -136,11 +161,26 @@ export function MembersModal({
 		(m) => m.user.id === currentUser.id && m.role === "OWNER"
 	)
 
-	const handleCopy = (token: string) => {
-		const url = `${window.location.origin}/join/${token}`
-		navigator.clipboard.writeText(url)
-		setCopiedToken(token)
-		setTimeout(() => setCopiedToken(null), 2000)
+	const ownerCount = project.members.filter((m) => m.role === "OWNER").length
+	const isMember = project.members.some((m) => m.user.id === currentUser.id)
+	const canLeaveProject = isMember && (!amIOwner || ownerCount > 1)
+
+	const handleCopyInvite = () => {
+		if (!pendingInvite) return
+		navigator.clipboard.writeText(pendingInvite.acceptUrl)
+		setHasCopiedInvite(true)
+		setTimeout(() => setHasCopiedInvite(false), 2000)
+	}
+
+	const issuedLinkUrl = issuedLink
+		? `${window.location.origin}/join/${issuedLink.token}`
+		: null
+
+	const handleCopyIssuedLink = () => {
+		if (!issuedLinkUrl) return
+		navigator.clipboard.writeText(issuedLinkUrl)
+		setHasCopiedIssuedLink(true)
+		setTimeout(() => setHasCopiedIssuedLink(false), 2000)
 	}
 
 	const handleRevokeLink = async (linkId: string) => {
@@ -154,11 +194,12 @@ export function MembersModal({
 			)
 			if (res.ok) {
 				setShareLinks((prev) => prev.filter((l) => l.id !== linkId))
+				setIssuedLink((current) => (current?.id === linkId ? null : current))
 			} else {
-				alert("Failed to revoke share link.")
+				toast.error("Could not revoke the share link.")
 			}
 		} catch {
-			alert("An error occurred while revoking the share link.")
+			toast.error("Could not revoke the share link.")
 		}
 	}
 
@@ -172,10 +213,25 @@ export function MembersModal({
 				onMembersChanged()
 			} else {
 				const data = await res.json()
-				alert(data.message || "Failed to remove member.")
+				toast.error(data.message || "Could not remove that member.")
 			}
 		} catch {
-			alert("An unexpected error occurred.")
+			toast.error("Could not remove that member.")
+		}
+	}
+
+	const handleLeaveProject = async () => {
+		setIsLeaving(true)
+		try {
+			await api.post(`/api/projects/${project.id}/members/leave`)
+			toast.success(`You left "${project.name}".`)
+			onClose()
+			router.push("/dashboard")
+		} catch (error) {
+			toast.error(describeError(error, "Could not leave this project."))
+		} finally {
+			setIsLeaving(false)
+			setIsConfirmingLeave(false)
 		}
 	}
 
@@ -194,7 +250,27 @@ export function MembersModal({
 			})
 
 			if (res.ok) {
+				const invitation = (await res.json()) as {
+					invitedExistingUser?: boolean
+					email?: string
+					acceptUrl?: string
+					emailDelivered?: boolean
+				}
 				setEmail("")
+				setPendingInvite(
+					invitation.acceptUrl
+						? {
+								email: invitation.email ?? "",
+								acceptUrl: invitation.acceptUrl,
+								emailDelivered: !!invitation.emailDelivered,
+							}
+						: null
+				)
+				toast.success(
+					invitation.emailDelivered
+						? `Invitation emailed to ${invitation.email}. They join once they accept.`
+						: `Invitation created for ${invitation.email}. Send them the link below.`
+				)
 				onMembersChanged()
 			} else {
 				const data = await res.json()
@@ -211,7 +287,7 @@ export function MembersModal({
 		const maxUses = Number.parseInt(newLinkMaxUses, 10)
 		setIsCreatingLink(true)
 		try {
-			const newLink = await api.post<ShareLink>(
+			const newLink = await api.post<IssuedShareLink>(
 				`/api/projects/${project.id}/share-links`,
 				{
 					role: newLinkRole,
@@ -221,7 +297,9 @@ export function MembersModal({
 					...(Number.isFinite(maxUses) && maxUses > 0 ? { maxUses } : {}),
 				}
 			)
-			setShareLinks((prev) => [...prev, newLink])
+			setShareLinks((prev) => [summaryOf(newLink), ...prev])
+			setIssuedLink(newLink)
+			setHasCopiedIssuedLink(false)
 			setNewLinkMaxUses("")
 		} catch (error) {
 			toast.error(describeError(error, "Could not create the share link."))
@@ -233,13 +311,20 @@ export function MembersModal({
 	const getRoleIcon = (role: string) => {
 		switch (role) {
 			case "OWNER":
-				return <ShieldCheck className="h-3.5 w-3.5 text-amber-500" />
+				return (
+					<ShieldCheck className="h-3.5 w-3.5 text-primary" aria-hidden="true" />
+				)
 			case "EDITOR":
-				return <Shield className="h-3.5 w-3.5 text-blue-500" />
+				return (
+					<Shield
+						className="h-3.5 w-3.5 text-muted-foreground"
+						aria-hidden="true"
+					/>
+				)
 			case "VIEWER":
-				return <ShieldX className="h-3.5 w-3.5 text-gray-500" />
+				return <ShieldX className="h-3.5 w-3.5 text-muted-foreground" aria-hidden="true" />
 			default:
-				return <BadgeAlert className="h-3.5 w-3.5" />
+				return <BadgeAlert className="h-3.5 w-3.5" aria-hidden="true" />
 		}
 	}
 
@@ -303,7 +388,7 @@ export function MembersModal({
 														onClick={() => handleRemoveMember(member.user.id)}
 														className="h-7 w-7 text-muted-foreground hover:text-destructive"
 													>
-														<Trash2 className="h-3.5 w-3.5" />
+														<Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
 													</Button>
 												</TooltipTrigger>
 												<TooltipContent side="left">
@@ -339,7 +424,7 @@ export function MembersModal({
 											required
 											className="pr-8"
 										/>
-										<UserPlus className="absolute right-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+										<UserPlus className="absolute right-2.5 top-2.5 h-4 w-4 text-muted-foreground" aria-hidden="true" />
 									</div>
 									<Button
 										type="submit"
@@ -349,7 +434,7 @@ export function MembersModal({
 									>
 										{isInviting ? (
 											<>
-												<Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />
+												<Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" aria-hidden="true" />
 												Inviting
 											</>
 										) : (
@@ -359,6 +444,45 @@ export function MembersModal({
 								</div>
 								{error && <p className="text-xs text-destructive">{error}</p>}
 							</form>
+
+							{pendingInvite && (
+								<div className="mt-2 rounded-md border border-border bg-muted/40 p-2.5">
+									<p className="text-xs font-medium">
+										{pendingInvite.emailDelivered
+											? `Invitation emailed to ${pendingInvite.email}`
+											: `No mail server is configured, so send this link to ${pendingInvite.email} yourself`}
+									</p>
+									<div className="mt-1.5 flex items-center gap-2">
+										<Input
+											readOnly
+											value={pendingInvite.acceptUrl}
+											aria-label={`Invitation link for ${pendingInvite.email}`}
+											className="h-8 font-mono text-xs"
+											onFocus={(event) => event.currentTarget.select()}
+										/>
+										<Button
+											type="button"
+											size="sm"
+											variant="outline"
+											className="h-8 shrink-0 gap-1"
+											onClick={handleCopyInvite}
+										>
+											{hasCopiedInvite ? (
+												<Check className="h-3.5 w-3.5" aria-hidden="true" />
+											) : (
+												<ClipboardCopy
+													className="h-3.5 w-3.5"
+													aria-hidden="true"
+												/>
+											)}
+											{hasCopiedInvite ? "Copied" : "Copy"}
+										</Button>
+									</div>
+									<p className="mt-1 text-xs text-muted-foreground">
+										The link only works for that address and expires in 7 days.
+									</p>
+								</div>
+							)}
 						</div>
 
 						<Separator className="my-1" />
@@ -376,10 +500,47 @@ export function MembersModal({
 
 							{isLoadingLinks ? (
 								<div className="flex items-center justify-center py-6">
-									<Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+									<Loader2 className="h-5 w-5 animate-spin text-muted-foreground" aria-hidden="true" />
 								</div>
 							) : (
 								<>
+									{issuedLink && issuedLinkUrl && (
+										<div className="mb-3 rounded-md border border-primary/40 bg-primary/5 p-3">
+											<p className="text-sm font-medium">
+												Copy this link now
+											</p>
+											<p className="mt-0.5 text-xs text-muted-foreground">
+												Sculpt stores only a hash of it, so this is the one
+												time it can be shown. Revoke and create a new link if
+												you lose it.
+											</p>
+											<div className="mt-2 flex items-center gap-2">
+												<Input
+													readOnly
+													value={issuedLinkUrl}
+													aria-label="New share link"
+													className="h-8 font-mono text-xs"
+													onFocus={(event) => event.currentTarget.select()}
+												/>
+												<Button
+													size="sm"
+													variant="outline"
+													className="h-8 shrink-0 gap-1"
+													onClick={handleCopyIssuedLink}
+												>
+													{hasCopiedIssuedLink ? (
+														<Check className="h-3.5 w-3.5" aria-hidden="true" />
+													) : (
+														<ClipboardCopy
+															className="h-3.5 w-3.5"
+															aria-hidden="true"
+														/>
+													)}
+													{hasCopiedIssuedLink ? "Copied" : "Copy"}
+												</Button>
+											</div>
+										</div>
+									)}
 									<div className="space-y-2">
 										{shareLinks.length > 0 ? (
 											shareLinks.map((link) => (
@@ -389,7 +550,7 @@ export function MembersModal({
 												>
 													<div className="flex items-center gap-2">
 														<div className="flex h-8 w-8 items-center justify-center rounded-full bg-primary/10">
-															<Link2 className="h-4 w-4 text-primary" />
+															<Link2 className="h-4 w-4 text-primary" aria-hidden="true" />
 														</div>
 														<div className="flex flex-col">
 															<div className="flex items-center gap-1.5">
@@ -399,10 +560,11 @@ export function MembersModal({
 																{getRoleIcon(link.role)}
 															</div>
 															<div className="flex items-center gap-1 text-xs text-muted-foreground">
-																<ExternalLink className="h-3 w-3" />
-																<span className="truncate max-w-[200px]">
-																	{`${window.location.origin}/join/${link.token}`}
-																</span>
+																<ExternalLink
+																	className="h-3 w-3"
+																	aria-hidden="true"
+																/>
+																<span>Link shown once, when created</span>
 															</div>
 															<span className="text-xs text-muted-foreground">
 																{shareLinkLimits(link)}
@@ -416,41 +578,10 @@ export function MembersModal({
 																	<Button
 																		variant="ghost"
 																		size="icon"
-																		onClick={() => handleCopy(link.token)}
-																		className={cn(
-																			"h-7 w-7",
-																			copiedToken === link.token
-																				? "text-green-500"
-																				: "text-muted-foreground"
-																		)}
-																	>
-																		{copiedToken === link.token ? (
-																			<Check className="h-3.5 w-3.5" />
-																		) : (
-																			<ClipboardCopy className="h-3.5 w-3.5" />
-																		)}
-																	</Button>
-																</TooltipTrigger>
-																<TooltipContent side="bottom">
-																	<p className="text-xs">
-																		{copiedToken === link.token
-																			? "Copied!"
-																			: "Copy link"}
-																	</p>
-																</TooltipContent>
-															</Tooltip>
-														</TooltipProvider>
-
-														<TooltipProvider>
-															<Tooltip>
-																<TooltipTrigger asChild>
-																	<Button
-																		variant="ghost"
-																		size="icon"
 																		onClick={() => handleRevokeLink(link.id)}
 																		className="h-7 w-7 text-muted-foreground hover:text-destructive"
 																	>
-																		<Trash2 className="h-3.5 w-3.5" />
+																		<Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
 																	</Button>
 																</TooltipTrigger>
 																<TooltipContent side="bottom">
@@ -463,7 +594,7 @@ export function MembersModal({
 											))
 										) : (
 											<div className="flex flex-col items-center justify-center rounded-md border border-dashed border-border/50 py-6">
-												<Link2 className="mb-2 h-8 w-8 text-muted-foreground" />
+												<Link2 className="mb-2 h-8 w-8 text-muted-foreground" aria-hidden="true" />
 												<p className="text-sm font-medium">
 													No share links created yet
 												</p>
@@ -492,21 +623,24 @@ export function MembersModal({
 													value="EDITOR"
 													className="flex items-center gap-1.5"
 												>
-													<Shield className="h-3.5 w-3.5 text-blue-500" />
+													<Shield
+														className="h-3.5 w-3.5 text-muted-foreground"
+														aria-hidden="true"
+													/>
 													<span>Editor</span>
 												</SelectItem>
 												<SelectItem
 													value="MEMBER"
 													className="flex items-center gap-1.5"
 												>
-													<Shield className="h-3.5 w-3.5 text-emerald-500" />
+													<Shield className="h-3.5 w-3.5 text-emerald-500" aria-hidden="true" />
 													<span>Member</span>
 												</SelectItem>
 												<SelectItem
 													value="VIEWER"
 													className="flex items-center gap-1.5"
 												>
-													<ShieldX className="h-3.5 w-3.5 text-gray-500" />
+													<ShieldX className="h-3.5 w-3.5 text-muted-foreground" aria-hidden="true" />
 													<span>Viewer</span>
 												</SelectItem>
 											</SelectContent>
@@ -544,12 +678,12 @@ export function MembersModal({
 										>
 											{isCreatingLink ? (
 												<>
-													<Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />
+													<Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" aria-hidden="true" />
 													Creating
 												</>
 											) : (
 												<>
-													<Plus className="mr-2 h-3.5 w-3.5" />
+													<Plus className="mr-2 h-3.5 w-3.5" aria-hidden="true" />
 													Create Link
 												</>
 											)}
@@ -561,12 +695,35 @@ export function MembersModal({
 					</>
 				)}
 
-				<DialogFooter>
+				<DialogFooter className="sm:justify-between">
+					{canLeaveProject ? (
+						<Button
+							onClick={() => setIsConfirmingLeave(true)}
+							variant="ghost"
+							size="sm"
+							className="gap-1.5 text-destructive hover:text-destructive"
+						>
+							<LogOut className="h-3.5 w-3.5" aria-hidden="true" />
+							Leave project
+						</Button>
+					) : (
+						<span />
+					)}
 					<Button onClick={onClose} variant="secondary" size="sm">
 						Close
 					</Button>
 				</DialogFooter>
 			</DialogContent>
+
+			<ConfirmationModal
+				isOpen={isConfirmingLeave}
+				onClose={() => setIsConfirmingLeave(false)}
+				onConfirm={handleLeaveProject}
+				title={`Leave "${project.name}"?`}
+				description="You will lose access to its files and comments. An owner has to invite you back."
+				confirmText="Leave project"
+				isConfirming={isLeaving}
+			/>
 		</Dialog>
 	)
 }

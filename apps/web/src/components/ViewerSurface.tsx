@@ -22,7 +22,7 @@ const ModelAnnotationCanvas = dynamic(
 		ssr: false,
 		loading: () => (
 			<div className="flex h-full w-full items-center justify-center">
-				<Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+				<Loader2 className="h-6 w-6 animate-spin text-muted-foreground" aria-hidden="true" />
 			</div>
 		),
 	}

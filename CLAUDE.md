@@ -31,7 +31,7 @@ Monorepo: `apps/api` (Express + Prisma + TypeScript) and `apps/web` (Next.js 15 
 ## Frontend conventions (`apps/web`)
 
 - **Components** in `src/components`; shadcn/ui primitives in `src/components/ui` (build on these, don't hand-roll buttons/dialogs/inputs). State via React Context (`src/context`). Utilities in `src/lib/utils.ts`.
-- **Media URLs:** always resolve stored URLs with `mediaUrl()` — it passes absolute (S3) URLs through and prefixes relative ones with the API origin.
+- **Media URLs:** always resolve stored URLs with `mediaUrl()` — it passes absolute (S3) URLs through and roots relative ones at `/`, which the Next rewrite in `next.config.ts` proxies to the API's membership-checked `/uploads` route.
 - **Roles on the client:** derive the caller's role from `GET /api/projects/:id/my-role` and gate UI with `roleAtLeast(role, "EDITOR")` (`src/lib/utils.ts`). Server-side checks are the source of truth; client gating is UX only.
 - **Theme:** light and dark are both supported. Use semantic Tailwind tokens (`bg-background`, `text-muted-foreground`, `border-border`, `text-primary`, `text-destructive`), never hardcoded colors like `bg-gray-900` or `text-white`. Both themes must remain legible.
 - **Accessibility is required, not optional:**

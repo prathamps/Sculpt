@@ -19,6 +19,7 @@ import { downloadFileName } from "./download-name"
 import { NotFoundError, ValidationError } from "../../lib/errors"
 import { respondWithError } from "../../lib/http"
 import { recordAudit, requestIp } from "../audit/audit.service"
+import { assertFolderInProject } from "../folders/folders.service"
 import { ProxyStatus } from "@prisma/client"
 
 const withLatestVersion = (
@@ -98,6 +99,11 @@ export const uploadImage = async (
 			throw new ValidationError("No files uploaded.")
 		}
 
+		const folderId = await assertFolderInProject(
+			uploadFolderOf(req),
+			projectId
+		)
+
 		const metas = parseFilesMeta(
 			req.body.filesMeta,
 			files.length,
@@ -143,7 +149,7 @@ export const uploadImage = async (
 				url: stored.url,
 				name: file.originalname,
 				projectId,
-				folderId: uploadFolderOf(req),
+				folderId,
 				mediaType,
 				duration: metas[index].duration,
 				thumbnailUrl: stored.thumbnailUrl,
@@ -178,9 +184,7 @@ export const uploadImage = async (
 
 		res
 			.status(201)
-			.json(
-				await imageService.getImagesForProject(projectId, uploadFolderOf(req))
-			)
+			.json(await imageService.getImagesForProject(projectId, folderId))
 	} catch (error) {
 		await Promise.all(storedUrls.map((url) => storage.remove(url)))
 		await Promise.all(

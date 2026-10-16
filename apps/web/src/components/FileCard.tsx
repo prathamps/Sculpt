@@ -238,7 +238,7 @@ export function FileCard({
 	const moveMenu = canEdit && folders.length > 0 && (
 		<DropdownMenuSub>
 			<DropdownMenuSubTrigger>
-				<FolderInputIcon className="mr-2 h-4 w-4" />
+				<FolderInputIcon className="mr-2 h-4 w-4" aria-hidden="true" />
 				Move to
 			</DropdownMenuSubTrigger>
 			<DropdownMenuSubContent className="max-h-64 overflow-y-auto">
@@ -299,7 +299,7 @@ export function FileCard({
 							</h3>
 							<div className="flex items-center text-xs text-muted-foreground gap-3">
 								<span className="flex items-center gap-1">
-									<Clock className="h-3 w-3" />
+									<Clock className="h-3 w-3" aria-hidden="true" />
 									{formattedDate}
 								</span>
 								{file.size && <span>{formatBytes(file.size)}</span>}
@@ -341,7 +341,7 @@ export function FileCard({
 							</DropdownMenuTrigger>
 							<DropdownMenuContent align="end" className="w-52">
 								<DropdownMenuItem onClick={() => setRenameModalOpen(true)}>
-									<PencilIcon className="mr-2 h-4 w-4 text-primary/70" />
+									<PencilIcon className="mr-2 h-4 w-4 text-primary/70" aria-hidden="true" />
 									Rename
 								</DropdownMenuItem>
 								{moveMenu}
@@ -350,7 +350,7 @@ export function FileCard({
 										href={`/project/${projectId}/image/${file.id}`}
 										className="flex w-full cursor-default items-center"
 									>
-										<ImageIcon className="mr-2 h-4 w-4 text-primary/70" />
+										<ImageIcon className="mr-2 h-4 w-4 text-primary/70" aria-hidden="true" />
 										Open editor
 									</Link>
 								</DropdownMenuItem>
@@ -359,7 +359,7 @@ export function FileCard({
 									onClick={() => setConfirmingDelete(true)}
 									className="text-destructive"
 								>
-									<Trash2Icon className="mr-2 h-4 w-4" />
+									<Trash2Icon className="mr-2 h-4 w-4" aria-hidden="true" />
 									Delete
 								</DropdownMenuItem>
 							</DropdownMenuContent>
@@ -447,7 +447,7 @@ export function FileCard({
 							</DropdownMenuTrigger>
 							<DropdownMenuContent align="end">
 								<DropdownMenuItem onClick={() => setRenameModalOpen(true)}>
-									<PencilIcon className="mr-2 h-4 w-4" />
+									<PencilIcon className="mr-2 h-4 w-4" aria-hidden="true" />
 									Rename
 								</DropdownMenuItem>
 								{moveMenu}
@@ -455,7 +455,7 @@ export function FileCard({
 									onClick={() => setConfirmingDelete(true)}
 									className="text-destructive focus:text-destructive"
 								>
-									<Trash2Icon className="mr-2 h-4 w-4" />
+									<Trash2Icon className="mr-2 h-4 w-4" aria-hidden="true" />
 									Delete
 								</DropdownMenuItem>
 							</DropdownMenuContent>

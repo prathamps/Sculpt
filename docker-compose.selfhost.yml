@@ -1,6 +1,8 @@
 # Full self-hosted Sculpt: database, cache, API and web UI in one command.
 #
-#   JWT_SECRET=$(openssl rand -base64 48) docker compose -f docker-compose.selfhost.yml up -d --build
+#   POSTGRES_PASSWORD=$(openssl rand -base64 32) \
+#   JWT_SECRET=$(openssl rand -base64 48) \
+#   docker compose -f docker-compose.selfhost.yml up -d --build
 #
 # The web UI is served on http://localhost:3000 and the API on
 # http://localhost:3001. Uploads persist in the `sculpt_uploads` volume.
@@ -12,8 +14,13 @@
 #   TLS_EMAIL=you@example.com \
 #   FRONTEND_URL=https://sculpt.example.com \
 #   API_URL=https://sculpt.example.com/api-origin \
+#   POSTGRES_PASSWORD=$(openssl rand -base64 32) \
 #   JWT_SECRET=$(openssl rand -base64 48) \
+#   TRUST_PROXY=1 \
 #   docker compose -f docker-compose.selfhost.yml --profile tls up -d --build
+#
+# Behind the tls profile, comment out the published api and web ports below
+# so the only way in is through Caddy on 443.
 #
 # For OAuth, SMTP or S3 storage, add the variables from apps/api/.env.example
 # to the api service environment.
@@ -24,7 +31,7 @@ services:
     restart: unless-stopped
     environment:
       POSTGRES_USER: sculpt
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-sculpt}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD to a long random string}
       POSTGRES_DB: sculpt
     volumes:
       - sculpt_pgdata:/var/lib/postgresql/data
@@ -54,8 +61,8 @@ services:
       redis:
         condition: service_healthy
     environment:
-      DATABASE_URL: postgresql://sculpt:${POSTGRES_PASSWORD:-sculpt}@postgres:5432/sculpt
-      DIRECT_URL: postgresql://sculpt:${POSTGRES_PASSWORD:-sculpt}@postgres:5432/sculpt
+      DATABASE_URL: postgresql://sculpt:${POSTGRES_PASSWORD}@postgres:5432/sculpt
+      DIRECT_URL: postgresql://sculpt:${POSTGRES_PASSWORD}@postgres:5432/sculpt
       REDIS_URL: redis://redis:6379
       JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET to a long random string, e.g. openssl rand -base64 48}
       FRONTEND_URL: ${FRONTEND_URL:-http://localhost:3000}
@@ -63,6 +70,8 @@ services:
       TRUST_PROXY: ${TRUST_PROXY:-}
       LOG_LEVEL: ${LOG_LEVEL:-info}
       MAX_UPLOAD_MB: ${MAX_UPLOAD_MB:-2048}
+      SESSION_ABSOLUTE_LIFETIME_DAYS: ${SESSION_ABSOLUTE_LIFETIME_DAYS:-7}
+      NOTIFICATION_WORKER_CONCURRENCY: ${NOTIFICATION_WORKER_CONCURRENCY:-4}
       NODE_ENV: production
     volumes:
       - sculpt_uploads:/app/uploads

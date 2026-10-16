@@ -94,7 +94,7 @@ export default function AccountPage() {
 	if (loading || !user) {
 		return (
 			<div className="flex h-screen w-full items-center justify-center bg-background">
-				<Loader2 className="h-8 w-8 animate-spin text-primary/70" />
+				<Loader2 className="h-8 w-8 animate-spin text-primary/70" aria-hidden="true" />
 			</div>
 		)
 	}
@@ -156,7 +156,7 @@ export default function AccountPage() {
 									<Button type="submit" disabled={savingProfile}>
 										{savingProfile ? (
 											<>
-												<Loader2 className="mr-2 h-4 w-4 animate-spin" />
+												<Loader2 className="mr-2 h-4 w-4 animate-spin" aria-hidden="true" />
 												Saving...
 											</>
 										) : (
@@ -216,7 +216,7 @@ export default function AccountPage() {
 									<Button type="submit" disabled={savingPassword}>
 										{savingPassword ? (
 											<>
-												<Loader2 className="mr-2 h-4 w-4 animate-spin" />
+												<Loader2 className="mr-2 h-4 w-4 animate-spin" aria-hidden="true" />
 												Updating...
 											</>
 										) : (

@@ -28,7 +28,6 @@ import {
 import { respondWithError } from "../../lib/http"
 import { NotFoundError } from "../../lib/errors"
 import { paginated, requestedPage } from "../../lib/pagination"
-import { logger } from "../../lib/logger"
 
 export const adminLogin = async (req: Request, res: Response) => {
 	try {
@@ -69,8 +68,7 @@ export const adminLogin = async (req: Request, res: Response) => {
 
 		return res.status(200).json({ message: "Admin logged in successfully" })
 	} catch (error) {
-		console.error("Admin login error:", error)
-		return res.status(500).json({ message: "Error during admin login" })
+		return respondWithError(res, error, "admin login")
 	}
 }
 

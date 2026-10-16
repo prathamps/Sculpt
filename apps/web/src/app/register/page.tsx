@@ -63,7 +63,7 @@ export default function RegisterPage() {
 					href="/"
 					className="flex items-center gap-1 text-muted-foreground transition-colors hover:text-foreground"
 				>
-					<ArrowLeft className="h-4 w-4" />
+					<ArrowLeft className="h-4 w-4" aria-hidden="true" />
 					<span className="text-sm">Back to home</span>
 				</Link>
 			</div>
@@ -135,7 +135,7 @@ export default function RegisterPage() {
 							>
 								{isLoading ? (
 									<>
-										<Loader2 className="mr-2 h-4 w-4 animate-spin" />
+										<Loader2 className="mr-2 h-4 w-4 animate-spin" aria-hidden="true" />
 										Creating account...
 									</>
 								) : (

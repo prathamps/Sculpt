@@ -38,21 +38,39 @@ const LATEST_VERSION_INCLUDE = {
 	_count: { select: { versions: true } },
 }
 
-type ProjectWithMedia = Prisma.ProjectGetPayload<{
-	include: {
-		images: { include: typeof LATEST_VERSION_INCLUDE }
-		members: typeof MEMBER_SELECT
-	}
+const COVER_IMAGE_INCLUDE = {
+	include: LATEST_VERSION_INCLUDE,
+	orderBy: { updatedAt: "desc" as const },
+	take: 1,
+}
+
+const PROJECT_SUMMARY_INCLUDE = {
+	images: COVER_IMAGE_INCLUDE,
+	members: MEMBER_SELECT,
+	_count: { select: { images: true } },
+}
+
+type ProjectSummaryPayload = Prisma.ProjectGetPayload<{
+	include: typeof PROJECT_SUMMARY_INCLUDE
 }>
 
-const withLatestVersions = (project: ProjectWithMedia) => ({
-	...project,
-	images: project.images.map((image) => ({
-		...image,
-		latestVersion: image.versions[0] ?? null,
-		versionCount: image._count.versions,
-	})),
-})
+const asProjectSummary = (project: ProjectSummaryPayload) => {
+	const { _count, images, ...rest } = project
+	const cover = images[0]
+	return {
+		...rest,
+		imageCount: _count.images,
+		coverImage: cover
+			? {
+					...cover,
+					latestVersion: cover.versions[0] ?? null,
+					versionCount: cover._count.versions,
+				}
+			: null,
+	}
+}
+
+export type ProjectSummary = ReturnType<typeof asProjectSummary>
 
 const requireOwner = async (
 	projectId: string,
@@ -78,7 +96,7 @@ export const createProject = async (
 export const getProjectsForUser = async (
 	userId: string,
 	page?: PageRequest
-): Promise<{ projects: ReturnType<typeof withLatestVersions>[]; total: number }> => {
+): Promise<{ projects: ProjectSummary[]; total: number }> => {
 	const where: Prisma.ProjectWhereInput = {
 		members: { some: { userId } },
 	}
@@ -87,37 +105,25 @@ export const getProjectsForUser = async (
 		prisma.project.count({ where }),
 		prisma.project.findMany({
 			where,
-			include: {
-				images: {
-					include: LATEST_VERSION_INCLUDE,
-					orderBy: { updatedAt: "desc" },
-				},
-				members: MEMBER_SELECT,
-			},
+			include: PROJECT_SUMMARY_INCLUDE,
 			orderBy: { updatedAt: "desc" },
 			...(page ? skipTake(page) : {}),
 		}),
 	])
 
-	return { projects: projects.map(withLatestVersions), total }
+	return { projects: projects.map(asProjectSummary), total }
 }
 
 export const getProjectById = async (
 	projectId: string,
 	userId: string
-): Promise<ReturnType<typeof withLatestVersions> | null> => {
+): Promise<ProjectSummary | null> => {
 	const project = await prisma.project.findFirst({
 		where: { id: projectId, members: { some: { userId } } },
-		include: {
-			images: {
-				include: LATEST_VERSION_INCLUDE,
-				orderBy: { updatedAt: "desc" },
-			},
-			members: MEMBER_SELECT,
-		},
+		include: PROJECT_SUMMARY_INCLUDE,
 	})
 
-	return project ? withLatestVersions(project) : null
+	return project ? asProjectSummary(project) : null
 }
 
 export const listProjectMembers = async (
@@ -226,8 +232,9 @@ const hashToken = (token: string): string =>
 
 export interface InvitationResult {
 	invitedExistingUser: boolean
+	invitedUserId: string | null
 	email: string
-	token?: string
+	token: string
 }
 
 export const inviteUserToProject = async (
@@ -252,12 +259,6 @@ export const inviteUserToProject = async (
 		if (existingMembership) {
 			throw new ValidationError("That person is already a member.")
 		}
-
-		await prisma.projectMember.create({
-			data: { projectId, userId: existingUser.id, role },
-		})
-
-		return { invitedExistingUser: true, email }
 	}
 
 	const token = randomBytes(32).toString("hex")
@@ -281,7 +282,38 @@ export const inviteUserToProject = async (
 		},
 	})
 
-	return { invitedExistingUser: false, email, token }
+	return {
+		invitedExistingUser: !!existingUser,
+		invitedUserId: existingUser?.id ?? null,
+		email,
+		token,
+	}
+}
+
+export const leaveProject = async (
+	projectId: string,
+	userId: string
+): Promise<void> => {
+	const membership = await prisma.projectMember.findUnique({
+		where: { projectId_userId: { projectId, userId } },
+	})
+
+	if (!membership) {
+		throw new NotFoundError("You are not a member of this project.")
+	}
+
+	if (membership.role === ProjectRole.OWNER) {
+		const owners = await prisma.projectMember.count({
+			where: { projectId, role: ProjectRole.OWNER },
+		})
+		if (owners <= 1) {
+			throw new ValidationError(
+				"You are the only owner. Promote someone else before leaving, or delete the project."
+			)
+		}
+	}
+
+	await prisma.projectMember.delete({ where: { id: membership.id } })
 }
 
 export const acceptInvitation = async (
@@ -362,20 +394,33 @@ export interface ShareLinkOptions {
 	maxUses?: number | null
 }
 
+export type ShareLinkSummary = Omit<ShareLink, "tokenHash">
+
+export interface IssuedShareLink extends ShareLinkSummary {
+	token: string
+}
+
+const withoutTokenHash = (link: ShareLink): ShareLinkSummary => {
+	const { tokenHash: _tokenHash, ...summary } = link
+	return summary
+}
+
 export const createShareLink = async (
 	projectId: string,
 	userId: string,
 	options: ShareLinkOptions
-): Promise<ShareLink> => {
+): Promise<IssuedShareLink> => {
 	await requireOwner(projectId, userId, "create share links")
 
 	if (options.role === ProjectRole.OWNER) {
 		throw new ValidationError("Share links cannot grant the OWNER role.")
 	}
 
-	return prisma.shareLink.create({
+	const token = randomBytes(32).toString("hex")
+
+	const link = await prisma.shareLink.create({
 		data: {
-			token: randomBytes(32).toString("hex"),
+			tokenHash: hashToken(token),
 			projectId,
 			role: options.role,
 			expiresAt: options.expiresInDays
@@ -384,17 +429,20 @@ export const createShareLink = async (
 			maxUses: options.maxUses ?? null,
 		},
 	})
+
+	return { ...withoutTokenHash(link), token }
 }
 
 export const getShareLinks = async (
 	projectId: string,
 	userId: string
-): Promise<ShareLink[]> => {
+): Promise<ShareLinkSummary[]> => {
 	await requireOwner(projectId, userId, "view share links")
-	return prisma.shareLink.findMany({
+	const links = await prisma.shareLink.findMany({
 		where: { projectId, revokedAt: null },
 		orderBy: { createdAt: "desc" },
 	})
+	return links.map(withoutTokenHash)
 }
 
 export const revokeShareLink = async (
@@ -422,7 +470,9 @@ export const joinProjectWithShareLink = async (
 	token: string,
 	userId: string
 ): Promise<Project> => {
-	const link = await prisma.shareLink.findUnique({ where: { token } })
+	const link = await prisma.shareLink.findUnique({
+		where: { tokenHash: hashToken(token) },
+	})
 	if (!link || !shareLinkIsUsable(link)) {
 		throw new NotFoundError("This share link is invalid, expired or used up.")
 	}

@@ -41,6 +41,7 @@ tags:
   - name: Sharing
   - name: Media
   - name: Comments
+  - name: Folders
   - name: Reviews
   - name: Search
   - name: Notifications
@@ -224,13 +225,41 @@ components:
 
     ShareLink:
       type: object
+      description: |
+        Only a SHA-256 hash of the token is stored, so the joinable URL is
+        returned once, by the create call, and can never be listed again.
       properties:
         id: { type: string }
-        token: { type: string }
         role: { $ref: "#/components/schemas/ProjectRole" }
         expiresAt: { type: string, format: date-time, nullable: true }
         maxUses: { type: integer, nullable: true }
         useCount: { type: integer }
+        createdAt: { type: string, format: date-time }
+
+    IssuedShareLink:
+      allOf:
+        - $ref: "#/components/schemas/ShareLink"
+        - type: object
+          properties:
+            token:
+              type: string
+              description: Shown only in this response; not recoverable later.
+
+    Folder:
+      type: object
+      properties:
+        id: { type: string }
+        name: { type: string }
+        parentId: { type: string, nullable: true }
+        imageCount: { type: integer }
+
+    Page:
+      type: object
+      properties:
+        total: { type: integer }
+        page: { type: integer }
+        pageSize: { type: integer }
+        totalPages: { type: integer }
 
   responses:
     Unauthorized:
@@ -948,14 +977,26 @@ paths:
     get:
       tags: [Comments]
       summary: Comment threads on a version
+      parameters:
+        - name: page
+          in: query
+          schema: { type: integer, minimum: 1, default: 1 }
+        - name: pageSize
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 100, default: 30 }
       responses:
         "200":
-          description: Top-level comments with replies.
+          description: A page of top-level comments, each with its replies.
           content:
             application/json:
               schema:
-                type: array
-                items: { $ref: "#/components/schemas/Comment" }
+                allOf:
+                  - $ref: "#/components/schemas/Page"
+                  - type: object
+                    properties:
+                      items:
+                        type: array
+                        items: { $ref: "#/components/schemas/Comment" }
     post:
       tags: [Comments]
       summary: Post a comment (MEMBER)
@@ -1214,22 +1255,436 @@ paths:
                 properties:
                   updated: { type: integer }
 
-  /api/export/images/{imageId}:
+  /api/export/image/{imageId}/report.json:
     get:
       tags: [Export]
-      summary: Export a review report
-      description: CSV cells beginning with a formula character are neutralised.
+      summary: Export a review report as JSON
+      description: |
+        Internal comments are included only for EDITOR and OWNER.
       parameters:
         - name: imageId
           in: path
           required: true
           schema: { type: string }
-        - name: format
-          in: query
-          schema: { type: string, enum: [json, csv] }
       responses:
         "200": { description: Report attachment. }
         "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /api/export/image/{imageId}/report.csv:
+    get:
+      tags: [Export]
+      summary: Export a review report as CSV
+      description: |
+        CSV cells beginning with a formula character are neutralised. Internal
+        comments are included only for EDITOR and OWNER.
+      parameters:
+        - name: imageId
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200": { description: Report attachment. }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /api/auth/google:
+    get:
+      tags: [Auth]
+      summary: Start Google sign-in
+      description: |
+        Redirects to Google. A single-use `state` value is issued in a
+        short-lived `oauth_state` cookie and must come back on the callback,
+        so a sign-in cannot be started in one browser and finished in another.
+        Returns 503 when Google OAuth is not configured on this server.
+      responses:
+        "302": { description: Redirect to Google. }
+        "503": { description: Google sign-in is not configured. }
+
+  /api/auth/google/callback:
+    get:
+      tags: [Auth]
+      summary: Complete Google sign-in
+      description: |
+        Verifies the `state` against the issuing browser's cookie, then sets
+        the session cookie and redirects to the web app. An account whose email
+        is already registered is linked only when Google reports it verified.
+      responses:
+        "302": { description: Redirect to the web app, with a session cookie. }
+        "503": { description: Google sign-in is not configured. }
+
+  /api/auth/github:
+    get:
+      tags: [Auth]
+      summary: Start GitHub sign-in
+      description: |
+        Redirects to GitHub, with the same single-use `state` protection as
+        Google. Returns 503 when GitHub OAuth is not configured.
+      responses:
+        "302": { description: Redirect to GitHub. }
+        "503": { description: GitHub sign-in is not configured. }
+
+  /api/auth/github/callback:
+    get:
+      tags: [Auth]
+      summary: Complete GitHub sign-in
+      description: |
+        Verifies the `state`, then sets the session cookie. Linking to an
+        existing account requires a verified GitHub email address.
+      responses:
+        "302": { description: Redirect to the web app, with a session cookie. }
+        "503": { description: GitHub sign-in is not configured. }
+
+  /api/users/profile:
+    get:
+      tags: [Users]
+      summary: The signed-in account
+      description: |
+        Returns 401 when no session is present; the web app uses this to decide
+        whether anyone is signed in.
+      responses:
+        "200": { description: The current account. }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /api/projects/{projectId}/members:
+    get:
+      tags: [Members]
+      summary: Members of a project
+      description: Any member of the project can read the roster.
+      parameters:
+        - name: projectId
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Members with their roles.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    id: { type: string }
+                    role: { $ref: "#/components/schemas/ProjectRole" }
+                    createdAt: { type: string, format: date-time }
+                    userId: { type: string }
+                    user: { $ref: "#/components/schemas/User" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /api/projects/{projectId}/members/leave:
+    post:
+      tags: [Members]
+      summary: Leave a project
+      description: |
+        Removes your own membership. The only remaining OWNER cannot leave -
+        promote someone else or delete the project instead.
+      parameters:
+        - name: projectId
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "204": { description: You are no longer a member. }
+        "400": { description: You are the last owner. }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /api/projects/{projectId}/folders:
+    parameters:
+      - name: projectId
+        in: path
+        required: true
+        schema: { type: string }
+    get:
+      tags: [Folders]
+      summary: Folder tree for a project (VIEWER)
+      responses:
+        "200":
+          description: Every folder, with the number of files in each.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Folder" }
+    post:
+      tags: [Folders]
+      summary: Create a folder (EDITOR)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name: { type: string, maxLength: 120 }
+                parentId: { type: string, nullable: true }
+      responses:
+        "201": { description: Folder created. }
+        "400": { description: A folder of that name already exists here. }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /api/projects/{projectId}/folders/{folderId}:
+    parameters:
+      - name: projectId
+        in: path
+        required: true
+        schema: { type: string }
+      - name: folderId
+        in: path
+        required: true
+        schema: { type: string }
+    patch:
+      tags: [Folders]
+      summary: Rename a folder (EDITOR)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name: { type: string, maxLength: 120 }
+      responses:
+        "200": { description: Folder renamed. }
+        "404": { $ref: "#/components/responses/NotFound" }
+    delete:
+      tags: [Folders]
+      summary: Delete a folder (EDITOR)
+      description: |
+        Child folders are removed with it; files inside move back to the
+        project root rather than being deleted.
+      responses:
+        "204": { description: Folder deleted. }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /api/projects/{projectId}/folders/{folderId}/path:
+    get:
+      tags: [Folders]
+      summary: Breadcrumb trail for a folder (VIEWER)
+      parameters:
+        - name: projectId
+          in: path
+          required: true
+          schema: { type: string }
+        - name: folderId
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Ancestors, outermost first.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    id: { type: string }
+                    name: { type: string }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /api/projects/{projectId}/folders/{folderId}/parent:
+    patch:
+      tags: [Folders]
+      summary: Move a folder (EDITOR)
+      description: A folder can never be moved inside itself or a descendant.
+      parameters:
+        - name: projectId
+          in: path
+          required: true
+          schema: { type: string }
+        - name: folderId
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                parentId: { type: string, nullable: true }
+      responses:
+        "200": { description: Folder moved. }
+        "400": { description: The move would create a cycle. }
+
+  /api/projects/{projectId}/images/folder:
+    patch:
+      tags: [Folders]
+      summary: Move several files into a folder (EDITOR)
+      parameters:
+        - name: projectId
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [imageIds]
+              properties:
+                imageIds:
+                  type: array
+                  items: { type: string }
+                folderId: { type: string, nullable: true }
+      responses:
+        "200": { description: Files moved. }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /api/projects/{projectId}/images/{imageId}/folder:
+    patch:
+      tags: [Folders]
+      summary: Move one file into a folder (EDITOR)
+      parameters:
+        - name: projectId
+          in: path
+          required: true
+          schema: { type: string }
+        - name: imageId
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                folderId: { type: string, nullable: true }
+      responses:
+        "200": { description: File moved. }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /api/projects/{projectId}/images/delete:
+    post:
+      tags: [Media]
+      summary: Delete several files (EDITOR)
+      description: |
+        Every id must belong to this project; otherwise nothing is deleted.
+      parameters:
+        - name: projectId
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [imageIds]
+              properties:
+                imageIds:
+                  type: array
+                  minItems: 1
+                  maxItems: 100
+                  items: { type: string }
+      responses:
+        "200":
+          description: How many files were deleted.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  deleted: { type: integer }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /api/images/versions/{versionId}/download:
+    get:
+      tags: [Media]
+      summary: Download the original file (VIEWER)
+      description: |
+        On object storage this redirects to a presigned URL valid for five
+        minutes. The download is recorded in the audit log.
+      parameters:
+        - name: versionId
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200": { description: The original file. }
+        "302": { description: Redirect to a presigned object-storage URL. }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /api/images/comments/{commentId}/attachments:
+    post:
+      tags: [Comments]
+      summary: Attach reference files to your comment
+      description: |
+        Only the comment's author may attach, at most three files per comment,
+        25 MB each, images or PDF only. File contents are checked against the
+        declared type.
+      parameters:
+        - name: commentId
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                files:
+                  type: array
+                  items: { type: string, format: binary }
+      responses:
+        "201": { description: The comment's attachments. }
+        "400": { description: Too many files, or content does not match its type. }
+        "403": { description: You are not the author. }
+
+  /api/admin/logout:
+    post:
+      tags: [Admin]
+      summary: End the admin session
+      responses:
+        "200": { description: Admin session revoked. }
+
+  /api/admin/profile:
+    get:
+      tags: [Admin]
+      summary: The signed-in administrator
+      responses:
+        "200": { description: Administrator profile. }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /api/admin/projects:
+    get:
+      tags: [Admin]
+      summary: Every project, paginated
+      parameters:
+        - name: page
+          in: query
+          schema: { type: integer, minimum: 1, default: 1 }
+        - name: pageSize
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 100, default: 30 }
+      responses:
+        "200": { description: A page of projects with member and file counts. }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /api/admin/projects/{projectId}:
+    get:
+      tags: [Admin]
+      summary: One project, with its media and members
+      parameters:
+        - name: projectId
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200": { description: Project detail. }
+        "404": { $ref: "#/components/responses/NotFound" }
 
   /api/admin/login:
     post:

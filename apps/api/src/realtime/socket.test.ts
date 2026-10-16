@@ -7,7 +7,13 @@ vi.mock("../lib/presence", () => ({
 
 vi.mock("../modules/projects/access", () => ({
 	canViewVersion: vi.fn(),
+	canViewInternalComments: vi.fn().mockResolvedValue(false),
 	isProjectMember: vi.fn(),
+}))
+
+vi.mock("./socketAuth", () => ({
+	resolveSocketUser: vi.fn(),
+	socketAuth: vi.fn(),
 }))
 
 vi.mock("../lib/logger", () => ({
@@ -20,17 +26,23 @@ vi.mock("../lib/logger", () => ({
 }))
 
 vi.mock("./viewerPresence", () => ({
-	addViewer: vi.fn(),
-	updateViewer: vi.fn(),
-	removeViewer: vi.fn(),
-	getViewers: vi.fn(() => []),
+	addViewer: vi.fn().mockResolvedValue(undefined),
+	updateViewer: vi.fn().mockResolvedValue(true),
+	removeViewer: vi.fn().mockResolvedValue(undefined),
+	getViewers: vi.fn().mockResolvedValue([]),
+	refreshViewerTtls: vi.fn().mockResolvedValue(undefined),
 }))
 
 import { Socket } from "socket.io"
-import { canViewVersion, isProjectMember } from "../modules/projects/access"
+import {
+	canViewInternalComments,
+	canViewVersion,
+	isProjectMember,
+} from "../modules/projects/access"
 import { markOnline } from "../lib/presence"
 import { logger } from "../lib/logger"
-import { registerHandlers } from "./socket"
+import { resolveSocketUser } from "./socketAuth"
+import { registerHandlers, revalidateSocketAccess } from "./socket"
 
 const mockedAccess = vi.mocked({ canViewVersion, isProjectMember })
 const mockedMarkOnline = vi.mocked(markOnline)
@@ -56,13 +68,17 @@ const fakeSocket = (user: unknown): FakeSocket => {
 		},
 		join: (room: string) => {
 			joined.push(room)
+			socket.rooms.add(room)
 		},
-		leave: vi.fn(),
+		leave: vi.fn((room: string) => {
+			socket.rooms.delete(room)
+		}),
 		emit: (event: string, payload: unknown) => {
 			emitted.push({ event, payload })
 		},
 		to: () => ({ emit: vi.fn() }),
 		volatile: { to: () => ({ emit: vi.fn() }) },
+		disconnect: vi.fn(),
 	} as unknown as Socket
 
 	registerHandlers(socket)
@@ -184,5 +200,82 @@ describe("joinImageVersion", () => {
 			expect.any(Error),
 			{ event: "joinImageVersion" }
 		)
+	})
+})
+
+describe("revalidateSocketAccess", () => {
+	const mockedResolve = vi.mocked(resolveSocketUser)
+	const mockedInternal = vi.mocked(canViewInternalComments)
+
+	it("disconnects a socket whose session no longer verifies", async () => {
+		mockedResolve.mockResolvedValue(null)
+		const fake = fakeSocket(member)
+
+		const stillValid = await revalidateSocketAccess(fake.socket)
+
+		expect(stillValid).toBe(false)
+		expect(fake.socket.disconnect).toHaveBeenCalledWith(true)
+		expect(fake.emitted.map((e) => e.event)).toContain("session_expired")
+	})
+
+	it("drops a project room once membership is revoked", async () => {
+		mockedAccess.isProjectMember.mockResolvedValue(true)
+		const fake = fakeSocket(member)
+		await fake.fire("joinProject", "p1")
+
+		mockedResolve.mockResolvedValue(member)
+		mockedAccess.isProjectMember.mockResolvedValue(false)
+
+		await revalidateSocketAccess(fake.socket)
+
+		expect(fake.socket.leave).toHaveBeenCalledWith("project:p1")
+		expect(fake.emitted.map((e) => e.event)).toContain(
+			"project_access_revoked"
+		)
+	})
+
+	it("drops a version room once the viewer loses access", async () => {
+		mockedAccess.canViewVersion.mockResolvedValue(true)
+		const fake = fakeSocket(member)
+		await fake.fire("joinImageVersion", "v1")
+
+		mockedResolve.mockResolvedValue(member)
+		mockedAccess.canViewVersion.mockResolvedValue(false)
+
+		await revalidateSocketAccess(fake.socket)
+
+		expect(fake.socket.leave).toHaveBeenCalledWith("imageVersion:v1")
+		expect(fake.emitted.map((e) => e.event)).toContain(
+			"image_version_access_revoked"
+		)
+	})
+
+	it("leaves the internal room when a demotion removes that access", async () => {
+		mockedAccess.canViewVersion.mockResolvedValue(true)
+		mockedInternal.mockResolvedValue(true)
+		const fake = fakeSocket(member)
+		await fake.fire("joinImageVersion", "v1")
+		expect(fake.joined).toContain("imageVersion:v1:internal")
+
+		mockedResolve.mockResolvedValue(member)
+		mockedInternal.mockResolvedValue(false)
+
+		await revalidateSocketAccess(fake.socket)
+
+		expect(fake.socket.leave).toHaveBeenCalledWith("imageVersion:v1:internal")
+	})
+
+	it("keeps a still-authorized socket connected", async () => {
+		mockedAccess.canViewVersion.mockResolvedValue(true)
+		mockedAccess.isProjectMember.mockResolvedValue(true)
+		mockedInternal.mockResolvedValue(false)
+		const fake = fakeSocket(member)
+		await fake.fire("joinProject", "p1")
+		await fake.fire("joinImageVersion", "v1")
+
+		mockedResolve.mockResolvedValue(member)
+
+		expect(await revalidateSocketAccess(fake.socket)).toBe(true)
+		expect(fake.socket.disconnect).not.toHaveBeenCalled()
 	})
 })

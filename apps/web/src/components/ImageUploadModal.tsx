@@ -255,7 +255,7 @@ export function ImageUploadModal({
 				{isUploading ? (
 					<div className="space-y-4 py-4">
 						<div className="flex flex-col items-center justify-center text-center space-y-2">
-							<Loader2 className="h-8 w-8 animate-spin text-primary" />
+							<Loader2 className="h-8 w-8 animate-spin text-primary" aria-hidden="true" />
 							<h3 className="font-medium">
 								{isPreparing ? "Preparing" : "Uploading"} {files.length} file
 								{files.length !== 1 ? "s" : ""}
@@ -294,7 +294,7 @@ export function ImageUploadModal({
 								)}
 							>
 								<div className="flex flex-col items-center justify-center gap-1.5 px-6 py-6 text-center">
-									<UploadCloud className="mb-1 h-8 w-8 text-primary/80" />
+									<UploadCloud className="mb-1 h-8 w-8 text-primary/80" aria-hidden="true" />
 									<p className="text-sm text-foreground">
 										<span className="font-semibold">Click to upload</span> or
 										drag and drop
@@ -367,7 +367,7 @@ export function ImageUploadModal({
 											className="flex items-center justify-between gap-2 text-sm bg-muted/40 rounded-md p-2"
 										>
 											<div className="flex items-center gap-2 truncate">
-												<FileIcon className="h-4 w-4 flex-shrink-0 text-primary/70" />
+												<FileIcon className="h-4 w-4 flex-shrink-0 text-primary/70" aria-hidden="true" />
 												<span className="truncate max-w-[15rem]">
 													{file.name}
 												</span>
@@ -381,7 +381,7 @@ export function ImageUploadModal({
 												className="h-6 w-6 text-muted-foreground hover:text-destructive"
 												onClick={() => handleRemoveFile(i)}
 											>
-												<X className="h-3.5 w-3.5" />
+												<X className="h-3.5 w-3.5" aria-hidden="true" />
 											</Button>
 										</div>
 									))}

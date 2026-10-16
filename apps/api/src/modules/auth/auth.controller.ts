@@ -53,7 +53,7 @@ export const register = async (req: Request, res: Response) => {
 		) {
 			return res.status(409).json({ message: "Email already exists." })
 		}
-		return res.status(500).json({ message: "Error creating user", error })
+		return respondWithError(res, error, "register user")
 	}
 }
 
@@ -81,7 +81,7 @@ export const login = async (req: Request, res: Response) => {
 
 		return res.status(200).json({ message: "Logged in successfully" })
 	} catch (error) {
-		return res.status(500).json({ message: "Error logging in", error })
+		return respondWithError(res, error, "log in")
 	}
 }
 

@@ -10,6 +10,7 @@ import {
 	DialogTitle,
 } from "@/components/ui/dialog"
 import { ChevronRight } from "lucide-react"
+import { cn } from "@/lib/utils"
 
 interface User {
 	id: string
@@ -161,7 +162,7 @@ export function AdminProjectManagement() {
 											onClick={() => viewProjectDetails(project.id)}
 										>
 											View Details
-											<ChevronRight className="ml-2 h-4 w-4" />
+											<ChevronRight className="ml-2 h-4 w-4" aria-hidden="true" />
 										</Button>
 									</td>
 								</tr>
@@ -225,13 +226,14 @@ export function AdminProjectManagement() {
 													</td>
 													<td className="py-2 px-4 text-sm">
 														<span
-															className={`inline-block px-2 py-0.5 rounded-full text-xs ${
+															className={cn(
+																"inline-block rounded-full border px-2 py-0.5 text-xs",
 																member.role === "OWNER"
-																	? "bg-purple-100 text-purple-800"
+																	? "border-primary/30 bg-primary/10 text-primary"
 																	: member.role === "EDITOR"
-																	? "bg-blue-100 text-blue-800"
-																	: "bg-gray-100 text-gray-800"
-															}`}
+																		? "border-border bg-accent text-accent-foreground"
+																		: "border-border bg-muted text-muted-foreground"
+															)}
 														>
 															{member.role}
 														</span>

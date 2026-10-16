@@ -36,15 +36,40 @@ const fatal = (message) => {
 }
 
 let cookie = ""
+const parseCookieHeader = (header) => {
+	const jar = new Map()
+	for (const pair of header.split(";")) {
+		const separator = pair.indexOf("=")
+		if (separator < 0) continue
+		jar.set(pair.slice(0, separator).trim(), pair.slice(separator + 1).trim())
+	}
+	return jar
+}
+
+const rememberCookies = (setCookies) => {
+	if (setCookies.length === 0) return
+	const jar = parseCookieHeader(cookie)
+	for (const entry of setCookies) {
+		const [pair] = entry.split(";")
+		const separator = pair.indexOf("=")
+		if (separator < 0) continue
+		const name = pair.slice(0, separator).trim()
+		const value = pair.slice(separator + 1).trim()
+		if (value === "" || /expires=Thu, 01 Jan 1970/i.test(entry)) {
+			jar.delete(name)
+			continue
+		}
+		jar.set(name, value)
+	}
+	cookie = Array.from(jar, ([name, value]) => `${name}=${value}`).join("; ")
+}
+
 const api = async (path, opts = {}) => {
 	const res = await fetch(`${API}${path}`, {
 		...opts,
 		headers: { ...(opts.headers || {}), ...(cookie ? { cookie } : {}) },
 	})
-	const setCookies = res.headers.getSetCookie?.() ?? []
-	if (setCookies.length) {
-		cookie = setCookies.map((c) => c.split(";")[0]).join("; ")
-	}
+	rememberCookies(res.headers.getSetCookie?.() ?? [])
 	return res
 }
 const apiJson = (path, body) =>
@@ -53,6 +78,9 @@ const apiJson = (path, body) =>
 		headers: { "content-type": "application/json" },
 		body: JSON.stringify(body),
 	})
+
+const commentList = (path) =>
+	api(path).then((r) => (r.ok ? r.json().then((body) => body.items ?? []) : []))
 
 const health = await api("/health").catch(() => null)
 if (!health?.ok) fatal(`API is not reachable at ${API}`)
@@ -210,7 +238,7 @@ check(
 	"pinned comment renders a numbered pin",
 	await page.waitForSelector('button[aria-label^="Go to comment 1"]', { timeout: 15000 }).then(() => true, () => false)
 )
-const pinComments = await api(`/api/images/versions/${model.latestVersion.id}/comments`).then((r) => r.json())
+const pinComments = await commentList(`/api/images/versions/${model.latestVersion.id}/comments`)
 check(
 	"pinned comment persisted its 3D anchor",
 	pinComments.some((c) => c.modelAnchor?.position?.length === 3)
@@ -478,7 +506,7 @@ check(
 
 const attachedComments = await api(
 	`/api/images/versions/${reviewVersionId}/comments`
-).then((r) => (r.ok ? r.json() : []))
+).then((r) => (r.ok ? r.json().then((body) => body.items ?? []) : []))
 check(
 	"attachments come back with the comment thread",
 	attachedComments.find((item) => item.id === createdComment?.id)?.attachments
@@ -516,7 +544,7 @@ check(
 
 const ownerSeesInternal = await api(
 	`/api/images/versions/${reviewVersionId}/comments`
-).then((r) => (r.ok ? r.json() : []))
+).then((r) => (r.ok ? r.json().then((body) => body.items ?? []) : []))
 check(
 	"the internal team sees internal comments",
 	ownerSeesInternal.some((item) => item.id === internalComment?.id)
@@ -639,11 +667,11 @@ const revokedFollowRes = await apiJson(`/api/share/${shareLink?.token}`, {})
 check("a revoked share link stops working", revokedFollowRes.status === 404, `status=${revokedFollowRes.status}`)
 
 const outsiderEmail = `smoke-outsider-${stamp}@example.com`
-const ownerCookie = cookie
+let ownerCookie = cookie
 cookie = ""
 await apiJson("/api/auth/register", { email: outsiderEmail, password, name: "Outsider" })
 await apiJson("/api/auth/login", { email: outsiderEmail, password })
-const outsiderCookie = cookie
+let outsiderCookie = cookie
 
 const outsiderProjectRes = await api(`/api/projects/${project.id}`)
 check(
@@ -726,9 +754,18 @@ const inviteRes = await apiJson(`/api/projects/${project.id}/invite`, {
 })
 const inviteBody = inviteRes.ok ? await inviteRes.json() : null
 check(
-	"inviting an existing account adds them straight away",
+	"inviting an existing account recognises them",
 	inviteRes.ok && inviteBody?.invitedExistingUser === true,
 	`status=${inviteRes.status}`
+)
+
+const membersBeforeAccept = await api(
+	`/api/projects/${project.id}/members`
+).then((r) => (r.ok ? r.json() : []))
+check(
+	"an invitation never grants membership before it is accepted",
+	!membersBeforeAccept.some((member) => member.user.email === outsiderEmail),
+	`members=${membersBeforeAccept.length}`
 )
 
 const strangerInviteRes = await apiJson(`/api/projects/${project.id}/invite`, {
@@ -745,18 +782,51 @@ const pendingRes = await api(`/api/projects/${project.id}/invitations`)
 const pending = pendingRes.ok ? await pendingRes.json() : []
 check(
 	"pending invitations are listable",
-	pendingRes.ok && pending.length === 1,
+	pendingRes.ok && pending.length === 2,
 	`count=${pending.length}`
 )
 
-const outsiderId = inviteBody?.project?.members?.find(
+cookie = outsiderCookie
+
+const wrongRecipientRes = await apiJson(
+	`/api/invitations/${strangerInvite?.token}/accept`,
+	{}
+)
+check(
+	"an invitation cannot be accepted by a different address",
+	wrongRecipientRes.status === 403,
+	`status=${wrongRecipientRes.status}`
+)
+
+const acceptRes = await apiJson(
+	`/api/invitations/${inviteBody?.token}/accept`,
+	{}
+)
+check(
+	"the invited account joins once it accepts",
+	acceptRes.ok,
+	`status=${acceptRes.status}`
+)
+outsiderCookie = cookie
+
+cookie = ownerCookie
+const membersAfterAccept = await api(
+	`/api/projects/${project.id}/members`
+).then((r) => (r.ok ? r.json() : []))
+const outsiderId = membersAfterAccept.find(
 	(member) => member.user.email === outsiderEmail
 )?.user?.id
+check(
+	"accepting the invitation grants the invited role",
+	membersAfterAccept.find((member) => member.user.email === outsiderEmail)
+		?.role === "MEMBER",
+	`id=${outsiderId}`
+)
 
 cookie = outsiderCookie
 const memberComments = await api(
 	`/api/images/versions/${reviewVersionId}/comments`
-).then((r) => (r.ok ? r.json() : []))
+).then((r) => (r.ok ? r.json().then((body) => body.items ?? []) : []))
 check(
 	"a MEMBER never receives internal comments",
 	!memberComments.some((item) => item.id === internalComment?.id) &&
@@ -865,7 +935,7 @@ check(
 
 const editorComments = await api(
 	`/api/images/versions/${reviewVersionId}/comments`
-).then((r) => (r.ok ? r.json() : []))
+).then((r) => (r.ok ? r.json().then((body) => body.items ?? []) : []))
 check(
 	"promotion to EDITOR reveals internal comments",
 	editorComments.some((item) => item.id === internalComment?.id),

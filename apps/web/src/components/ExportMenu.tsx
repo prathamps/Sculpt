@@ -174,9 +174,9 @@ export function ExportMenu({
 			<DropdownMenuTrigger asChild>
 				<Button size="sm" variant="outline" className="h-8 gap-1.5 text-xs" disabled={busy}>
 					{busy ? (
-						<Loader2 className="h-3.5 w-3.5 animate-spin" />
+						<Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true" />
 					) : (
-						<Download className="h-3.5 w-3.5" />
+						<Download className="h-3.5 w-3.5" aria-hidden="true" />
 					)}
 					Export
 				</Button>
@@ -188,26 +188,26 @@ export function ExportMenu({
 					onClick={downloadOriginal}
 					disabled={!selectedVersion}
 				>
-					<Download className="mr-2 h-3.5 w-3.5" />
+					<Download className="mr-2 h-3.5 w-3.5" aria-hidden="true" />
 					Original file
 				</DropdownMenuItem>
 				{isImage && (
 					<DropdownMenuItem className="text-xs" onClick={downloadAnnotatedPng}>
-						<Download className="mr-2 h-3.5 w-3.5" />
+						<Download className="mr-2 h-3.5 w-3.5" aria-hidden="true" />
 						Annotated image (PNG)
 					</DropdownMenuItem>
 				)}
 				<DropdownMenuSeparator />
 				<DropdownMenuItem className="text-xs" onClick={() => downloadReport("csv")}>
-					<FileText className="mr-2 h-3.5 w-3.5" />
+					<FileText className="mr-2 h-3.5 w-3.5" aria-hidden="true" />
 					Report (CSV)
 				</DropdownMenuItem>
 				<DropdownMenuItem className="text-xs" onClick={() => downloadReport("json")}>
-					<FileJson className="mr-2 h-3.5 w-3.5" />
+					<FileJson className="mr-2 h-3.5 w-3.5" aria-hidden="true" />
 					Report (JSON)
 				</DropdownMenuItem>
 				<DropdownMenuItem className="text-xs" onClick={printReport}>
-					<Printer className="mr-2 h-3.5 w-3.5" />
+					<Printer className="mr-2 h-3.5 w-3.5" aria-hidden="true" />
 					Print report (PDF)
 				</DropdownMenuItem>
 			</DropdownMenuContent>

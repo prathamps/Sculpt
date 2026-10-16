@@ -92,14 +92,6 @@ export interface Image {
 	size?: number
 }
 
-export interface CommentLike {
-	id: string
-	userId: string
-	user: User
-	commentId: string
-	createdAt: string
-}
-
 export interface Folder {
 	id: string
 	name: string
@@ -131,7 +123,6 @@ export interface Comment {
 	internal?: boolean
 	mentions?: CommentMention[]
 	attachments?: CommentAttachment[]
-	likes?: CommentLike[]
 	likeCount?: number
 	isLikedByCurrentUser?: boolean
 	annotation?: Annotation | Annotation[]
@@ -146,7 +137,8 @@ export interface Comment {
 export interface Project {
 	id: string
 	name: string
-	images: Image[]
+	coverImage: Image | null
+	imageCount: number
 	members: ProjectMember[]
 	createdAt: string
 }

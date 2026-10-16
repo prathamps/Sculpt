@@ -82,6 +82,33 @@ jobs:
           fi
           echo "No comments found."
 
+  # Dependency vulnerabilities are a supply-chain risk the unit tests cannot
+  # see. The gate is on what actually ships to a deployed instance, because a
+  # build-time-only advisory never reaches a running server. Everything else is
+  # reported so it stays visible. Outstanding high advisories in the runtime
+  # tree, and why they are not fixed yet, are tracked in SECURITY.md.
+  audit:
+    name: Dependency audit
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        app: [apps/api, apps/web]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Report every advisory, including build-only dependencies
+        working-directory: ${{ matrix.app }}
+        run: npm audit --audit-level=low || true
+      - name: Report the runtime dependency tree
+        working-directory: ${{ matrix.app }}
+        run: npm audit --omit=dev --audit-level=low || true
+      - name: Fail on a critical advisory in anything that ships
+        working-directory: ${{ matrix.app }}
+        run: npm audit --omit=dev --audit-level=critical
+
   # The suite that actually exercises uploads, viewers, realtime and the video
   # proxy pipeline in a real browser. Unit tests cannot catch a broken viewer.
   e2e:
@@ -111,7 +138,7 @@ jobs:
     env:
       DATABASE_URL: postgresql://sculpt:sculpt@localhost:5432/sculpt
       DIRECT_URL: postgresql://sculpt:sculpt@localhost:5432/sculpt
-      JWT_SECRET: ci-smoke-secret-not-for-production
+      JWT_SECRET: ci-smoke-secret-not-for-production-at-least-32-chars
       REDIS_URL: redis://localhost:6379
       FRONTEND_URL: http://localhost:3000
       API_URL: http://localhost:3001

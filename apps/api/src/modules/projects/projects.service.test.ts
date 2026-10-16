@@ -233,7 +233,7 @@ describe("inviteUserToProject", () => {
 		).rejects.toBeInstanceOf(ValidationError)
 	})
 
-	it("adds an existing user as a member directly", async () => {
+	it("never grants membership to an existing user without their acceptance", async () => {
 		actingAsOwner()
 		mocked.user.findUnique.mockResolvedValue({ id: "invitee" } as never)
 		mocked.projectMember.findUnique.mockResolvedValue(null)
@@ -245,10 +245,11 @@ describe("inviteUserToProject", () => {
 		)
 
 		expect(result.invitedExistingUser).toBe(true)
+		expect(result.invitedUserId).toBe("invitee")
 		expect(result.email).toBe("invitee@example.com")
-		expect(mocked.projectMember.create).toHaveBeenCalledWith({
-			data: { projectId: "p1", userId: "invitee", role: "MEMBER" },
-		})
+		expect(result.token).toMatch(/^[0-9a-f]{64}$/)
+		expect(mocked.projectMember.create).not.toHaveBeenCalled()
+		expect(mocked.projectInvitation.upsert).toHaveBeenCalled()
 	})
 
 	it("rejects inviting someone who is already a member", async () => {

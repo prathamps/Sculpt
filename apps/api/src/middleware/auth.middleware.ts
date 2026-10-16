@@ -2,9 +2,32 @@ import passport from "passport"
 import { Request, Response, NextFunction } from "express"
 import { UserRole } from "@prisma/client"
 import { prisma } from "../lib/prisma"
-import { ADMIN_SESSION_COOKIE } from "../lib/cookies"
-import { authenticateSessionToken } from "../modules/auth/session.service"
+import {
+	ADMIN_SESSION_COOKIE,
+	SESSION_COOKIE,
+	setSessionCookie,
+} from "../lib/cookies"
+import {
+	USER_SESSION_LIFETIME_MS,
+	authenticateSessionToken,
+	issueSession,
+	shouldSlideSession,
+} from "../modules/auth/session.service"
 import { AuthenticatedRequest, AuthenticatedUser } from "../types"
+
+const slideSessionCookie = (req: Request, res: Response): void => {
+	const claims = req.sessionClaims
+	const user = req.user as AuthenticatedUser | undefined
+	if (!claims || !user) return
+	if (!shouldSlideSession(claims)) return
+
+	const { token } = issueSession(
+		{ id: user.id, tokenVersion: user.tokenVersion },
+		"user",
+		claims.sst
+	)
+	setSessionCookie(res, SESSION_COOKIE, token, USER_SESSION_LIFETIME_MS)
+}
 
 export const authenticateJWT = (
 	req: Request,
@@ -22,6 +45,7 @@ export const authenticateJWT = (
 				return res.status(401).json({ message: "Unauthorized" })
 			}
 			req.user = user as AuthenticatedUser
+			slideSessionCookie(req, res)
 			next()
 		}
 	)(req, res, next)

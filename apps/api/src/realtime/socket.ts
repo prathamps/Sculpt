@@ -4,12 +4,13 @@ import { createAdapter } from "@socket.io/redis-adapter"
 import { markOnline, markOffline, startPresenceHeartbeat } from "../lib/presence"
 import { redisClient } from "../lib/redis"
 import { isAllowedOrigin } from "../lib/cors"
-import { socketAuth, SocketUser } from "./socketAuth"
+import { resolveSocketUser, socketAuth, SocketUser } from "./socketAuth"
 import {
 	addViewer,
 	updateViewer,
 	removeViewer,
 	getViewers,
+	refreshViewerTtls,
 } from "./viewerPresence"
 import {
 	canViewInternalComments,
@@ -32,8 +33,9 @@ export const io = new Server({
 	connectTimeout: 60000,
 	pingTimeout: 60000,
 	pingInterval: 25000,
-	allowEIO3: true,
 })
+
+export const SESSION_REVALIDATION_INTERVAL_MS = 60000
 
 const socketUser = (socket: Socket): SocketUser | null =>
 	(socket.data.user as SocketUser | null) ?? null
@@ -47,6 +49,11 @@ const presenceUser = (user: SocketUser) => ({
 const joinedVersions = (socket: Socket): Set<string> => {
 	if (!socket.data.joinedVersions) socket.data.joinedVersions = new Set()
 	return socket.data.joinedVersions as Set<string>
+}
+
+const joinedProjects = (socket: Socket): Set<string> => {
+	if (!socket.data.joinedProjects) socket.data.joinedProjects = new Set()
+	return socket.data.joinedProjects as Set<string>
 }
 
 const versionRoom = (imageVersionId: string): string =>
@@ -72,11 +79,88 @@ const leaveVersionRoom = (socket: Socket, imageVersionId: string): void => {
 	socket.leave(versionRoom(imageVersionId))
 	socket.leave(internalVersionRoom(imageVersionId))
 	joinedVersions(socket).delete(imageVersionId)
-	removeViewer(imageVersionId, socket.id)
+	removeViewer(imageVersionId, socket.id).catch((error) =>
+		logger.error("Could not drop viewer presence", error, { imageVersionId })
+	)
 	viewersStillInRoom(imageVersionId).emit("presence:leave", {
 		socketId: socket.id,
 		imageVersionId,
 	})
+}
+
+const leaveProjectRoom = (socket: Socket, projectId: string): void => {
+	socket.leave(`project:${projectId}`)
+	joinedProjects(socket).delete(projectId)
+}
+
+const resyncInternalRoom = async (
+	socket: Socket,
+	userId: string,
+	imageVersionId: string
+): Promise<void> => {
+	const room = internalVersionRoom(imageVersionId)
+	const allowed = await canViewInternalComments(userId, imageVersionId)
+	if (allowed && !socket.rooms.has(room)) socket.join(room)
+	if (!allowed && socket.rooms.has(room)) socket.leave(room)
+}
+
+export const revalidateSocketAccess = async (
+	socket: Socket
+): Promise<boolean> => {
+	const user = await resolveSocketUser(socket)
+	if (!user) {
+		socket.emit("session_expired")
+		socket.disconnect(true)
+		return false
+	}
+	socket.data.user = user
+
+	for (const projectId of Array.from(joinedProjects(socket))) {
+		if (await isProjectMember(projectId, user.id)) continue
+		leaveProjectRoom(socket, projectId)
+		socket.emit("project_access_revoked", { projectId })
+	}
+
+	for (const imageVersionId of Array.from(joinedVersions(socket))) {
+		if (!(await canViewVersion(user.id, imageVersionId))) {
+			leaveVersionRoom(socket, imageVersionId)
+			socket.emit("image_version_access_revoked", { imageVersionId })
+			continue
+		}
+		await resyncInternalRoom(socket, user.id, imageVersionId)
+	}
+
+	return true
+}
+
+export const revalidateConnections = async (): Promise<void> => {
+	for (const socket of Array.from(io.sockets.sockets.values())) {
+		await revalidateSocketAccess(socket).catch((error) =>
+			logger.error("Socket revalidation failed", error, {
+				socketId: socket.id,
+			})
+		)
+	}
+}
+
+const VIEWER_HEARTBEAT_MS = 45000
+
+export const startViewerPresenceHeartbeat = (): NodeJS.Timeout => {
+	const timer = setInterval(() => {
+		refreshViewerTtls().catch((error) =>
+			logger.error("Viewer presence heartbeat failed", error)
+		)
+	}, VIEWER_HEARTBEAT_MS)
+	timer.unref()
+	return timer
+}
+
+export const startSessionRevalidation = (): NodeJS.Timeout => {
+	const timer = setInterval(() => {
+		void revalidateConnections()
+	}, SESSION_REVALIDATION_INTERVAL_MS)
+	timer.unref()
+	return timer
 }
 
 export const registerHandlers = (socket: Socket) => {
@@ -104,6 +188,7 @@ export const registerHandlers = (socket: Socket) => {
 				return
 			}
 			socket.join(`project:${projectId}`)
+			joinedProjects(socket).add(projectId)
 			socket.emit("project_joined", {
 				projectId,
 				message: `Successfully joined project room ${projectId}`,
@@ -125,14 +210,14 @@ export const registerHandlers = (socket: Socket) => {
 				socket.join(internalVersionRoom(imageVersionId))
 			}
 			joinedVersions(socket).add(imageVersionId)
-			addViewer(imageVersionId, socket.id, presenceUser(user))
+			await addViewer(imageVersionId, socket.id, presenceUser(user))
 			socket.emit("image_version_joined", {
 				imageVersionId,
 				message: `Successfully joined image version room ${imageVersionId}`,
 			})
 			socket.emit("presence:state", {
 				imageVersionId,
-				peers: getViewers(imageVersionId),
+				peers: await getViewers(imageVersionId),
 			})
 			socket.to(versionRoom(imageVersionId)).emit("presence:peer", {
 				socketId: socket.id,
@@ -145,28 +230,31 @@ export const registerHandlers = (socket: Socket) => {
 
 	socket.on(
 		"presence:update",
-		(payload: { imageVersionId?: unknown; time?: unknown }) => {
-			const user = socketUser(socket)
-			const imageVersionId = payload?.imageVersionId
-			const time = payload?.time
-			if (
-				!user ||
-				typeof imageVersionId !== "string" ||
-				typeof time !== "number" ||
-				!Number.isFinite(time) ||
-				time < 0
-			) {
-				return
+		guardedHandler(
+			"presence:update",
+			async (payload: { imageVersionId?: unknown; time?: unknown }) => {
+				const user = socketUser(socket)
+				const imageVersionId = payload?.imageVersionId
+				const time = payload?.time
+				if (
+					!user ||
+					typeof imageVersionId !== "string" ||
+					typeof time !== "number" ||
+					!Number.isFinite(time) ||
+					time < 0
+				) {
+					return
+				}
+				if (!socket.rooms.has(versionRoom(imageVersionId))) return
+				await updateViewer(imageVersionId, socket.id, time)
+				socket.volatile.to(versionRoom(imageVersionId)).emit("presence:peer", {
+					socketId: socket.id,
+					imageVersionId,
+					user: presenceUser(user),
+					time,
+				})
 			}
-			if (!socket.rooms.has(versionRoom(imageVersionId))) return
-			updateViewer(imageVersionId, socket.id, time)
-			socket.volatile.to(versionRoom(imageVersionId)).emit("presence:peer", {
-				socketId: socket.id,
-				imageVersionId,
-				user: presenceUser(user),
-				time,
-			})
-		}
+		)
 	)
 
 	socket.on("leaveImageVersion", (imageVersionId: string) => {
@@ -214,4 +302,6 @@ export const attachRealtime = async (server: http.Server): Promise<void> => {
 	io.on("connection", registerHandlers)
 	io.attach(server)
 	startPresenceHeartbeat()
+	startViewerPresenceHeartbeat()
+	startSessionRevalidation()
 }

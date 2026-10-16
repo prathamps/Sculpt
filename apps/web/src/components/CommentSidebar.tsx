@@ -19,6 +19,9 @@ type CommentFilter = "all" | "unresolved" | "resolved"
 interface CommentSidebarProps {
 	comments: Comment[]
 	isLoading?: boolean
+	isLoadingMore?: boolean
+	hasMore?: boolean
+	onLoadMore?: () => void
 	onRefresh?: () => void
 	selectedCommentId?: string | null
 	onSelectComment?: (comment: Comment) => void
@@ -33,6 +36,9 @@ interface CommentSidebarProps {
 export function CommentSidebar({
 	comments,
 	isLoading = false,
+	isLoadingMore = false,
+	hasMore = false,
+	onLoadMore,
 	onRefresh,
 	selectedCommentId,
 	onSelectComment,
@@ -71,12 +77,12 @@ export function CommentSidebar({
 		>
 			<div className="flex items-center justify-between border-b border-border/40 p-3">
 				<h3 className="text-sm font-medium">Comments</h3>
-				{isLoading && <Loader2 className="h-4 w-4 animate-spin" />}
+				{isLoading && <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />}
 			</div>
 			{reviewPanel}
 			<div className="flex flex-wrap items-center gap-2 border-b border-border/40 p-3">
 				<div className="relative min-w-[8rem] flex-1">
-					<Search className="absolute left-2 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+					<Search className="absolute left-2 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" aria-hidden="true" />
 					<Input
 						className="h-8 pl-8"
 						placeholder="Search comments..."
@@ -88,7 +94,7 @@ export function CommentSidebar({
 				<DropdownMenu>
 					<DropdownMenuTrigger asChild>
 						<Button variant="outline" size="sm" className="h-8 gap-1">
-							<Filter className="h-3.5 w-3.5" />
+							<Filter className="h-3.5 w-3.5" aria-hidden="true" />
 							<span className="capitalize">{filter}</span>
 						</Button>
 					</DropdownMenuTrigger>
@@ -150,10 +156,33 @@ export function CommentSidebar({
 								<p className="text-xs">Try adjusting your search or filter</p>
 							</div>
 						)}
+						{hasMore && (
+							<div className="py-3">
+								<Button
+									variant="outline"
+									size="sm"
+									className="w-full"
+									onClick={onLoadMore}
+									disabled={isLoadingMore}
+								>
+									{isLoadingMore ? (
+										<>
+											<Loader2
+												className="mr-2 h-3.5 w-3.5 animate-spin"
+												aria-hidden="true"
+											/>
+											Loading older comments
+										</>
+									) : (
+										"Load older comments"
+									)}
+								</Button>
+							</div>
+						)}
 					</div>
 				) : (
 					<div className="flex h-full flex-col items-center justify-center text-muted-foreground">
-						<MessageSquare className="mb-2 h-12 w-12 opacity-20" />
+						<MessageSquare className="mb-2 h-12 w-12 opacity-20" aria-hidden="true" />
 						<p className="text-sm">No comments yet</p>
 						<p className="text-xs">
 							Start the conversation by adding a comment below
