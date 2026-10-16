@@ -1,4 +1,5 @@
 import { prisma } from "../../lib/prisma"
+import { csvEscape } from "../../lib/csv"
 
 export interface ReportComment {
 	id: string
@@ -126,17 +127,6 @@ export const buildImageReport = async (
 			openComments: totalComments - resolvedComments,
 		},
 	}
-}
-
-const SPREADSHEET_FORMULA_PREFIX = /^[=+\-@\t\r]/
-
-const csvEscape = (value: unknown): string => {
-	const raw = value === null || value === undefined ? "" : String(value)
-	const neutralized = SPREADSHEET_FORMULA_PREFIX.test(raw) ? `'${raw}` : raw
-	if (/[",\n\r\t]/.test(neutralized)) {
-		return `"${neutralized.replace(/"/g, '""')}"`
-	}
-	return neutralized
 }
 
 export const buildImageReportCsv = (report: ImageReport): string => {

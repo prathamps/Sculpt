@@ -12,6 +12,7 @@ import { Loader2, LogOut } from "lucide-react"
 import { toast } from "sonner"
 import { UserAvatar } from "@/components/UserAvatar"
 import { AccountDataSection } from "@/components/AccountDataSection"
+import { TwoFactorSettings } from "@/components/TwoFactorSettings"
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001"
 
@@ -227,6 +228,8 @@ export default function AccountPage() {
 							</form>
 						</CardContent>
 					</Card>
+
+					<TwoFactorSettings />
 
 					<AccountDataSection />
 

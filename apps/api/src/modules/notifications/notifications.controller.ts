@@ -1,10 +1,8 @@
 import { Response } from "express"
 import { AuthenticatedRequest } from "../../types"
 import { respondWithError } from "../../lib/http"
-import {
-	NOTIFICATION_PAGE_SIZE,
-	NotificationService,
-} from "./notification.service"
+import * as notificationService from "./notification.service"
+import { NOTIFICATION_PAGE_SIZE } from "./notification.service"
 
 const requireUserId = (req: AuthenticatedRequest, res: Response): string | null => {
 	const userId = req.user?.id
@@ -26,7 +24,7 @@ export class NotificationsController {
 				pageSize?: number
 			}
 
-			const result = await NotificationService.getUserNotifications(userId, {
+			const result = await notificationService.getUserNotifications(userId, {
 				page: page ?? 1,
 				pageSize: pageSize ?? NOTIFICATION_PAGE_SIZE,
 			})
@@ -41,7 +39,7 @@ export class NotificationsController {
 			const userId = requireUserId(req, res)
 			if (!userId) return
 
-			const notification = await NotificationService.markAsRead(
+			const notification = await notificationService.markAsRead(
 				req.params.notificationId,
 				userId
 			)
@@ -56,7 +54,7 @@ export class NotificationsController {
 			const userId = requireUserId(req, res)
 			if (!userId) return
 
-			const updated = await NotificationService.markAllAsRead(userId)
+			const updated = await notificationService.markAllAsRead(userId)
 			res.status(200).json({ updated })
 		} catch (error) {
 			respondWithError(res, error, "mark all notifications read")

@@ -52,7 +52,7 @@ Build both apps (`npm run build`) and run `node dist/index.js` (API, after `npx 
 | `REDIS_URL` | optional (required for >1 instance) | Socket.IO fan-out, cross-instance presence (both online status and per-file viewers), shared rate limits |
 | `CORS_ALLOWED_HOST_SUFFIXES` | optional | apex domains whose subdomains may call the API (e.g. preview deploys) |
 | `LOG_LEVEL` | optional | `debug`/`info`/`warn`/`error`; JSON lines in production |
-| `TRUST_PROXY` | behind a proxy | number of trusted proxy hops so `req.ip` and audit IPs use `X-Forwarded-For` (leave unset when direct-facing) |
+| `TRUST_PROXY` | behind a proxy | number of trusted proxy hops so `req.ip`, rate limits and audit IPs use `X-Forwarded-For` (leave unset when direct-facing). The API logs a warning if forwarded headers arrive while this is unset |
 | `GOOGLE_*`, `GITHUB_*` | optional | OAuth login buttons appear only when set |
 | `SMTP_*` | optional | email notifications for offline members |
 | `S3_BUCKET`, `S3_REGION`, `S3_ENDPOINT`, `S3_PUBLIC_URL` | optional | switch file storage to any S3-compatible store |
@@ -62,7 +62,18 @@ Build both apps (`npm run build`) and run `node dist/index.js` (API, after `npx 
 | `NOTIFICATION_WORKER_CONCURRENCY` | optional | parallel notification emails per instance (default 4) |
 | `NOTIFICATION_QUEUE_MAX_DEPTH` | optional | queued notification deliveries before shedding (default 10000) |
 | `VIDEO_WORKER_CONCURRENCY`, `IMAGE_WORKER_CONCURRENCY` | optional | parallel ffmpeg jobs per instance |
-| `SCULPT_INSTANCE_ID` | multi-instance | stable id so crash recovery only reclaims this instance's transcodes |
+| `SCULPT_INSTANCE_ID` | multi-instance | stable id per replica so each resumes only its own transcodes after a restart (single instances persist a generated id in `uploads/.instance-id`) |
+| `NOTIFICATION_RETENTION_DAYS` | optional | delete in-app notifications older than this (default 90) |
+| `AUDIT_RETENTION_DAYS` | optional | delete audit entries older than this (default: keep forever) |
+| `METRICS_TOKEN` | optional | enables `GET /metrics` for Prometheus, guarded by this bearer token |
+| `MFA_ENCRYPTION_KEY` | ✅ in prod | 32-byte base64 key that encrypts two-factor secrets at rest |
+| `ADMIN_MFA_REQUIRED` | optional | admins must use two-factor to open the console (default `true`) |
+| `MFA_REQUIRED` | optional | require two-factor of every user (default `false`) |
+| `LOGIN_MAX_FAILED_ATTEMPTS`, `LOGIN_LOCKOUT_MINUTES` | optional | per-account lockout after repeated failures (default 10 attempts, 15 minutes) |
+| `SESSION_IDLE_TIMEOUT_MINUTES` | optional | inactivity timeout, 5 to 1440 (default 60) |
+| `SHARE_LINK_DEFAULT_EXPIRY_DAYS`, `SHARE_LINK_MAX_DAYS` | optional | default and maximum share-link lifetime (default 7 days, no maximum) |
+| `ALLOW_INSECURE_HTTP` | optional | accept a plain-HTTP `FRONTEND_URL` on a network address (default refused) |
+| `S3_SERVER_SIDE_ENCRYPTION`, `S3_SSE_KMS_KEY_ID` | optional | request SSE-S3 (`AES256`) or SSE-KMS (`aws:kms`) for stored objects |
 
 ### Web
 
@@ -85,17 +96,54 @@ a short-lived presigned URL. Leave it off only if you accept that anyone holding
 an object URL can read your clients' media — including people you later removed
 from the project.
 
+## HTTPS
+
+Run Sculpt over HTTPS in production — the `tls` profile in
+`docker-compose.selfhost.yml` does it with automatic certificates. Session
+cookies are only marked `Secure` when `FRONTEND_URL` starts with `https://`.
+With `NODE_ENV=production` the API refuses to start on a plain-HTTP network
+address (for example `FRONTEND_URL=http://192.168.1.20:3000`) unless you set
+`ALLOW_INSECURE_HTTP=true`, which accepts that sessions travel in clear text;
+`http://localhost` is always allowed. `FRONTEND_URL` and `API_URL` must use
+the address people actually type, or the browser's origin is rejected.
+
+## Two-factor authentication
+
+Administrators need two-factor authentication to open the admin console
+(`ADMIN_MFA_REQUIRED=true` by default). After upgrading, each admin signs in
+to the normal app, opens **Account → Two-factor authentication**, scans the QR
+code with an authenticator app and saves the recovery codes; the console then
+asks for a code at sign-in. Set `MFA_REQUIRED=true` to require the same of
+every user — anyone without it can still reach their account page to enrol,
+and nothing else. Set `MFA_ENCRYPTION_KEY` before anyone enrols: secrets
+encrypted with a key derived from `JWT_SECRET` stop working if that secret is
+rotated.
+
 ## Operations notes
 
 - **Migrations** — always `npx prisma migrate deploy` on release (both the Docker CMD and railway.toml already do this)
 - **Health check** — `GET /health` reports per-component status and returns
   `503` when the database is unreachable, so load balancers drain the instance:
   `{"status":"ok","components":{"database":"ok","redis":"ok"}}`
+- **Metrics** — with `METRICS_TOKEN` set, `GET /metrics` serves Prometheus
+  text: request latency by route template and status class, open realtime
+  connections, rendition and notification queue depths, and Node process
+  metrics (event-loop lag, heap, CPU).
+- **Media processing across restarts** — transcodes and image renditions
+  resume after a restart or deploy. A replica that stops heartbeating for ten
+  minutes has its pending jobs marked failed (the viewer falls back to the
+  original file), and its scratch space is cleaned up.
 - **Backups** — see [backup-and-restore.md](backup-and-restore.md). Both the
   database and the uploads volume must be captured together.
-- **Audit trail** — security-relevant actions land in the `AuditLog` table and
-  are visible at `/admin/audit`. IP addresses are retained indefinitely by
-  default; the backup guide includes a pruning query.
+- **Audit trail** — security-relevant actions, every view or download of an
+  original, proxy or attachment, comment changes, permission denials and admin
+  reads land in the `AuditLog` table, each with request id, IP and user agent.
+  Entries are hash-chained and the table rejects updates; **Verify integrity**
+  and **Export CSV** at `/admin/audit` recompute the chain and hand auditors a
+  copy. Every entry is also written to the log stream as an `audit` line, so a
+  SIEM keeps an independent copy. IP addresses are retained indefinitely by
+  default; set `AUDIT_RETENTION_DAYS` to prune them automatically. See
+  [compliance.md](compliance.md).
 - **Admin bootstrap** — register through the UI, then promote that account. This
   works inside the production image, which ships only compiled output:
 

@@ -18,10 +18,16 @@ interface AdminUser {
 	role: "ADMIN"
 }
 
+export type AdminSignInResult =
+	| { status: "signed_in" }
+	| { status: "second_factor_required" }
+	| { status: "failed"; message: string }
+
 interface AdminAuthContextType {
 	adminUser: AdminUser | null
 	isAdminAuthenticated: boolean
-	adminLogin: (email: string, password: string) => Promise<boolean>
+	adminLogin: (email: string, password: string) => Promise<AdminSignInResult>
+	completeAdminSignIn: () => Promise<boolean>
 	adminLogout: () => void
 	loading: boolean
 }
@@ -66,8 +72,18 @@ export const AdminAuthProvider = ({ children }: { children: ReactNode }) => {
 		}
 	}, [pathname])
 
+	const completeAdminSignIn = useCallback(async (): Promise<boolean> => {
+		const profileRes = await fetch(`${URI}/api/admin/profile`, {
+			credentials: "include",
+		})
+		if (!profileRes.ok) return false
+		setAdminUser(await profileRes.json())
+		router.push("/admin")
+		return true
+	}, [router])
+
 	const adminLogin = useCallback(
-		async (email: string, password: string): Promise<boolean> => {
+		async (email: string, password: string): Promise<AdminSignInResult> => {
 			try {
 				const res = await fetch(`${URI}/api/admin/login`, {
 					method: "POST",
@@ -77,27 +93,26 @@ export const AdminAuthProvider = ({ children }: { children: ReactNode }) => {
 					},
 					body: JSON.stringify({ email, password }),
 				})
+				const body = (await res.json().catch(() => null)) as {
+					mfaRequired?: boolean
+					message?: string
+				} | null
 
-				if (res.ok) {
-					const profileRes = await fetch(`${URI}/api/admin/profile`, {
-						credentials: "include",
-					})
-
-					if (profileRes.ok) {
-						const data = await profileRes.json()
-						setAdminUser(data)
-						router.push("/admin")
-						return true
+				if (!res.ok) {
+					return {
+						status: "failed",
+						message: body?.message || "Invalid email or password",
 					}
 				}
-
-				return false
-			} catch (error) {
-				console.error("Admin login error:", error)
-				return false
+				if (body?.mfaRequired) return { status: "second_factor_required" }
+				return (await completeAdminSignIn())
+					? { status: "signed_in" }
+					: { status: "failed", message: "Could not open the admin console." }
+			} catch {
+				return { status: "failed", message: "The server could not be reached." }
 			}
 		},
-		[router]
+		[completeAdminSignIn]
 	)
 
 	const adminLogout = useCallback(async () => {
@@ -118,10 +133,11 @@ export const AdminAuthProvider = ({ children }: { children: ReactNode }) => {
 			adminUser,
 			isAdminAuthenticated: !!adminUser,
 			adminLogin,
+			completeAdminSignIn,
 			adminLogout,
 			loading,
 		}),
-		[adminUser, loading, adminLogin, adminLogout]
+		[adminUser, loading, adminLogin, completeAdminSignIn, adminLogout]
 	)
 
 	return (

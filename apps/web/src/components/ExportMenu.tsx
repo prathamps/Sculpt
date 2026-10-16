@@ -21,6 +21,7 @@ interface ExportMenuProps {
 	image: ImageType
 	selectedVersion: ImageVersion | null
 	annotations: Annotation[]
+	canDownloadOriginal: boolean
 }
 
 function drawAnnotations(
@@ -68,6 +69,7 @@ export function ExportMenu({
 	image,
 	selectedVersion,
 	annotations,
+	canDownloadOriginal,
 }: ExportMenuProps) {
 	const [busy, setBusy] = useState(false)
 	const isImage = (selectedVersion?.mediaType ?? "IMAGE") === "IMAGE"
@@ -183,19 +185,27 @@ export function ExportMenu({
 			</DropdownMenuTrigger>
 			<DropdownMenuContent align="end" className="w-56">
 				<DropdownMenuLabel className="text-xs">Export</DropdownMenuLabel>
-				<DropdownMenuItem
-					className="text-xs"
-					onClick={downloadOriginal}
-					disabled={!selectedVersion}
-				>
-					<Download className="mr-2 h-3.5 w-3.5" aria-hidden="true" />
-					Original file
-				</DropdownMenuItem>
-				{isImage && (
-					<DropdownMenuItem className="text-xs" onClick={downloadAnnotatedPng}>
-						<Download className="mr-2 h-3.5 w-3.5" aria-hidden="true" />
-						Annotated image (PNG)
-					</DropdownMenuItem>
+				{canDownloadOriginal ? (
+					<>
+						<DropdownMenuItem
+							className="text-xs"
+							onClick={downloadOriginal}
+							disabled={!selectedVersion}
+						>
+							<Download className="mr-2 h-3.5 w-3.5" aria-hidden="true" />
+							Original file
+						</DropdownMenuItem>
+						{isImage && (
+							<DropdownMenuItem className="text-xs" onClick={downloadAnnotatedPng}>
+								<Download className="mr-2 h-3.5 w-3.5" aria-hidden="true" />
+								Annotated image (PNG)
+							</DropdownMenuItem>
+						)}
+					</>
+				) : (
+					<p className="px-2 py-1.5 text-xs text-muted-foreground">
+						Downloads are turned off for this project.
+					</p>
 				)}
 				<DropdownMenuSeparator />
 				<DropdownMenuItem className="text-xs" onClick={() => downloadReport("csv")}>

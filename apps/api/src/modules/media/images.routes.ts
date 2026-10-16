@@ -12,9 +12,14 @@ import {
 	rejectMismatchedUploads,
 	upload,
 } from "../../middleware/upload.middleware"
-import { validateBody } from "../../middleware/validate.middleware"
+import {
+	validateBody,
+	validateQuery,
+} from "../../middleware/validate.middleware"
+import { writeRateLimit } from "../../middleware/rate-limit.middleware"
 import {
 	deleteImagesSchema,
+	listMediaQuerySchema,
 	renameImageSchema,
 	renameVersionSchema,
 } from "./media.schema"
@@ -24,6 +29,7 @@ import { versionReviewRouter } from "../reviews/reviews.routes"
 const router = Router()
 
 router.use(authenticateJWT)
+router.use(writeRateLimit())
 
 const onImage = (minimum: "VIEWER" | "EDITOR", param = "id") =>
 	requireProjectRole(minimum, projectIdFromImageParam(param))
@@ -92,6 +98,7 @@ projectImagesRouter.post(
 projectImagesRouter.get(
 	"/",
 	requireProjectRole("VIEWER", projectIdFromParam("projectId")),
+	validateQuery(listMediaQuerySchema),
 	imageController.getProjectImages
 )
 projectImagesRouter.post(

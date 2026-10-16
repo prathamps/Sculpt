@@ -9,9 +9,11 @@ import {
 import { PageRequest, skipTake } from "../../lib/pagination"
 import { logger } from "../../lib/logger"
 import { storage } from "../../storage"
+import { forgetContentPolicy } from "./content-policy"
+import { shareLinkExpiryDays } from "./share-link-policy"
 import {
 	ROLE_RANK,
-	getMemberRole,
+	forgetMembership,
 	isProjectMember,
 	isProjectOwner,
 } from "./access"
@@ -140,13 +142,21 @@ export const listProjectMembers = async (
 	})
 }
 
+export interface ProjectChanges {
+	name?: string
+	allowDownloads?: boolean
+	watermarkViewers?: boolean
+}
+
 export const updateProject = async (
 	projectId: string,
-	data: { name?: string },
+	data: ProjectChanges,
 	userId: string
 ): Promise<Project> => {
-	await requireOwner(projectId, userId, "rename a project")
-	return prisma.project.update({ where: { id: projectId }, data })
+	await requireOwner(projectId, userId, "change a project")
+	const updated = await prisma.project.update({ where: { id: projectId }, data })
+	forgetContentPolicy(projectId)
+	return updated
 }
 
 export const deleteProject = async (
@@ -161,6 +171,7 @@ export const deleteProject = async (
 	})
 
 	await prisma.project.delete({ where: { id: projectId } })
+	forgetMembership(projectId)
 
 	await Promise.all(
 		assets.map((asset) =>
@@ -192,6 +203,7 @@ export const removeUserFromProject = async (
 	}
 
 	await prisma.projectMember.delete({ where: { id: membership.id } })
+	forgetMembership(projectId, userIdToRemove)
 }
 
 export const changeMemberRole = async (
@@ -199,7 +211,7 @@ export const changeMemberRole = async (
 	userIdToChange: string,
 	role: ProjectRole,
 	requesterId: string
-): Promise<void> => {
+): Promise<{ previousRole: ProjectRole }> => {
 	await requireOwner(projectId, requesterId, "change member roles")
 
 	const membership = await prisma.projectMember.findUnique({
@@ -225,6 +237,8 @@ export const changeMemberRole = async (
 		where: { id: membership.id },
 		data: { role },
 	})
+	forgetMembership(projectId, userIdToChange)
+	return { previousRole: membership.role }
 }
 
 const hashToken = (token: string): string =>
@@ -314,6 +328,7 @@ export const leaveProject = async (
 	}
 
 	await prisma.projectMember.delete({ where: { id: membership.id } })
+	forgetMembership(projectId, userId)
 }
 
 export const acceptInvitation = async (
@@ -352,6 +367,7 @@ export const acceptInvitation = async (
 			data: { acceptedAt: new Date() },
 		}),
 	])
+	forgetMembership(invitation.projectId, userId)
 
 	const project = await prisma.project.findUnique({
 		where: { id: invitation.projectId },
@@ -390,7 +406,7 @@ export const revokeInvitation = async (
 
 export interface ShareLinkOptions {
 	role: ProjectRole
-	expiresInDays?: number | null
+	expiresInDays?: number | null | undefined
 	maxUses?: number | null
 }
 
@@ -416,6 +432,7 @@ export const createShareLink = async (
 		throw new ValidationError("Share links cannot grant the OWNER role.")
 	}
 
+	const expiryDays = shareLinkExpiryDays(options.expiresInDays)
 	const token = randomBytes(32).toString("hex")
 
 	const link = await prisma.shareLink.create({
@@ -423,9 +440,9 @@ export const createShareLink = async (
 			tokenHash: hashToken(token),
 			projectId,
 			role: options.role,
-			expiresAt: options.expiresInDays
-				? new Date(Date.now() + options.expiresInDays * 86400000)
-				: null,
+			expiresAt: expiryDays === null
+				? null
+				: new Date(Date.now() + expiryDays * 86400000),
 			maxUses: options.maxUses ?? null,
 		},
 	})
@@ -477,7 +494,11 @@ export const joinProjectWithShareLink = async (
 		throw new NotFoundError("This share link is invalid, expired or used up.")
 	}
 
-	const existingRole = await getMemberRole(link.projectId, userId)
+	const existingMembership = await prisma.projectMember.findFirst({
+		where: { projectId: link.projectId, userId },
+		select: { role: true },
+	})
+	const existingRole = existingMembership?.role ?? null
 
 	if (!existingRole) {
 		await prisma.$transaction(async (tx) => {
@@ -506,6 +527,7 @@ export const joinProjectWithShareLink = async (
 			data: { role: link.role },
 		})
 	}
+	forgetMembership(link.projectId, userId)
 
 	const project = await prisma.project.findUnique({
 		where: { id: link.projectId },

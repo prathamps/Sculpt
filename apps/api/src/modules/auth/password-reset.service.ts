@@ -4,6 +4,7 @@ import { prisma } from "../../lib/prisma"
 import { logger } from "../../lib/logger"
 import { ValidationError } from "../../lib/errors"
 import { sendPasswordResetEmail } from "../notifications/email.service"
+import { forgetCachedSessions } from "./session.service"
 
 const RESET_TOKEN_TTL_MS = 3600000
 const PASSWORD_HASH_ROUNDS = 10
@@ -77,6 +78,7 @@ export const completePasswordReset = async (
 			where: { userId: record.userId, usedAt: null },
 		}),
 	])
+	forgetCachedSessions(record.userId)
 
 	return record.userId
 }

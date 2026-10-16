@@ -6,7 +6,7 @@ import {
 	StateStoreStoreCallback,
 	StateStoreVerifyCallback,
 } from "passport-oauth2"
-import { isProduction } from "../../lib/config"
+import { usesSecureCookies } from "../../lib/config"
 
 export const OAUTH_STATE_COOKIE = "oauth_state"
 
@@ -15,7 +15,7 @@ const STATE_TTL_MS = 10 * 60000
 
 const stateCookieAttributes = (): CookieOptions => ({
 	httpOnly: true,
-	secure: isProduction(),
+	secure: usesSecureCookies(),
 	sameSite: "lax",
 	path: "/",
 })

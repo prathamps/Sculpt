@@ -86,3 +86,50 @@ describe("RedisWithMemoryFallbackStore", () => {
 		expect(result.totalHits).toBe(1)
 	})
 })
+
+describe("write rate limit scoping", () => {
+	it("never counts reads against the write budget", async () => {
+		const { isReadOnlyRequest } = await import("./rate-limit.middleware")
+
+		expect(isReadOnlyRequest({ method: "GET" } as never)).toBe(true)
+		expect(isReadOnlyRequest({ method: "POST" } as never)).toBe(false)
+		expect(isReadOnlyRequest({ method: "DELETE" } as never)).toBe(false)
+	})
+
+	it("buckets signed-in callers by account so people behind one NAT do not share a limit", async () => {
+		const { callerKey } = await import("./rate-limit.middleware")
+
+		const alice = callerKey({ user: { id: "alice" }, ip: "10.0.0.1" } as never)
+		const bob = callerKey({ user: { id: "bob" }, ip: "10.0.0.1" } as never)
+
+		expect(alice).toBe("user:alice")
+		expect(bob).toBe("user:bob")
+	})
+
+	it("falls back to the caller address when nobody is signed in", async () => {
+		const { callerKey } = await import("./rate-limit.middleware")
+
+		expect(callerKey({ ip: "10.0.0.1" } as never)).toBe("ip:10.0.0.1")
+	})
+})
+
+describe("sign-in rate limit scoping", () => {
+	it("gives each account behind a shared office address its own budget", async () => {
+		const { signInAttemptKey } = await import("./rate-limit.middleware")
+		const office = "203.0.113.7"
+
+		const ada = signInAttemptKey({ ip: office, body: { email: "Ada@Example.com " }, cookies: {} } as never)
+		const grace = signInAttemptKey({ ip: office, body: { email: "grace@example.com" }, cookies: {} } as never)
+
+		expect(ada).toBe("203.0.113.7|ada@example.com")
+		expect(ada).not.toBe(grace)
+	})
+
+	it("buckets an account's own settings changes by the signed-in user", async () => {
+		const { signInAttemptKey } = await import("./rate-limit.middleware")
+
+		expect(
+			signInAttemptKey({ ip: "10.0.0.1", body: { code: "123456" }, cookies: {}, user: { id: "u1" } } as never)
+		).toBe("10.0.0.1|u1")
+	})
+})

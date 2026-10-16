@@ -128,82 +128,80 @@ export const notificationQueueDrained = async (): Promise<void> => {
 	await emailQueue.drained()
 }
 
-export class NotificationService {
-	static async createNotification(
-		data: NotificationInput
-	): Promise<Notification> {
-		const notification = await prisma.notification.create({
-			data: {
-				userId: data.userId,
-				content: data.content,
-				...asInputJson(data.metadata),
-			},
-		})
-
-		announce(notification, data.metadata)
-		emailQueue.enqueue(data)
-
-		return notification
-	}
-
-	static createProjectNotification(data: ProjectNotificationInput): void {
-		projectQueue.enqueue(data)
-
-		if (data.onlyRoles) return
-
-		io.to(`project:${data.projectId}`).emit("project-update", {
-			type: "notification",
+export const createNotification = async (
+	data: NotificationInput
+): Promise<Notification> => {
+	const notification = await prisma.notification.create({
+		data: {
+			userId: data.userId,
 			content: data.content,
-			projectId: data.projectId,
-			metadata: data.metadata ?? {},
-		})
-	}
+			...asInputJson(data.metadata),
+		},
+	})
 
-	static async getUserNotifications(
-		userId: string,
-		page: PageRequest = { page: 1, pageSize: NOTIFICATION_PAGE_SIZE }
-	): Promise<{
-		notifications: Notification[]
-		total: number
-		unread: number
-		page: number
-		pageSize: number
-	}> {
-		const [notifications, total, unread] = await Promise.all([
-			prisma.notification.findMany({
-				where: { userId },
-				orderBy: { createdAt: "desc" },
-				skip: (page.page - 1) * page.pageSize,
-				take: page.pageSize,
-			}),
-			prisma.notification.count({ where: { userId } }),
-			prisma.notification.count({ where: { userId, read: false } }),
-		])
+	announce(notification, data.metadata)
+	emailQueue.enqueue(data)
 
-		return {
-			notifications,
-			total,
-			unread,
-			page: page.page,
-			pageSize: page.pageSize,
-		}
-	}
+	return notification
+}
 
-	static async markAsRead(
-		notificationId: string,
-		userId: string
-	): Promise<Notification> {
-		return prisma.notification.update({
-			where: { id: notificationId, userId },
-			data: { read: true },
-		})
-	}
+export const createProjectNotification = (data: ProjectNotificationInput): void => {
+	projectQueue.enqueue(data)
 
-	static async markAllAsRead(userId: string): Promise<number> {
-		const { count } = await prisma.notification.updateMany({
-			where: { userId, read: false },
-			data: { read: true },
-		})
-		return count
+	if (data.onlyRoles) return
+
+	io.to(`project:${data.projectId}`).emit("project-update", {
+		type: "notification",
+		content: data.content,
+		projectId: data.projectId,
+		metadata: data.metadata ?? {},
+	})
+}
+
+export const getUserNotifications = async (
+	userId: string,
+	page: PageRequest = { page: 1, pageSize: NOTIFICATION_PAGE_SIZE }
+): Promise<{
+	notifications: Notification[]
+	total: number
+	unread: number
+	page: number
+	pageSize: number
+}> => {
+	const [notifications, total, unread] = await Promise.all([
+		prisma.notification.findMany({
+			where: { userId },
+			orderBy: { createdAt: "desc" },
+			skip: (page.page - 1) * page.pageSize,
+			take: page.pageSize,
+		}),
+		prisma.notification.count({ where: { userId } }),
+		prisma.notification.count({ where: { userId, read: false } }),
+	])
+
+	return {
+		notifications,
+		total,
+		unread,
+		page: page.page,
+		pageSize: page.pageSize,
 	}
+}
+
+export const markAsRead = async (
+	notificationId: string,
+	userId: string
+): Promise<Notification> => {
+	return prisma.notification.update({
+		where: { id: notificationId, userId },
+		data: { read: true },
+	})
+}
+
+export const markAllAsRead = async (userId: string): Promise<number> => {
+	const { count } = await prisma.notification.updateMany({
+		where: { userId, read: false },
+		data: { read: true },
+	})
+	return count
 }

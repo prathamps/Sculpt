@@ -45,6 +45,13 @@ enum ReviewDecision {
   CHANGES_REQUESTED
 }
 
+enum MediaAssetKind {
+  ORIGINAL
+  PROXY
+  THUMBNAIL
+  ATTACHMENT
+}
+
 model User {
   id            String          @id @default(cuid())
   email         String          @unique
@@ -60,13 +67,19 @@ model User {
   emailOnComment     Boolean    @default(true)
   emailOnReply       Boolean    @default(true)
   emailOnReview      Boolean    @default(true)
+  totpSecret         String?
+  totpPendingSecret  String?
+  totpEnabledAt      DateTime?
+  totpLastStep       Int?
+  failedLoginCount   Int        @default(0)
+  lockedUntil        DateTime?
+  mfaRecoveryCodes   MfaRecoveryCode[]
   memberships   ProjectMember[]
   notifications Notification[]
   comments      Comment[]
   reviews       Review[]
   commentLikes  CommentLike[]
   commentMentions CommentMention[]
-  auditLogs     AuditLog[]
   passwordResetTokens PasswordResetToken[]
   createdAt     DateTime        @default(now())
   updatedAt     DateTime        @updatedAt
@@ -84,6 +97,17 @@ model PasswordResetToken {
   @@index([expiresAt])
 }
 
+model MfaRecoveryCode {
+  id        String    @id @default(cuid())
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  codeHash  String    @unique
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([userId])
+}
+
 model RevokedSession {
   jti       String   @id
   userId    String
@@ -95,23 +119,31 @@ model RevokedSession {
 
 model AuditLog {
   id         String   @id @default(cuid())
+  sequence   Int      @unique
   actorId    String?
-  actor      User?    @relation(fields: [actorId], references: [id], onDelete: SetNull)
   action     String
   targetType String
   targetId   String?
   metadata   Json?
   ipAddress  String?
+  userAgent  String?
+  requestId  String?
+  prevHash   String?
+  hash       String?
   createdAt  DateTime @default(now())
 
   @@index([actorId, createdAt])
   @@index([targetType, targetId])
+  @@index([action, createdAt])
+  @@index([ipAddress, createdAt])
   @@index([createdAt])
 }
 
 model Project {
   id         String          @id @default(cuid())
   name       String
+  allowDownloads   Boolean   @default(true)
+  watermarkViewers Boolean   @default(false)
   members    ProjectMember[]
   images     Image[]
   folders    Folder[]
@@ -156,11 +188,14 @@ model ProjectMember {
 
 model MediaAsset {
   storedPath String   @id
+  kind       MediaAssetKind @default(ORIGINAL)
+  imageVersionId String?
   projectId  String
   project    Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
   createdAt  DateTime @default(now())
 
   @@index([projectId])
+  @@index([imageVersionId])
 }
 
 model Image {
@@ -176,6 +211,7 @@ model Image {
 
   @@index([projectId, updatedAt])
   @@index([projectId, name])
+  @@index([projectId, folderId, createdAt])
   @@index([folderId])
   @@index([name(ops: raw("gin_trgm_ops"))], type: Gin)
 }
@@ -211,8 +247,8 @@ model Review {
   id             String         @id @default(cuid())
   imageVersionId String
   imageVersion   ImageVersion   @relation(fields: [imageVersionId], references: [id], onDelete: Cascade)
-  userId         String
-  user           User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId         String?
+  user           User?          @relation(fields: [userId], references: [id], onDelete: SetNull)
   decision       ReviewDecision
   note           String?
   createdAt      DateTime       @default(now())
@@ -242,6 +278,8 @@ model Comment {
   internal       Boolean          @default(false)
   mentions       CommentMention[]
   attachments    CommentAttachment[]
+  revisions      CommentRevision[]
+  editedAt       DateTime?
   createdAt      DateTime         @default(now())
   updatedAt      DateTime         @updatedAt
 
@@ -249,6 +287,17 @@ model Comment {
   @@index([parentId])
   @@index([userId])
   @@index([content(ops: raw("gin_trgm_ops"))], type: Gin)
+}
+
+model CommentRevision {
+  id          String   @id @default(cuid())
+  commentId   String
+  comment     Comment  @relation(fields: [commentId], references: [id], onDelete: Cascade)
+  content     String
+  editedById  String?
+  createdAt   DateTime @default(now())
+
+  @@index([commentId, createdAt])
 }
 
 model CommentAttachment {
@@ -298,6 +347,7 @@ model Notification {
 
   @@index([userId, createdAt])
   @@index([userId, read])
+  @@index([createdAt])
 }
 
 model ShareLink {

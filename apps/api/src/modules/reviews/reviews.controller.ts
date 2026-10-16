@@ -3,7 +3,7 @@ import * as reviewService from "./reviews.service"
 import { authorizedScope } from "../../middleware/authorize.middleware"
 import { respondWithError } from "../../lib/http"
 import { recordAudit, requestIp } from "../audit/audit.service"
-import { NotificationService } from "../notifications/notification.service"
+import * as notificationService from "../notifications/notification.service"
 import { prisma } from "../../lib/prisma"
 import { AuthenticatedUser } from "../../types"
 
@@ -24,7 +24,7 @@ const notifyProject = async (
 	})
 	if (!version) return
 
-	NotificationService.createProjectNotification({
+	notificationService.createProjectNotification({
 		projectId: version.image.projectId,
 		excludeUserIds: [actor.id],
 		content: `${actor.name || actor.email} ${describeDecision(decision)} ${version.image.name} (${version.versionName})`,
@@ -111,11 +111,19 @@ export const setDueDate = async (
 	res: Response
 ): Promise<void> => {
 	try {
+		const { userId, projectId } = authorizedScope(res)
 		const { dueAt } = req.body
 		await reviewService.setDueDate(
 			req.params.versionId,
 			dueAt ? new Date(dueAt) : null
 		)
+		await recordAudit({
+			action: "review.due_date_changed",
+			targetType: "imageVersion",
+			targetId: req.params.versionId,
+			actorId: userId,
+			metadata: { projectId, dueAt: dueAt ?? null },
+		})
 		res.status(200).json({ dueAt: dueAt ?? null })
 	} catch (error) {
 		respondWithError(res, error, "set review due date")

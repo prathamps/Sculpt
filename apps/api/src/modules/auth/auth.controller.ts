@@ -1,20 +1,14 @@
 import { Request, Response } from "express"
-import { registerUser, loginUser } from "./auth.service"
+import { registerUser } from "./auth.service"
+import { checkPassword, lockedOutMessage } from "./credentials.service"
+import { beginSignIn } from "./mfa.controller"
 import { Prisma } from "@prisma/client"
 import { oauthProviders } from "./passport"
 import { AuthenticatedUser } from "../../types"
 import { recordAudit, requestIp } from "../audit/audit.service"
-import {
-	SESSION_COOKIE,
-	clearSessionCookie,
-	setSessionCookie,
-} from "../../lib/cookies"
+import { SESSION_COOKIE, clearSessionCookie } from "../../lib/cookies"
 import { verifySessionToken } from "../../lib/tokens"
-import {
-	USER_SESSION_LIFETIME_MS,
-	issueSession,
-	revokeSession,
-} from "./session.service"
+import { revokeSession } from "./session.service"
 import {
 	completePasswordReset as completePasswordResetWithToken,
 	requestPasswordReset as requestPasswordResetForEmail,
@@ -26,14 +20,6 @@ const FRONTEND_URL =
 	process.env.FRONTEND_URL ||
 	process.env.NEXT_PUBLIC_APP_URL ||
 	"http://localhost:3000"
-
-const setAuthCookie = (
-	res: Response,
-	user: { id: string; tokenVersion: number }
-) => {
-	const { token } = issueSession(user, "user")
-	setSessionCookie(res, SESSION_COOKIE, token, USER_SESSION_LIFETIME_MS)
-}
 
 export const register = async (req: Request, res: Response) => {
 	try {
@@ -59,27 +45,31 @@ export const register = async (req: Request, res: Response) => {
 
 export const login = async (req: Request, res: Response) => {
 	try {
-		const user = await loginUser(req.body)
-		if (!user) {
+		const check = await checkPassword(req.body.email, req.body.password)
+		if (check.outcome === "locked") {
 			await recordAudit({
 				action: "user.login_failed",
 				targetType: "user",
-				metadata: { email: req.body?.email },
-				ipAddress: requestIp(req),
+				metadata: { email: req.body.email, reason: "locked" },
+			})
+			return res.status(429).json({ message: lockedOutMessage(check.lockedUntil) })
+		}
+		if (check.outcome === "invalid") {
+			await recordAudit({
+				action: "user.login_failed",
+				targetType: "user",
+				targetId: check.userId,
+				metadata: { email: req.body.email, reason: "invalid_credentials" },
 			})
 			return res.status(401).json({ message: "Invalid credentials" })
 		}
 
-		setAuthCookie(res, user)
-		await recordAudit({
-			action: "user.login_succeeded",
-			targetType: "user",
-			targetId: user.id,
-			actorId: user.id,
-			ipAddress: requestIp(req),
-		})
-
-		return res.status(200).json({ message: "Logged in successfully" })
+		const step = await beginSignIn(res, check.user, "user", "password")
+		return res.status(200).json(
+			step === "challenge"
+				? { mfaRequired: true, message: "Enter the code from your authenticator app." }
+				: { message: "Logged in successfully" }
+		)
 	} catch (error) {
 		return respondWithError(res, error, "log in")
 	}
@@ -147,18 +137,26 @@ export const getOAuthProviders = (_req: Request, res: Response) => {
 	return res.status(200).json(oauthProviders)
 }
 
-export const oauthCallback = (req: Request, res: Response) => {
+export const oauthCallback = async (req: Request, res: Response) => {
 	const user = req.user as AuthenticatedUser | undefined
 	if (!user) {
 		return res.redirect(`${FRONTEND_URL}/login?error=oauth`)
 	}
-	setAuthCookie(res, user)
-	void recordAudit({
-		action: "user.oauth_login",
-		targetType: "user",
-		targetId: user.id,
-		actorId: user.id,
-		ipAddress: requestIp(req),
-	})
-	return res.redirect(`${FRONTEND_URL}/oauth/callback`)
+	try {
+		await recordAudit({
+			action: "user.oauth_login",
+			targetType: "user",
+			targetId: user.id,
+			actorId: user.id,
+		})
+		const step = await beginSignIn(res, user, "user", "oauth")
+		return res.redirect(
+			step === "challenge"
+				? `${FRONTEND_URL}/login/two-factor`
+				: `${FRONTEND_URL}/oauth/callback`
+		)
+	} catch (error) {
+		logger.error("OAuth sign-in failed", error)
+		return res.redirect(`${FRONTEND_URL}/login?error=oauth`)
+	}
 }

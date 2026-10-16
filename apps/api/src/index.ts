@@ -4,12 +4,16 @@ dotenv.config()
 
 import http from "http"
 import { createApp } from "./app"
-import { assertStartupConfiguration } from "./lib/config"
+import { assertStartupConfiguration, startupWarnings } from "./lib/config"
 import { logger } from "./lib/logger"
-import { attachRealtime } from "./realtime/socket"
-import { failAbandonedProxyJobs } from "./modules/media/video-pipeline"
+import { attachRealtime, io } from "./realtime/socket"
+import { startRenditionMaintenance } from "./modules/media/rendition-recovery"
 import { startSessionMaintenance } from "./modules/auth/session.maintenance"
 import { startStagingReaper } from "./middleware/upload.middleware"
+import { notificationQueueDrained } from "./modules/notifications/notification.service"
+import { startNotificationRetention } from "./modules/notifications/notification.maintenance"
+import { startAuditRetention } from "./modules/audit/audit.maintenance"
+import { startInvitationMaintenance } from "./modules/projects/invitation.maintenance"
 import "./lib/redis"
 
 try {
@@ -18,6 +22,8 @@ try {
 	logger.error("Refusing to start with an unsafe configuration", error)
 	process.exit(1)
 }
+
+startupWarnings().forEach((warning) => logger.warn(warning))
 
 const port = Number(process.env.PORT) || 3001
 
@@ -32,14 +38,17 @@ const shutdownGraceMs = (): number => {
 
 const shutdownGracefully = (server: http.Server, signal: string): void => {
 	logger.info("Received shutdown signal, draining connections", { signal })
-	server.close(() => {
-		logger.info("Server drained, exiting")
-		process.exit(0)
-	})
 	setTimeout(() => {
 		logger.warn("Shutdown grace period elapsed, exiting with work in flight")
 		process.exit(1)
 	}, shutdownGraceMs()).unref()
+	io.disconnectSockets(true)
+	server.close(() => {
+		void notificationQueueDrained().finally(() => {
+			logger.info("Server drained, exiting")
+			process.exit(0)
+		})
+	})
 }
 
 const start = async (): Promise<void> => {
@@ -47,10 +56,11 @@ const start = async (): Promise<void> => {
 
 	await attachRealtime(server)
 
-	failAbandonedProxyJobs().catch((error) =>
-		logger.error("Proxy job recovery failed", error)
-	)
+	await startRenditionMaintenance()
 	startSessionMaintenance()
+	startNotificationRetention()
+	startAuditRetention()
+	startInvitationMaintenance()
 	startStagingReaper()
 
 	process.on("SIGTERM", () => shutdownGracefully(server, "SIGTERM"))

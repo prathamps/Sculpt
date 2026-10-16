@@ -1,13 +1,14 @@
 import { CookieOptions, Response } from "express"
-import { isProduction } from "./config"
+import { usesSecureCookies } from "./config"
 
 export const SESSION_COOKIE = "token"
 export const ADMIN_SESSION_COOKIE = "admin_token"
+export const MFA_CHALLENGE_COOKIE = "mfa_challenge"
 
 const sessionCookieAttributes = (): CookieOptions => ({
 	httpOnly: true,
-	secure: isProduction(),
-	sameSite: isProduction() ? "none" : "lax",
+	secure: usesSecureCookies(),
+	sameSite: usesSecureCookies() ? "none" : "lax",
 	path: "/",
 })
 

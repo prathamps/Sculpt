@@ -10,7 +10,11 @@ import {
 	useMemo,
 } from "react"
 import { useRouter } from "next/navigation"
-import { SESSION_EXPIRED_EVENT, api } from "@/lib/api"
+import {
+	MFA_ENROLLMENT_REQUIRED_EVENT,
+	SESSION_EXPIRED_EVENT,
+	api,
+} from "@/lib/api"
 import { ignoreFailure } from "@/lib/errors"
 import { toast } from "sonner"
 
@@ -37,6 +41,8 @@ interface AuthContextType {
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined)
+
+const TWO_FACTOR_SETTINGS_PATH = "/account"
 
 export const safeDestination = (destination?: string | null): string =>
 	destination && destination.startsWith("/") && !destination.startsWith("//")
@@ -90,6 +96,18 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 		window.addEventListener(SESSION_EXPIRED_EVENT, endExpiredSession)
 		return () =>
 			window.removeEventListener(SESSION_EXPIRED_EVENT, endExpiredSession)
+	}, [router])
+
+	useEffect(() => {
+		const sendToEnrollment = () => {
+			if (window.location.pathname.startsWith(TWO_FACTOR_SETTINGS_PATH)) return
+			toast.info("Your organisation requires two-factor authentication. Turn it on to continue.")
+			router.push(`${TWO_FACTOR_SETTINGS_PATH}#two-factor`)
+		}
+
+		window.addEventListener(MFA_ENROLLMENT_REQUIRED_EVENT, sendToEnrollment)
+		return () =>
+			window.removeEventListener(MFA_ENROLLMENT_REQUIRED_EVENT, sendToEnrollment)
 	}, [router])
 
 	const logout = useCallback((): void => {

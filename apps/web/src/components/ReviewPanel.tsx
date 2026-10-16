@@ -12,6 +12,8 @@ import { describeError } from "@/lib/errors"
 import { cn } from "@/lib/utils"
 import { Review, ReviewDecisionValue, ReviewStatus, User } from "@/types"
 
+const DELETED_REVIEWER = "Deleted account"
+
 interface ReviewPanelProps {
 	imageVersionId: string
 	canDecide: boolean
@@ -99,7 +101,7 @@ export function ReviewPanel({
 	}, [load])
 
 	const myReview = summary?.reviews.find(
-		(review) => review.user.id === currentUser?.id
+		(review) => !!review.user && review.user.id === currentUser?.id
 	)
 
 	const decide = async (decision: ReviewDecisionValue) => {
@@ -168,14 +170,16 @@ export function ReviewPanel({
 							<UserAvatar
 								className="h-6 w-6 flex-shrink-0"
 								fallbackClassName="text-[10px]"
-								name={review.user.name}
-								email={review.user.email}
-								avatarUrl={review.user.avatarUrl}
+								name={review.user?.name ?? DELETED_REVIEWER}
+								email={review.user?.email}
+								avatarUrl={review.user?.avatarUrl}
 							/>
 							<div className="min-w-0 flex-1">
 								<p className="text-xs">
 									<span className="font-medium">
-										{review.user.name || review.user.email}
+										{review.user
+											? review.user.name || review.user.email
+											: DELETED_REVIEWER}
 									</span>{" "}
 									<span className="text-muted-foreground">
 										{review.decision === "APPROVED"

@@ -6,6 +6,28 @@ export const isProduction = (): boolean => process.env.NODE_ENV === "production"
 
 export class ConfigurationError extends Error {}
 
+export const servesOverHttps = (): boolean => {
+	const frontend = process.env.FRONTEND_URL?.trim().toLowerCase()
+	if (!frontend) return isProduction()
+	return frontend.startsWith("https://")
+}
+
+export const usesSecureCookies = (): boolean =>
+	isProduction() && servesOverHttps()
+
+const LOOPBACK_HOSTS = new Set(["localhost", "127.0.0.1", "[::1]"])
+
+const frontendIsLoopback = (): boolean => {
+	try {
+		return LOOPBACK_HOSTS.has(new URL(process.env.FRONTEND_URL ?? "").hostname)
+	} catch {
+		return false
+	}
+}
+
+export const insecureHttpAllowed = (): boolean =>
+	process.env.ALLOW_INSECURE_HTTP?.trim().toLowerCase() === "true"
+
 export const jwtSecret = (): string => {
 	const configured = process.env.JWT_SECRET?.trim()
 
@@ -29,8 +51,35 @@ export const jwtSecret = (): string => {
 	return configured
 }
 
+export const startupWarnings = (): string[] => {
+	const warnings: string[] = []
+	if (isProduction() && process.env.FRONTEND_URL && !servesOverHttps()) {
+		warnings.push(
+			"FRONTEND_URL is plain HTTP, so session cookies are sent without the Secure flag and anyone on the network can read them. Serve Sculpt over HTTPS (see the tls profile in docker-compose.selfhost.yml)."
+		)
+	}
+	if (isProduction() && !process.env.MFA_ENCRYPTION_KEY?.trim()) {
+		warnings.push(
+			"MFA_ENCRYPTION_KEY is not set, so two-factor secrets are encrypted with a key derived from JWT_SECRET. Rotating JWT_SECRET would then disable everyone's two-factor setup. Generate one with: openssl rand -base64 32"
+		)
+	}
+	return warnings
+}
+
 export const assertStartupConfiguration = (): void => {
 	jwtSecret()
+
+	if (
+		isProduction() &&
+		process.env.FRONTEND_URL &&
+		!servesOverHttps() &&
+		!frontendIsLoopback() &&
+		!insecureHttpAllowed()
+	) {
+		throw new ConfigurationError(
+			"FRONTEND_URL is plain HTTP on a network address. Serve Sculpt over HTTPS, or set ALLOW_INSECURE_HTTP=true to accept that sessions travel unencrypted."
+		)
+	}
 
 	if (isProduction() && !process.env.FRONTEND_URL) {
 		throw new ConfigurationError(

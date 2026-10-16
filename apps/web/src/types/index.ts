@@ -76,7 +76,7 @@ export interface Review {
 	note?: string | null
 	createdAt: string
 	updatedAt: string
-	user: User
+	user: User | null
 }
 
 export interface Image {
@@ -132,11 +132,14 @@ export interface Comment {
 	modelAnchor?: ModelAnchor | null
 	createdAt: string
 	updatedAt: string
+	editedAt?: string | null
 }
 
 export interface Project {
 	id: string
 	name: string
+	allowDownloads?: boolean
+	watermarkViewers?: boolean
 	coverImage: Image | null
 	imageCount: number
 	members: ProjectMember[]

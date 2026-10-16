@@ -78,6 +78,7 @@ interface VideoAnnotationCanvasProps {
 	initialDuration?: number | null
 	canDraw?: boolean
 	enableShortcuts?: boolean
+	canExportFrames?: boolean
 }
 
 const PLAYHEAD_PUBLISH_INTERVAL_SECONDS = 0.1
@@ -99,6 +100,7 @@ export function VideoAnnotationCanvas({
 	initialDuration = null,
 	canDraw = true,
 	enableShortcuts = true,
+	canExportFrames = false,
 }: VideoAnnotationCanvasProps) {
 	const containerRef = useRef<HTMLDivElement>(null)
 	const videoRef = useRef<HTMLVideoElement>(null)
@@ -587,15 +589,17 @@ export function VideoAnnotationCanvas({
 					aria-label="Volume"
 					className="mb-3 hidden w-16 accent-primary sm:block"
 				/>
-				<Button
-					size="icon"
-					variant="ghost"
-					className="h-8 w-8"
-					onClick={downloadFrame}
-					aria-label="Download annotated frame as PNG"
-				>
-					<Camera className="h-4 w-4" aria-hidden="true" />
-				</Button>
+				{canExportFrames && (
+					<Button
+						size="icon"
+						variant="ghost"
+						className="h-8 w-8"
+						onClick={downloadFrame}
+						aria-label="Download annotated frame as PNG"
+					>
+						<Camera className="h-4 w-4" aria-hidden="true" />
+					</Button>
+				)}
 				<Button
 					size="icon"
 					variant="ghost"

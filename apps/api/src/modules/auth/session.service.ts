@@ -1,4 +1,5 @@
 import { prisma } from "../../lib/prisma"
+import { TtlCache } from "../../lib/ttl-cache"
 import {
 	IssuedToken,
 	SessionClaims,
@@ -7,7 +8,18 @@ import {
 	verifySessionToken,
 } from "../../lib/tokens"
 
-export const USER_SESSION_LIFETIME_MS = 3600000
+const DEFAULT_IDLE_TIMEOUT_MINUTES = 60
+const MINIMUM_IDLE_TIMEOUT_MINUTES = 5
+const MAXIMUM_IDLE_TIMEOUT_MINUTES = 24 * 60
+
+export const userSessionLifetimeMs = (): number => {
+	const configured = Number(process.env.SESSION_IDLE_TIMEOUT_MINUTES)
+	const minutes = Number.isFinite(configured) && configured > 0
+		? Math.min(Math.max(configured, MINIMUM_IDLE_TIMEOUT_MINUTES), MAXIMUM_IDLE_TIMEOUT_MINUTES)
+		: DEFAULT_IDLE_TIMEOUT_MINUTES
+	return minutes * 60000
+}
+const VERIFIED_SESSION_CACHE_TTL_MS = 5000
 export const ADMIN_SESSION_LIFETIME_MS = 8 * 3600000
 
 const DEFAULT_ABSOLUTE_SESSION_DAYS = 7
@@ -22,7 +34,7 @@ export const absoluteSessionLifetimeMs = (): number => {
 }
 
 export const sessionLifetimeMs = (kind: SessionKind): number =>
-	kind === "admin" ? ADMIN_SESSION_LIFETIME_MS : USER_SESSION_LIFETIME_MS
+	kind === "admin" ? ADMIN_SESSION_LIFETIME_MS : userSessionLifetimeMs()
 
 export const issueSession = (
 	subject: { id: string; tokenVersion: number },
@@ -51,7 +63,35 @@ export const isSessionRevoked = async (jti: string): Promise<boolean> => {
 	return !!revoked
 }
 
+const findSessionUser = (userId: string) =>
+	prisma.user.findUnique({ where: { id: userId } })
+
+export type SessionUser = NonNullable<Awaited<ReturnType<typeof findSessionUser>>>
+
+const verifiedSessions = new TtlCache<SessionUser>(VERIFIED_SESSION_CACHE_TTL_MS)
+
+export const forgetCachedSessions = (userId: string): void => {
+	verifiedSessions.deleteWhere((user) => user.id === userId)
+}
+
+export const clearSessionCache = (): void => verifiedSessions.clear()
+
+export const userForSession = async (
+	claims: Pick<SessionClaims, "id" | "jti" | "ver">
+): Promise<SessionUser | null> => {
+	const cached = verifiedSessions.get(claims.jti)
+	if (cached) return cached.tokenVersion === claims.ver ? cached : null
+
+	if (await isSessionRevoked(claims.jti)) return null
+	const user = await findSessionUser(claims.id)
+	if (!user || user.tokenVersion !== claims.ver) return null
+
+	verifiedSessions.set(claims.jti, user)
+	return user
+}
+
 export const revokeSession = async (claims: SessionClaims): Promise<void> => {
+	verifiedSessions.delete(claims.jti)
 	await prisma.revokedSession.upsert({
 		where: { jti: claims.jti },
 		update: {},
@@ -63,6 +103,19 @@ export const revokeSession = async (claims: SessionClaims): Promise<void> => {
 	})
 }
 
+export const revokeTokenId = async (
+	jti: string,
+	userId: string,
+	lifetimeMs: number
+): Promise<void> => {
+	verifiedSessions.delete(jti)
+	await prisma.revokedSession.upsert({
+		where: { jti },
+		update: {},
+		create: { jti, userId, expiresAt: new Date(Date.now() + lifetimeMs) },
+	})
+}
+
 export const revokeAllSessionsForUser = async (
 	userId: string
 ): Promise<void> => {
@@ -70,6 +123,7 @@ export const revokeAllSessionsForUser = async (
 		where: { id: userId },
 		data: { tokenVersion: { increment: 1 } },
 	})
+	forgetCachedSessions(userId)
 }
 
 export const pruneExpiredRevocations = async (): Promise<number> => {

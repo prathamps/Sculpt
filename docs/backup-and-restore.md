@@ -125,12 +125,9 @@ docker compose -f docker-compose.selfhost.yml exec -T postgres \
 ## Data retention
 
 Audit log entries and their source IP addresses are kept indefinitely by
-default. If your compliance posture requires trimming them, run a periodic
-delete — the table is indexed on `createdAt`:
-
-```sql
-DELETE FROM "AuditLog" WHERE "createdAt" < NOW() - INTERVAL '400 days';
-```
+default. If your compliance posture requires trimming them, set
+`AUDIT_RETENTION_DAYS` and the API deletes older entries once a day. In-app
+notifications are pruned after `NOTIFICATION_RETENTION_DAYS` (default 90).
 
 Users can export their own data (`Account → Download my data`) and delete their
 account, which removes their profile, comments and reviews, and any project

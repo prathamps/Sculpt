@@ -2,7 +2,7 @@
 
 import { Button } from "./ui/button"
 import { FileCard } from "./FileCard"
-import { Project, Image, MediaType } from "@/types"
+import { Project } from "@/types"
 import { useRouter } from "next/navigation"
 import { useRovingGrid } from "@/hooks/useRovingGrid"
 import {
@@ -19,8 +19,9 @@ import {
 	
 	X,
 	Search,
+	Loader2,
 } from "lucide-react"
-import { useState, useMemo, useEffect } from "react"
+import { useState, useEffect, useCallback } from "react"
 import { cn } from "@/lib/utils"
 import {
 	DropdownMenu,
@@ -37,10 +38,14 @@ import { UserAvatar } from "@/components/UserAvatar"
 import { FolderBrowser } from "./FolderBrowser"
 import { SelectionToolbar } from "./SelectionToolbar"
 import { FolderNode } from "@/hooks/useProjectFolders"
+import { useProjectMedia } from "@/hooks/useProjectMedia"
+import { useDebouncedValue } from "@/hooks/useDebouncedValue"
+import { MediaFileType, MediaSort } from "@/lib/media-list"
+import { LoadMoreTrigger } from "./LoadMoreTrigger"
 
 interface ProjectContentViewProps {
 	project: Project | null
-	images: Image[]
+	mediaRevision: number
 	onUploadClick: () => void
 	onProjectChanged: () => void
 	currentFolderId: string | null
@@ -50,28 +55,19 @@ interface ProjectContentViewProps {
 	canEdit: boolean
 }
 
-type FileType = "image" | "video" | "pdf" | "all"
-type SortOption = "newest" | "oldest" | "a-z" | "z-a"
-
-const fileMediaType = (file: Image): MediaType =>
-	file.latestVersion?.mediaType ?? file.versions?.[0]?.mediaType ?? "IMAGE"
-
-const FILE_TYPE_LABELS: Record<FileType, string> = {
+const FILE_TYPE_LABELS: Record<MediaFileType, string> = {
 	all: "All files",
 	image: "Images only",
 	video: "Videos only",
 	pdf: "PDFs only",
+	model: "3D models only",
 }
 
-const MEDIA_FOR_FILTER: Record<Exclude<FileType, "all">, MediaType> = {
-	image: "IMAGE",
-	video: "VIDEO",
-	pdf: "PDF",
-}
+const SEARCH_DEBOUNCE_MS = 250
 
 export function ProjectContentView({
 	project,
-	images,
+	mediaRevision,
 	onUploadClick,
 	onProjectChanged,
 	currentFolderId,
@@ -82,63 +78,35 @@ export function ProjectContentView({
 }: ProjectContentViewProps) {
 	const router = useRouter()
 	const [viewMode, setViewMode] = useState<"grid" | "list">("grid")
-	const [fileType, setFileType] = useState<FileType>("all")
-	const [sortBy, setSortBy] = useState<SortOption>("newest")
+	const [fileType, setFileType] = useState<MediaFileType>("all")
+	const [sortBy, setSortBy] = useState<MediaSort>("newest")
 	const [searchQuery, setSearchQuery] = useState("")
 	const [showFilterBar, setShowFilterBar] = useState(false)
 	const [selectedIds, setSelectedIds] = useState<string[]>([])
+	const debouncedSearch = useDebouncedValue(searchQuery, SEARCH_DEBOUNCE_MS)
 
-	const filesInFolder = useMemo(
-		() => images.filter((file) => (file.folderId ?? null) === currentFolderId),
-		[images, currentFolderId]
+	const media = useProjectMedia(
+		project?.id ?? null,
+		{
+			folderId: currentFolderId,
+			search: debouncedSearch,
+			fileType,
+			sort: sortBy,
+		},
+		mediaRevision
 	)
+	const files = media.images
+	const fileTypeCount = media.counts
+	const { refresh: refreshMedia, loadMore } = media
 
-	const filteredAndSortedFiles = useMemo(() => {
-		if (!project) return []
+	const handleMediaChanged = useCallback(() => {
+		void refreshMedia()
+		onProjectChanged()
+	}, [refreshMedia, onProjectChanged])
 
-		const filtered = filesInFolder.filter((file) => {
-			if (
-				searchQuery &&
-				!file.name.toLowerCase().includes(searchQuery.toLowerCase())
-			) {
-				return false
-			}
-			if (fileType === "all") return true
-			return fileMediaType(file) === MEDIA_FOR_FILTER[fileType]
-		})
-
-		return filtered.sort((a, b) => {
-			switch (sortBy) {
-				case "newest":
-					return (
-						new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
-					)
-				case "oldest":
-					return (
-						new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
-					)
-				case "a-z":
-					return a.name.localeCompare(b.name)
-				case "z-a":
-					return b.name.localeCompare(a.name)
-				default:
-					return 0
-			}
-		})
-	}, [project, filesInFolder, fileType, sortBy, searchQuery])
-
-	const fileTypeCount = useMemo(() => {
-		const counts = { total: 0, images: 0, videos: 0, pdfs: 0 }
-		if (!project) return counts
-		return filesInFolder.reduce((acc, file) => {
-			acc.total++
-			const media = fileMediaType(file)
-			if (media === "VIDEO") acc.videos++
-			else if (media === "PDF") acc.pdfs++
-			else acc.images++
-			return acc
-		}, counts)
-	}, [project, filesInFolder])
+	const handleLoadMore = useCallback(() => {
+		void loadMore()
+	}, [loadMore])
 
 	useEffect(() => {
 		setSelectedIds([])
@@ -155,9 +123,9 @@ export function ProjectContentView({
 	const clearSelection = () => setSelectedIds([])
 
 	const { getItemProps } = useRovingGrid<HTMLDivElement>({
-		itemCount: filteredAndSortedFiles.length,
+		itemCount: files.length,
 		onActivate: (index) => {
-			const file = filteredAndSortedFiles[index]
+			const file = files[index]
 			if (file && project) {
 				router.push(`/project/${project.id}/image/${file.id}`)
 			}
@@ -331,6 +299,13 @@ export function ProjectContentView({
 								>
 									PDFs only ({fileTypeCount.pdfs})
 								</DropdownMenuCheckboxItem>
+								<DropdownMenuCheckboxItem
+									checked={fileType === "model"}
+									onCheckedChange={() => setFileType("model")}
+									className="text-xs"
+								>
+									3D models only ({fileTypeCount.models})
+								</DropdownMenuCheckboxItem>
 							</DropdownMenuContent>
 						</DropdownMenu>
 
@@ -424,56 +399,84 @@ export function ProjectContentView({
 					folders={folders}
 					currentFolderId={currentFolderId}
 					onClear={clearSelection}
-					onChanged={onProjectChanged}
+					onChanged={handleMediaChanged}
 				/>
 			)}
 
 			<div className="flex items-center justify-between pb-4">
-				<h3 className="text-sm font-medium">
-					{filteredAndSortedFiles.length} file
-					{filteredAndSortedFiles.length !== 1 && "s"}
-					{filesInFolder.length !== filteredAndSortedFiles.length &&
-						` (filtered from ${filesInFolder.length})`}
+				<h3 className="text-sm font-medium" aria-live="polite">
+					{media.total} file
+					{media.total !== 1 && "s"}
+					{fileTypeCount.total !== media.total &&
+						` (filtered from ${fileTypeCount.total})`}
 				</h3>
 			</div>
 
-			{filesInFolder.length > 0 ? (
+			{media.isLoading && files.length === 0 ? (
+				<div className="flex items-center justify-center p-12">
+					<Loader2
+						className="h-6 w-6 animate-spin text-muted-foreground"
+						aria-hidden="true"
+					/>
+					<span className="sr-only">Loading files</span>
+				</div>
+			) : media.error && files.length === 0 ? (
+				<div className="flex flex-col items-center justify-center rounded-lg border border-dashed border-border bg-card/50 p-12 text-center">
+					<p className="text-sm text-destructive">{media.error}</p>
+					<Button
+						variant="outline"
+						className="mt-4"
+						onClick={() => void refreshMedia()}
+					>
+						Try again
+					</Button>
+				</div>
+			) : fileTypeCount.total > 0 ? (
 				<>
-					{filteredAndSortedFiles.length > 0 ? (
-						<div
-							role="list"
-							aria-label="Project files"
-							className={cn(
-								"grid gap-4",
-								viewMode === "grid"
-									? "grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5"
-									: "grid-cols-1"
+					{files.length > 0 ? (
+						<>
+							<div
+								role="list"
+								aria-label="Project files"
+								className={cn(
+									"grid gap-4",
+									viewMode === "grid"
+										? "grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5"
+										: "grid-cols-1"
+								)}
+							>
+								{files.map((image, index) => (
+									<div
+										key={image.id}
+										role="listitem"
+										aria-label={image.name}
+										className="rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+										{...getItemProps(index)}
+									>
+										<FileCard
+											file={image}
+											projectId={project.id}
+											onProjectChanged={handleMediaChanged}
+											viewMode={viewMode}
+											linkTabIndex={-1}
+											folders={folders}
+											canEdit={canEdit}
+											isSelected={selectedIds.includes(image.id)}
+											onToggleSelected={
+												canEdit ? () => toggleSelected(image.id) : undefined
+											}
+										/>
+									</div>
+								))}
+							</div>
+							{media.hasMore && (
+								<LoadMoreTrigger
+									onLoadMore={handleLoadMore}
+									isLoading={media.isLoadingMore}
+									label="Load more files"
+								/>
 							)}
-						>
-							{filteredAndSortedFiles.map((image, index) => (
-								<div
-									key={image.id}
-									role="listitem"
-									aria-label={image.name}
-									className="rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-									{...getItemProps(index)}
-								>
-									<FileCard
-										file={image}
-										projectId={project.id}
-										onProjectChanged={onProjectChanged}
-										viewMode={viewMode}
-										linkTabIndex={-1}
-										folders={folders}
-										canEdit={canEdit}
-										isSelected={selectedIds.includes(image.id)}
-										onToggleSelected={
-											canEdit ? () => toggleSelected(image.id) : undefined
-										}
-									/>
-								</div>
-							))}
-						</div>
+						</>
 					) : (
 						<div className="flex flex-col items-center justify-center rounded-lg border border-dashed border-border bg-card/50 p-12 text-center">
 							<div className="flex h-12 w-12 items-center justify-center rounded-full bg-muted/60">

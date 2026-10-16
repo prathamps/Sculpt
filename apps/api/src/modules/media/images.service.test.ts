@@ -6,6 +6,8 @@ vi.mock("../../lib/prisma", () => ({
 		image: {
 			create: vi.fn(),
 			findUnique: vi.fn(),
+			findMany: vi.fn(),
+			count: vi.fn(),
 			delete: vi.fn(),
 		},
 		imageVersion: {
@@ -19,6 +21,9 @@ vi.mock("../../lib/prisma", () => ({
 			createMany: vi.fn(),
 			deleteMany: vi.fn(),
 			findUnique: vi.fn(),
+		},
+		commentAttachment: {
+			findMany: vi.fn(),
 		},
 	},
 }))
@@ -38,6 +43,7 @@ import {
 	addImageVersion,
 	deleteImage,
 	deleteImageVersion,
+	listProjectMedia,
 } from "./images.service"
 
 const mocked = vi.mocked(prisma, true)
@@ -98,10 +104,10 @@ describe("addImagesToProject", () => {
 		expect(mocked.image.create).toHaveBeenCalledTimes(2)
 	})
 
-	it("records asset ownership so media stays authorized", async () => {
+	it("records which version and kind of file each stored asset is, so access can be authorized and audited", async () => {
 		mocked.image.create.mockResolvedValue({
 			versions: [
-				{ url: "uploads/a.png", thumbnailUrl: "uploads/a-t.jpg", proxyUrl: null },
+				{ id: "v1", url: "uploads/a.png", thumbnailUrl: "uploads/a-t.jpg", proxyUrl: null },
 			],
 		} as never)
 
@@ -112,8 +118,8 @@ describe("addImagesToProject", () => {
 		expect(mocked.mediaAsset.createMany).toHaveBeenCalledWith(
 			expect.objectContaining({
 				data: [
-					{ storedPath: "a.png", projectId: "p1" },
-					{ storedPath: "a-t.jpg", projectId: "p1" },
+					{ storedPath: "a.png", kind: "ORIGINAL", imageVersionId: "v1", projectId: "p1" },
+					{ storedPath: "a-t.jpg", kind: "THUMBNAIL", imageVersionId: "v1", projectId: "p1" },
 				],
 				skipDuplicates: true,
 			})
@@ -195,6 +201,10 @@ describe("addImageVersion", () => {
 })
 
 describe("deleteImage", () => {
+	beforeEach(() => {
+		mocked.commentAttachment.findMany.mockResolvedValue([])
+	})
+
 	it("removes every version file and its thumbnail when present", async () => {
 		mocked.image.findUnique.mockResolvedValue({
 			id: "img1",
@@ -226,9 +236,32 @@ describe("deleteImage", () => {
 			where: { storedPath: { in: ["v1.png"] } },
 		})
 	})
+
+	it("removes files attached to comments on any of its versions", async () => {
+		mocked.image.findUnique.mockResolvedValue({
+			id: "img1",
+			versions: [{ url: "uploads/v1.png", thumbnailUrl: null }],
+		} as never)
+		mocked.commentAttachment.findMany.mockResolvedValue([
+			{ url: "uploads/attached.pdf" },
+		] as never)
+		mocked.image.delete.mockResolvedValue({} as never)
+
+		await deleteImage("img1")
+
+		expect(mocked.commentAttachment.findMany).toHaveBeenCalledWith({
+			where: { comment: { imageVersion: { imageId: "img1" } } },
+			select: { url: true },
+		})
+		expect(mockedStorage.remove).toHaveBeenCalledWith("uploads/attached.pdf")
+	})
 })
 
 describe("deleteImageVersion", () => {
+	beforeEach(() => {
+		mocked.commentAttachment.findMany.mockResolvedValue([])
+	})
+
 	it("refuses to delete the only version", async () => {
 		mocked.imageVersion.findUnique.mockResolvedValue({
 			id: "v1",
@@ -258,5 +291,103 @@ describe("deleteImageVersion", () => {
 
 		expect(mockedStorage.remove).toHaveBeenCalledWith("uploads/v2.mp4")
 		expect(mockedStorage.remove).toHaveBeenCalledWith("uploads/v2-thumb.jpg")
+	})
+
+	it("removes files attached to the version comments", async () => {
+		mocked.imageVersion.findUnique.mockResolvedValue({
+			id: "v2",
+			imageId: "img1",
+			url: "uploads/v2.mp4",
+			thumbnailUrl: null,
+		} as never)
+		mocked.imageVersion.count.mockResolvedValue(2)
+		mocked.imageVersion.delete.mockResolvedValue({} as never)
+		mocked.commentAttachment.findMany.mockResolvedValue([
+			{ url: "uploads/ref.png" },
+		] as never)
+
+		await deleteImageVersion("v2")
+
+		expect(mocked.commentAttachment.findMany).toHaveBeenCalledWith({
+			where: { comment: { imageVersionId: "v2" } },
+			select: { url: true },
+		})
+		expect(mockedStorage.remove).toHaveBeenCalledWith("uploads/ref.png")
+	})
+})
+
+describe("listProjectMedia", () => {
+	beforeEach(() => {
+		mocked.image.count.mockResolvedValue(0)
+		mocked.image.findMany.mockResolvedValue([])
+	})
+
+	it("returns one page in the requested order instead of the whole project", async () => {
+		mocked.image.findMany.mockResolvedValue([
+			{ id: "i1", name: "a.png", versions: [{ id: "v3" }] },
+		] as never)
+		mocked.image.count.mockResolvedValueOnce(130)
+
+		const result = await listProjectMedia("p1", {
+			folderId: null,
+			sort: "a-z",
+			page: { page: 2, pageSize: 60 },
+		})
+
+		expect(mocked.image.findMany).toHaveBeenCalledWith(
+			expect.objectContaining({
+				where: { projectId: "p1", folderId: null },
+				orderBy: [{ name: "asc" }, { id: "asc" }],
+				skip: 60,
+				take: 60,
+			})
+		)
+		expect(result.items[0].latestVersion).toEqual({ id: "v3" })
+		expect(result.total).toBe(130)
+		expect(result.totalPages).toBe(3)
+	})
+
+	it("filters by name and media type on the server", async () => {
+		await listProjectMedia("p1", {
+			search: "hero",
+			mediaType: "VIDEO",
+			sort: "newest",
+			page: { page: 1, pageSize: 60 },
+		})
+
+		expect(mocked.image.findMany).toHaveBeenCalledWith(
+			expect.objectContaining({
+				where: {
+					projectId: "p1",
+					name: { contains: "hero", mode: "insensitive" },
+					versions: { some: { mediaType: "VIDEO" } },
+				},
+			})
+		)
+	})
+
+	it("counts each media type across the folder regardless of the active filter", async () => {
+		mocked.image.count.mockImplementation((async (args: {
+			where: { versions?: { some: { mediaType: string } }; name?: unknown }
+		}) => {
+			if (args.where.name) return 1
+			const type = args.where.versions?.some.mediaType
+			return { VIDEO: 3, PDF: 2, MODEL: 1 }[type ?? ""] ?? 10
+		}) as never)
+
+		const result = await listProjectMedia("p1", {
+			search: "x",
+			sort: "newest",
+			page: { page: 1, pageSize: 60 },
+		})
+
+		expect(result.counts).toEqual({
+			total: 10,
+			images: 4,
+			videos: 3,
+			pdfs: 2,
+			models: 1,
+		})
+		expect(result.total).toBe(1)
 	})
 })

@@ -88,7 +88,10 @@ const buildProxy = async (job: VideoProxyJob): Promise<void> => {
 		})
 
 		await recordProjectAssets(
-			[proxyUrl, thumbnailUrl],
+			[
+				{ url: proxyUrl, kind: "PROXY", imageVersionId: version.id },
+				{ url: thumbnailUrl, kind: "THUMBNAIL", imageVersionId: version.id },
+			],
 			version.image.projectId
 		)
 		emitVersionUpdated(version)
@@ -108,5 +111,3 @@ const queue = createRenditionQueue<VideoProxyJob>({
 export const enqueueVideoProxy = (job: VideoProxyJob): void => queue.enqueue(job)
 
 export const videoQueueDepth = (): number => queue.depth()
-
-export { failAbandonedProxyJobs } from "./rendition-queue"

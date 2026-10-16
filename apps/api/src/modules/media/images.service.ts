@@ -2,7 +2,13 @@ import { Image, ImageVersion, MediaType, Prisma, ProxyStatus } from "@prisma/cli
 import { prisma } from "../../lib/prisma"
 import { storage } from "../../storage"
 import { ValidationError } from "../../lib/errors"
-import { forgetProjectAssets, recordProjectAssets } from "./media-access.service"
+import {
+	forgetProjectAssets,
+	recordProjectAssets,
+	versionAssets,
+} from "./media-access.service"
+import { PageRequest, Paginated, paginated, skipTake } from "../../lib/pagination"
+import { MediaSort } from "./media.schema"
 
 const VERSION_NUMBER_CONFLICT = "P2002"
 const MAX_VERSION_NUMBER_ATTEMPTS = 5
@@ -34,6 +40,16 @@ const assetUrlsOf = (
 	[version.url, version.thumbnailUrl, version.proxyUrl].filter(
 		(url): url is string => !!url
 	)
+
+const commentAttachmentUrls = async (
+	where: Prisma.CommentAttachmentWhereInput
+): Promise<string[]> => {
+	const attachments = await prisma.commentAttachment.findMany({
+		where,
+		select: { url: true },
+	})
+	return attachments.map((attachment) => attachment.url)
+}
 
 export const addImagesToProject = async (
 	images: ImagePayload[]
@@ -68,7 +84,7 @@ export const addImagesToProject = async (
 	)
 
 	await recordProjectAssets(
-		created.flatMap((image) => image.versions.flatMap(assetUrlsOf)),
+		created.flatMap((image) => image.versions.flatMap(versionAssets)),
 		images[0].projectId
 	)
 
@@ -94,6 +110,97 @@ export const getImagesForProject = async (
 		...image,
 		latestVersion: image.versions[0] || null,
 	}))
+}
+
+const MEDIA_ORDER: Record<MediaSort, Prisma.ImageOrderByWithRelationInput[]> = {
+	newest: [{ createdAt: "desc" }, { id: "desc" }],
+	oldest: [{ createdAt: "asc" }, { id: "asc" }],
+	"a-z": [{ name: "asc" }, { id: "asc" }],
+	"z-a": [{ name: "desc" }, { id: "desc" }],
+}
+
+const COUNTED_MEDIA_TYPES = [MediaType.VIDEO, MediaType.PDF, MediaType.MODEL] as const
+
+export interface MediaCounts {
+	total: number
+	images: number
+	videos: number
+	pdfs: number
+	models: number
+}
+
+export interface MediaListQuery {
+	folderId?: string | null
+	search?: string
+	mediaType?: MediaType
+	sort: MediaSort
+	page: PageRequest
+}
+
+export type ImageWithLatestVersion = Image & { latestVersion: ImageVersion | null }
+
+const ofMediaType = (mediaType: MediaType): Prisma.ImageWhereInput => ({
+	versions: { some: { mediaType } },
+})
+
+const countMediaByType = async (
+	scope: Prisma.ImageWhereInput
+): Promise<MediaCounts> => {
+	const [total, videos, pdfs, models] = await Promise.all([
+		prisma.image.count({ where: scope }),
+		...COUNTED_MEDIA_TYPES.map((mediaType) =>
+			prisma.image.count({ where: { ...scope, ...ofMediaType(mediaType) } })
+		),
+	])
+	return {
+		total,
+		videos,
+		pdfs,
+		models,
+		images: Math.max(0, total - videos - pdfs - models),
+	}
+}
+
+export const listProjectMedia = async (
+	projectId: string,
+	query: MediaListQuery
+): Promise<Paginated<ImageWithLatestVersion> & { counts: MediaCounts }> => {
+	const scope: Prisma.ImageWhereInput = {
+		projectId,
+		...(query.folderId === undefined ? {} : { folderId: query.folderId }),
+	}
+	const where: Prisma.ImageWhereInput = {
+		...scope,
+		...(query.search
+			? { name: { contains: query.search, mode: "insensitive" } }
+			: {}),
+		...(query.mediaType ? ofMediaType(query.mediaType) : {}),
+	}
+
+	const [total, images, counts] = await Promise.all([
+		prisma.image.count({ where }),
+		prisma.image.findMany({
+			where,
+			include: {
+				versions: { orderBy: { versionNumber: "desc" }, take: 1 },
+			},
+			orderBy: MEDIA_ORDER[query.sort],
+			...skipTake(query.page),
+		}),
+		countMediaByType(scope),
+	])
+
+	return {
+		...paginated(
+			images.map((image) => ({
+				...image,
+				latestVersion: image.versions[0] ?? null,
+			})),
+			total,
+			query.page
+		),
+		counts,
+	}
 }
 
 export const getImageById = async (
@@ -152,7 +259,7 @@ export const addImageVersion = async (
 				include: { image: { select: { projectId: true } } },
 			})
 
-			await recordProjectAssets(assetUrlsOf(version), version.image.projectId)
+			await recordProjectAssets(versionAssets(version), version.image.projectId)
 
 			return version
 		} catch (error) {
@@ -184,7 +291,12 @@ export const deleteImage = async (id: string): Promise<void> => {
 
 	if (!image) return
 
-	const urls = image.versions.flatMap(assetUrlsOf)
+	const urls = [
+		...image.versions.flatMap(assetUrlsOf),
+		...(await commentAttachmentUrls({
+			comment: { imageVersion: { imageId: id } },
+		})),
+	]
 
 	await prisma.image.delete({ where: { id } })
 	await forgetProjectAssets(urls)
@@ -206,7 +318,10 @@ export const deleteImageVersion = async (versionId: string): Promise<void> => {
 		throw new ValidationError("Cannot delete the only version of an image")
 	}
 
-	const urls = assetUrlsOf(version)
+	const urls = [
+		...assetUrlsOf(version),
+		...(await commentAttachmentUrls({ comment: { imageVersionId: versionId } })),
+	]
 
 	await prisma.imageVersion.delete({ where: { id: versionId } })
 	await forgetProjectAssets(urls)

@@ -31,6 +31,32 @@ export const loginSchema = z.object({
 
 export const adminLoginSchema = loginSchema
 
+const totpCode = z.string().trim().regex(/^\d{6}$/, "Enter the 6-digit code.")
+const recoveryCode = z.string().trim().min(8).max(32)
+
+export const secondFactorSchema = z
+	.object({
+		code: totpCode.optional(),
+		recoveryCode: recoveryCode.optional(),
+	})
+	.refine(
+		(factor) => !!factor.code || !!factor.recoveryCode,
+		"Enter a code from your authenticator app or a recovery code."
+	)
+
+export const enableMfaSchema = z.object({ code: totpCode })
+
+export const disableMfaSchema = z
+	.object({
+		password: z.string().min(1).max(200).optional(),
+		code: totpCode.optional(),
+		recoveryCode: recoveryCode.optional(),
+	})
+	.refine(
+		(factor) => !!factor.code || !!factor.recoveryCode,
+		"Enter a code from your authenticator app or a recovery code."
+	)
+
 export const requestPasswordResetSchema = z.object({
 	email: emailSchema,
 })

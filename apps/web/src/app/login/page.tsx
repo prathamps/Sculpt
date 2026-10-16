@@ -11,11 +11,14 @@ import { authToasts, errorUtils } from "@/lib/auth-toasts"
 import { ArrowLeft, Loader2 } from "lucide-react"
 import { Label } from "@/components/ui/label"
 import { OAuthButtons } from "@/components/OAuthButtons"
+import { TwoFactorChallengeForm } from "@/components/TwoFactorChallengeForm"
+import { toast } from "sonner"
 
 function LoginPageInner() {
 	const [email, setEmail] = useState("")
 	const [password, setPassword] = useState("")
 	const [isLoading, setIsLoading] = useState(false)
+	const [awaitingSecondFactor, setAwaitingSecondFactor] = useState(false)
 	const searchParams = useSearchParams()
 	const { login } = useAuth()
 	const nextDestination = searchParams.get("next")
@@ -43,6 +46,12 @@ function LoginPageInner() {
 			})
 
 			if (res.ok) {
+				const body = (await res.json().catch(() => null)) as { mfaRequired?: boolean } | null
+				if (body?.mfaRequired) {
+					setPassword("")
+					setAwaitingSecondFactor(true)
+					return
+				}
 				authToasts.showLoginSuccess()
 				login(nextDestination ?? undefined)
 			} else {
@@ -54,7 +63,11 @@ function LoginPageInner() {
 				}
 
 				const errorType = errorUtils.getLoginErrorType(res.status)
-				authToasts.showLoginError(errorType)
+				if (res.status === 429 && typeof errorResponse?.message === "string") {
+					toast.error(errorResponse.message)
+				} else {
+					authToasts.showLoginError(errorType)
+				}
 
 				console.error("Login failed:", {
 					status: res.status,
@@ -104,55 +117,67 @@ function LoginPageInner() {
 						</p>
 					</div>
 					<div className="rounded-lg border border-border/50 bg-card p-6 shadow-sm">
-						<form onSubmit={handleSubmit} className="space-y-4">
-							<div className="space-y-2">
-								<Label htmlFor="email">Email</Label>
-								<Input
-									type="email"
-									id="email"
-									placeholder="name@example.com"
-									required
-									value={email}
-									onChange={(e) => setEmail(e.target.value)}
-									className="bg-background/50"
-									autoComplete="email"
-									autoFocus
-								/>
-							</div>
-							<div className="space-y-2">
-								<div className="flex items-center justify-between">
-									<Label htmlFor="password">Password</Label>
-									<Link
-										href="/forgot-password"
-										className="text-xs text-primary hover:underline"
-									>
-										Forgot password?
-									</Link>
+						{awaitingSecondFactor ? (
+							<TwoFactorChallengeForm
+								onVerified={() => {
+									authToasts.showLoginSuccess()
+									login(nextDestination ?? undefined)
+								}}
+								onCancel={() => setAwaitingSecondFactor(false)}
+							/>
+						) : (
+							<>
+								<form onSubmit={handleSubmit} className="space-y-4">
+									<div className="space-y-2">
+										<Label htmlFor="email">Email</Label>
+										<Input
+											type="email"
+											id="email"
+											placeholder="name@example.com"
+											required
+											value={email}
+											onChange={(e) => setEmail(e.target.value)}
+											className="bg-background/50"
+											autoComplete="email"
+											autoFocus
+										/>
+									</div>
+									<div className="space-y-2">
+										<div className="flex items-center justify-between">
+											<Label htmlFor="password">Password</Label>
+											<Link
+												href="/forgot-password"
+												className="text-xs text-primary hover:underline"
+											>
+												Forgot password?
+											</Link>
+										</div>
+										<Input
+											type="password"
+											id="password"
+											required
+											value={password}
+											onChange={(e) => setPassword(e.target.value)}
+											className="bg-background/50"
+											autoComplete="current-password"
+										/>
+									</div>
+									<Button type="submit" className="w-full" disabled={isLoading}>
+										{isLoading ? (
+											<>
+												<Loader2 className="mr-2 h-4 w-4 animate-spin" aria-hidden="true" />
+												Signing in...
+											</>
+										) : (
+											"Sign In"
+										)}
+									</Button>
+								</form>
+								<div className="mt-4">
+									<OAuthButtons />
 								</div>
-								<Input
-									type="password"
-									id="password"
-									required
-									value={password}
-									onChange={(e) => setPassword(e.target.value)}
-									className="bg-background/50"
-									autoComplete="current-password"
-								/>
-							</div>
-							<Button type="submit" className="w-full" disabled={isLoading}>
-								{isLoading ? (
-									<>
-										<Loader2 className="mr-2 h-4 w-4 animate-spin" aria-hidden="true" />
-										Signing in...
-									</>
-								) : (
-									"Sign In"
-								)}
-							</Button>
-						</form>
-						<div className="mt-4">
-							<OAuthButtons />
-						</div>
+							</>
+						)}
 					</div>
 					<div className="mt-6 text-center text-sm">
 						Don&apos;t have an account?{" "}

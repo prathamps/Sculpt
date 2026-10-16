@@ -15,7 +15,6 @@ import { Paginated, api } from "@/lib/api"
 import { describeError } from "@/lib/errors"
 import { roleAtLeast } from "@/lib/utils"
 import { useProjectFolders } from "@/hooks/useProjectFolders"
-import { useProjectMedia } from "@/hooks/useProjectMedia"
 
 export default function ProjectPage() {
 	const { loading, isAuthenticated } = useAuth()
@@ -32,11 +31,7 @@ export default function ProjectPage() {
 	const [currentFolderId, setCurrentFolderId] = useState<string | null>(null)
 	const [role, setRole] = useState<ProjectRole | null>(null)
 	const { folders, refreshFolders } = useProjectFolders(projectId)
-	const {
-		images,
-		isLoading: isMediaLoading,
-		refresh: refreshMedia,
-	} = useProjectMedia(projectId, isAuthenticated)
+	const [mediaRevision, setMediaRevision] = useState(0)
 
 	const refreshProjectList = useCallback(async () => {
 		if (!isAuthenticated) return
@@ -64,12 +59,13 @@ export default function ProjectPage() {
 	}, [isAuthenticated, projectId, router])
 
 	const handleRefreshProjects = useCallback(async () => {
-		await Promise.all([
-			refreshProjectList(),
-			refreshSelectedProject(),
-			refreshMedia(),
-		])
-	}, [refreshProjectList, refreshSelectedProject, refreshMedia])
+		await Promise.all([refreshProjectList(), refreshSelectedProject()])
+	}, [refreshProjectList, refreshSelectedProject])
+
+	const handleProjectChanged = useCallback(() => {
+		void handleRefreshProjects()
+		refreshFolders()
+	}, [handleRefreshProjects, refreshFolders])
 
 	useEffect(() => {
 		if (isAuthenticated) {
@@ -128,19 +124,16 @@ export default function ProjectPage() {
 					onProjectChanged={refreshProjectList}
 				/>
 
-				{isProjectLoading || isMediaLoading ? (
+				{isProjectLoading ? (
 					<div className="flex flex-1 items-center justify-center">
 						<Loader2 className="h-6 w-6 animate-spin text-muted-foreground" aria-hidden="true" />
 					</div>
 				) : (
 					<ProjectContentView
 						project={selectedProject}
-						images={images}
+						mediaRevision={mediaRevision}
 						onUploadClick={() => setUploadModalOpen(true)}
-						onProjectChanged={() => {
-							void handleRefreshProjects()
-							refreshFolders()
-						}}
+						onProjectChanged={handleProjectChanged}
 						currentFolderId={currentFolderId}
 						onNavigateFolder={setCurrentFolderId}
 						folders={folders}
@@ -161,8 +154,8 @@ export default function ProjectPage() {
 					isOpen={isUploadModalOpen}
 					onClose={() => setUploadModalOpen(false)}
 					onUploadComplete={() => {
-						void handleRefreshProjects()
-						refreshFolders()
+						setMediaRevision((revision) => revision + 1)
+						handleProjectChanged()
 					}}
 					projectId={selectedProject?.id || null}
 					folderId={currentFolderId}

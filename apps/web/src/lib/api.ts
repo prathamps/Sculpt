@@ -1,10 +1,13 @@
 export const API_URL =
 	process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001"
 
+export const MFA_ENROLLMENT_REQUIRED = "MFA_ENROLLMENT_REQUIRED"
+
 export class ApiError extends Error {
 	constructor(
 		readonly status: number,
-		message: string
+		message: string,
+		readonly code: string | null = null
 	) {
 		super(message)
 		this.name = "ApiError"
@@ -31,20 +34,26 @@ const FALLBACK_MESSAGES: Record<number, string> = {
 	500: "Something went wrong on the server. Try again shortly.",
 }
 
-const jsonMessageOrNull = async (response: Response): Promise<string | null> => {
+interface ErrorBody {
+	message: string | null
+	code: string | null
+}
+
+const errorBodyOf = async (response: Response): Promise<ErrorBody> => {
 	try {
 		const body = await response.json()
-		return typeof body?.message === "string" && body.message ? body.message : null
+		return {
+			message: typeof body?.message === "string" && body.message ? body.message : null,
+			code: typeof body?.code === "string" ? body.code : null,
+		}
 	} catch {
-		return null
+		return { message: null, code: null }
 	}
 }
 
 const statusFallbackMessage = (status: number): string =>
 	FALLBACK_MESSAGES[status] || `Request failed with status ${status}.`
 
-const messageFor = async (response: Response): Promise<string> =>
-	(await jsonMessageOrNull(response)) ?? statusFallbackMessage(response.status)
 
 export interface RequestOptions {
 	method?: string
@@ -65,6 +74,7 @@ const SIGNED_OUT_PREFIXES = [
 	"/api/auth/providers",
 	"/api/auth/password-reset",
 	"/api/admin/login",
+	"/api/auth/mfa/verify",
 ]
 
 const SESSION_PROBE_PATHS = ["/api/users/profile", "/api/users/me"]
@@ -79,6 +89,13 @@ export const signalsLostSession = (status: number, path: string): boolean => {
 const announceLostSession = (): void => {
 	if (typeof window === "undefined") return
 	window.dispatchEvent(new Event(SESSION_EXPIRED_EVENT))
+}
+
+export const MFA_ENROLLMENT_REQUIRED_EVENT = "sculpt:mfa-enrollment-required"
+
+const announceEnrollmentRequired = (): void => {
+	if (typeof window === "undefined") return
+	window.dispatchEvent(new Event(MFA_ENROLLMENT_REQUIRED_EVENT))
 }
 
 export const apiRequest = async <T>(
@@ -107,7 +124,13 @@ export const apiRequest = async <T>(
 
 	if (!response.ok) {
 		if (signalsLostSession(response.status, path)) announceLostSession()
-		throw new ApiError(response.status, await messageFor(response))
+		const body = await errorBodyOf(response)
+		if (body.code === MFA_ENROLLMENT_REQUIRED) announceEnrollmentRequired()
+		throw new ApiError(
+			response.status,
+			body.message ?? statusFallbackMessage(response.status),
+			body.code
+		)
 	}
 
 	if (response.status === 204) return undefined as T

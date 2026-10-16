@@ -3,6 +3,7 @@ import bcrypt from "bcrypt"
 import { prisma } from "../../lib/prisma"
 import { ForbiddenError, ValidationError } from "../../lib/errors"
 import { recordAudit } from "../audit/audit.service"
+import { forgetCachedSessions } from "./session.service"
 
 export type SafeUser = Omit<User, "password">
 
@@ -10,11 +11,6 @@ interface RegisterUserInput {
 	email: string
 	password: string
 	name?: string
-}
-
-interface LoginUserInput {
-	email: string
-	password: string
 }
 
 export const registerUser = async (
@@ -30,24 +26,6 @@ export const registerUser = async (
 			provider: "local",
 		},
 	})
-
-	return user
-}
-
-export const loginUser = async (data: LoginUserInput): Promise<User | null> => {
-	const user = await prisma.user.findUnique({
-		where: {
-			email: data.email,
-		},
-		omit: { password: false },
-	})
-
-	if (!user) return null
-
-	if (!user.password) return null
-
-	const validPassword = await bcrypt.compare(data.password, user.password)
-	if (!validPassword) return null
 
 	return user
 }
@@ -115,28 +93,6 @@ export const findOrCreateOAuthUser = async (
 	return created
 }
 
-export const loginAdmin = async (
-	email: string,
-	password: string
-): Promise<User | null> => {
-	const user = await prisma.user.findUnique({
-		where: {
-			email,
-		},
-		omit: { password: false },
-	})
-
-	if (!user) return null
-	if (!user.password) return null
-
-	const validPassword = await bcrypt.compare(password, user.password)
-	if (!validPassword) return null
-
-	if (user.role !== UserRole.ADMIN) return null
-
-	return user
-}
-
 export const getUsersByRole = async (role: UserRole) => {
 	return prisma.user.findMany({
 		where: {
@@ -161,13 +117,15 @@ export const updateUserProfile = async (
 	if (name !== undefined && name.length === 0) {
 		throw new ValidationError("Name cannot be empty.")
 	}
-	return prisma.user.update({
+	const updated = await prisma.user.update({
 		where: { id: userId },
 		data: {
 			...(name !== undefined ? { name } : {}),
 			...(data.avatarUrl !== undefined ? { avatarUrl: data.avatarUrl } : {}),
 		},
 	})
+	forgetCachedSessions(userId)
+	return updated
 }
 
 export const changeUserPassword = async (
@@ -198,4 +156,5 @@ export const changeUserPassword = async (
 		where: { id: userId },
 		data: { password: hashed, tokenVersion: { increment: 1 } },
 	})
+	forgetCachedSessions(userId)
 }

@@ -9,6 +9,7 @@ vi.mock("../modules/projects/access", () => ({
 	canViewVersion: vi.fn(),
 	canViewInternalComments: vi.fn().mockResolvedValue(false),
 	isProjectMember: vi.fn(),
+	projectIdsForUser: vi.fn().mockResolvedValue([]),
 }))
 
 vi.mock("./socketAuth", () => ({
@@ -38,6 +39,7 @@ import {
 	canViewInternalComments,
 	canViewVersion,
 	isProjectMember,
+	projectIdsForUser,
 } from "../modules/projects/access"
 import { markOnline } from "../lib/presence"
 import { logger } from "../lib/logger"
@@ -107,6 +109,18 @@ describe("join", () => {
 
 		expect(fake.joined).toEqual(["user:u1"])
 		expect(mockedMarkOnline).toHaveBeenCalledWith("u1", "socket-1")
+	})
+
+	it("joins the room of every project the user belongs to, however many there are", async () => {
+		const projectIds = Array.from({ length: 150 }, (_, index) => `p${index}`)
+		vi.mocked(projectIdsForUser).mockResolvedValueOnce(projectIds)
+		const fake = fakeSocket(member)
+
+		await fake.fire("join")
+
+		expect(fake.joined).toHaveLength(151)
+		expect(fake.joined).toContain("project:p149")
+		expect(vi.mocked(projectIdsForUser)).toHaveBeenCalledWith("u1")
 	})
 
 	it("joins nothing when the socket carries no identity", async () => {

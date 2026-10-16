@@ -5,12 +5,13 @@ import { recordAudit, requestIp } from "../audit/audit.service"
 import { respondWithError } from "../../lib/http"
 import { NotFoundError } from "../../lib/errors"
 import { requestedPage } from "../../lib/pagination"
-import { getMemberRole } from "./access"
+import { authorizedScope } from "../../middleware/authorize.middleware"
+import { contentPolicyFor } from "./content-policy"
 import {
 	isEmailConfigured,
 	sendProjectInvitationEmail,
 } from "../notifications/email.service"
-import { NotificationService } from "../notifications/notification.service"
+import * as notificationService from "../notifications/notification.service"
 import { logger } from "../../lib/logger"
 
 const frontendUrl = (): string =>
@@ -69,12 +70,13 @@ export const getMyRole = async (
 	res: Response
 ): Promise<void> => {
 	try {
-		const role = await getMemberRole(req.params.id, req.user!.id)
-		if (!role) {
-			res.status(403).json({ message: "You are not a member of this project" })
-			return
-		}
-		res.status(200).json({ role })
+		const { role, projectId } = authorizedScope(res)
+		const policy = await contentPolicyFor(projectId)
+		res.status(200).json({
+			role,
+			allowDownloads: policy?.allowDownloads ?? true,
+			watermarkViewers: policy?.watermarkViewers ?? false,
+		})
 	} catch (error) {
 		respondWithError(res, error, "fetch project role")
 	}
@@ -117,19 +119,33 @@ export const updateProject = async (
 ): Promise<void> => {
 	try {
 		const userId = req.user!.id
+		const { name, allowDownloads, watermarkViewers } = req.body
 		const updated = await projectService.updateProject(
 			req.params.id,
-			{ name: req.body.name },
+			{ name, allowDownloads, watermarkViewers },
 			userId
 		)
-		await recordAudit({
-			action: "project.updated",
-			targetType: "project",
-			targetId: req.params.id,
-			actorId: userId,
-			metadata: { name: req.body.name },
-			ipAddress: requestIp(req),
-		})
+		if (name !== undefined) {
+			await recordAudit({
+				action: "project.updated",
+				targetType: "project",
+				targetId: req.params.id,
+				actorId: userId,
+				metadata: { name },
+			})
+		}
+		if (allowDownloads !== undefined || watermarkViewers !== undefined) {
+			await recordAudit({
+				action: "project.settings_changed",
+				targetType: "project",
+				targetId: req.params.id,
+				actorId: userId,
+				metadata: {
+					allowDownloads: updated.allowDownloads,
+					watermarkViewers: updated.watermarkViewers,
+				},
+			})
+		}
 		res.status(200).json(updated)
 	} catch (error) {
 		respondWithError(res, error, "rename project")
@@ -186,13 +202,18 @@ export const changeMemberRole = async (
 		const { projectId, userId } = req.params
 		const { role } = req.body
 		const requesterId = req.user!.id
-		await projectService.changeMemberRole(projectId, userId, role, requesterId)
+		const { previousRole } = await projectService.changeMemberRole(
+			projectId,
+			userId,
+			role,
+			requesterId
+		)
 		await recordAudit({
 			action: "project.member_role_changed",
 			targetType: "project",
 			targetId: projectId,
 			actorId: requesterId,
-			metadata: { targetUserId: userId, role },
+			metadata: { targetUserId: userId, previousRole, role },
 			ipAddress: requestIp(req),
 		})
 		res.status(200).json({ message: "Role updated." })
@@ -229,7 +250,7 @@ export const inviteToProject = async (
 		})
 
 		if (result.invitedUserId) {
-			await NotificationService.createNotification({
+			await notificationService.createNotification({
 				userId: result.invitedUserId,
 				content: `${inviter.name || "Someone"} invited you to join "${projectName}"`,
 				metadata: { type: "project_invitation", projectId: id },
@@ -304,6 +325,12 @@ export const acceptInvitation = async (
 		})
 		res.status(200).json(project)
 	} catch (error) {
+		await recordAudit({
+			action: "project.invitation_accept_failed",
+			targetType: "invitation",
+			actorId: req.user?.id ?? null,
+			metadata: { reason: error instanceof Error ? error.message : "unknown" },
+		})
 		respondWithError(res, error, "accept invitation")
 	}
 }
@@ -332,6 +359,13 @@ export const revokeInvitation = async (
 			req.params.invitationId,
 			req.user!.id
 		)
+		await recordAudit({
+			action: "project.invitation_revoked",
+			targetType: "invitation",
+			targetId: req.params.invitationId,
+			actorId: req.user!.id,
+			metadata: { projectId: req.params.projectId },
+		})
 		res.status(204).send()
 	} catch (error) {
 		respondWithError(res, error, "revoke invitation")
@@ -347,7 +381,7 @@ export const createShareLink = async (
 		const userId = req.user!.id
 		const link = await projectService.createShareLink(projectId, userId, {
 			role: req.body.role,
-			expiresInDays: req.body.expiresInDays ?? null,
+			expiresInDays: req.body.expiresInDays,
 			maxUses: req.body.maxUses ?? null,
 		})
 		await recordAudit({
@@ -356,9 +390,10 @@ export const createShareLink = async (
 			targetId: projectId,
 			actorId: userId,
 			metadata: {
-				role: req.body.role,
-				expiresInDays: req.body.expiresInDays ?? null,
-				maxUses: req.body.maxUses ?? null,
+				linkId: link.id,
+				role: link.role,
+				expiresAt: link.expiresAt?.toISOString() ?? null,
+				maxUses: link.maxUses,
 			},
 			ipAddress: requestIp(req),
 		})
@@ -422,6 +457,12 @@ export const joinProjectWithShareLink = async (
 		})
 		res.status(200).json(project)
 	} catch (error) {
+		await recordAudit({
+			action: "share_link.join_failed",
+			targetType: "share_link",
+			actorId: req.user?.id ?? null,
+			metadata: { reason: error instanceof Error ? error.message : "unknown" },
+		})
 		respondWithError(res, error, "join project via share link")
 	}
 }

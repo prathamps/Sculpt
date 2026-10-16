@@ -99,7 +99,7 @@ function CardThumbnail({
 					/>
 				) : (
 					<video
-						src={mediaUrl(fileUrl)}
+						src={mediaUrl(file.latestVersion?.proxyUrl || fileUrl)}
 						preload="metadata"
 						muted
 						playsInline

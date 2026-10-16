@@ -54,6 +54,7 @@ import {
 	createShareLink,
 } from "./projects.service"
 import { ForbiddenError, ValidationError } from "../../lib/errors"
+import { clearAccessCaches } from "./access"
 
 const mocked = vi.mocked(prisma, true)
 
@@ -67,6 +68,7 @@ const actingAsNonOwner = () =>
 
 beforeEach(() => {
 	vi.clearAllMocks()
+	clearAccessCaches()
 	mocked.$transaction.mockImplementation(async (arg: unknown) =>
 		typeof arg === "function" ? (arg as (tx: unknown) => unknown)(prisma) : arg
 	)
@@ -168,8 +170,8 @@ describe("updateProject", () => {
 		await updateProject("p1", { name: "New" }, "owner")
 
 		expect(mocked.projectMember.findFirst).toHaveBeenCalledWith({
-			where: { projectId: "p1", userId: "owner", role: "OWNER" },
-			select: { id: true },
+			where: { projectId: "p1", userId: "owner" },
+			select: { role: true },
 		})
 	})
 })

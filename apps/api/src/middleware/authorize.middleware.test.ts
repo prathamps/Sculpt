@@ -8,7 +8,12 @@ vi.mock("../modules/projects/access", () => ({
 	roleMeets: vi.fn(),
 }))
 
+vi.mock("../modules/audit/audit.service", () => ({
+	recordAuditOnce: vi.fn(),
+}))
+
 import { Request, Response } from "express"
+import { recordAuditOnce } from "../modules/audit/audit.service"
 import {
 	getCommentProjectId,
 	getImageProjectId,
@@ -125,6 +130,27 @@ describe("requireProjectRole", () => {
 		expect(res.statusCode).toBe(403)
 		expect(mocked.roleMeets).toHaveBeenCalledWith("VIEWER", "EDITOR")
 		expect(next).not.toHaveBeenCalled()
+	})
+
+	it("records every refusal in the audit trail", async () => {
+		mocked.getMemberRole.mockResolvedValue("VIEWER")
+		mocked.roleMeets.mockReturnValue(false)
+
+		await requireProjectRole("EDITOR", projectIdFromParam())(
+			{ ...fakeRequest({ projectId: "p1" }, "u1"), method: "DELETE", baseUrl: "/api/projects" } as unknown as Request,
+			fakeResponse(),
+			vi.fn()
+		)
+
+		expect(vi.mocked(recordAuditOnce)).toHaveBeenCalledWith(
+			expect.stringContaining("u1:p1:EDITOR"),
+			expect.objectContaining({
+				action: "access.denied",
+				targetId: "p1",
+				actorId: "u1",
+				metadata: expect.objectContaining({ requiredRole: "EDITOR", role: "VIEWER" }),
+			})
+		)
 	})
 
 	it("publishes the resolved scope to the handler on success", async () => {

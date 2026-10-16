@@ -57,10 +57,16 @@ Out of scope:
   Only add `CORS_ALLOWED_HOST_SUFFIXES` if you genuinely need a preview
   platform's subdomains; anything you list there can make credentialed requests
   on behalf of your signed-in users.
-- Serve over HTTPS. Auth cookies are only marked `secure` when running in production mode.
+- Serve over HTTPS. Auth cookies are only marked `secure` when `FRONTEND_URL`
+  is HTTPS, and production refuses a plain-HTTP network address unless
+  `ALLOW_INSECURE_HTTP=true`.
+- Set `MFA_ENCRYPTION_KEY` (`openssl rand -base64 32`) and keep
+  `ADMIN_MFA_REQUIRED` on. Consider `MFA_REQUIRED=true` for teams handling
+  unreleased or confidential work.
 - Treat share links as bearer credentials: anyone holding the token gets the role
-  it was created with. Prefer setting an expiry and a use cap when you create
-  one, and revoke links you no longer need.
+  it was created with. Links expire after seven days by default; set
+  `SHARE_LINK_MAX_DAYS` to forbid longer-lived ones, and revoke links you no
+  longer need.
 - Using S3? Set `S3_PRIVATE=true`. With a public bucket, object URLs bypass
   Sculpt's access checks entirely and stay readable after you remove someone
   from a project.

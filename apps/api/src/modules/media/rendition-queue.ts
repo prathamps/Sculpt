@@ -1,4 +1,5 @@
 import fs from "fs/promises"
+import { mkdirSync, readFileSync, writeFileSync } from "fs"
 import path from "path"
 import { randomUUID } from "crypto"
 import { ImageVersion, ProxyStatus } from "@prisma/client"
@@ -7,11 +8,47 @@ import { logger } from "../../lib/logger"
 import { io } from "../../realtime/socket"
 import { uploadsDir } from "../../storage"
 
-export const INSTANCE_ID = process.env.SCULPT_INSTANCE_ID || randomUUID()
+const INSTANCE_ID_FILE = ".instance-id"
 
-const UNCLAIMED_JOB_GRACE_MS = 5 * 60000
+const persistedInstanceId = (): string => {
+	const idFile = path.join(uploadsDir, INSTANCE_ID_FILE)
+	try {
+		const existing = readFileSync(idFile, "utf8").trim()
+		if (existing) return existing
+	} catch {
+		mkdirSync(uploadsDir, { recursive: true })
+	}
+	const created = randomUUID()
+	try {
+		writeFileSync(idFile, created)
+	} catch (error) {
+		logger.warn("Could not persist the instance id, renditions will not survive a restart", {
+			detail: error instanceof Error ? error.message : undefined,
+		})
+	}
+	return created
+}
 
-export const processingDir = path.join(uploadsDir, ".processing", INSTANCE_ID)
+export const INSTANCE_ID = process.env.SCULPT_INSTANCE_ID || persistedInstanceId()
+
+export const processingRoot = path.join(uploadsDir, ".processing")
+
+export const processingDir = path.join(processingRoot, INSTANCE_ID)
+
+const SOURCE_PREFIX = "source-"
+
+export const durableSourcePath = (versionId: string, extension: string): string =>
+	path.join(processingDir, `${SOURCE_PREFIX}${versionId}${extension}`)
+
+export const versionIdOfSource = (fileName: string): string | null => {
+	if (!fileName.startsWith(SOURCE_PREFIX)) return null
+	const withoutPrefix = fileName.slice(SOURCE_PREFIX.length)
+	const versionId = withoutPrefix.slice(
+		0,
+		withoutPrefix.length - path.extname(withoutPrefix).length
+	)
+	return versionId || null
+}
 
 export interface RenditionJob {
 	versionId: string
@@ -59,6 +96,22 @@ const claimJob = async (versionId: string): Promise<void> => {
 		)
 }
 
+const adoptSource = async <TJob extends RenditionJob>(job: TJob): Promise<TJob> => {
+	const durablePath = durableSourcePath(job.versionId, path.extname(job.sourcePath))
+	if (job.sourcePath === durablePath) return job
+	try {
+		await fs.mkdir(processingDir, { recursive: true })
+		await fs.rename(job.sourcePath, durablePath)
+		return { ...job, sourcePath: durablePath }
+	} catch (error) {
+		logger.warn("Could not move rendition source to its durable path", {
+			versionId: job.versionId,
+			detail: error instanceof Error ? error.message : undefined,
+		})
+		return job
+	}
+}
+
 export interface RenditionQueue<TJob extends RenditionJob> {
 	enqueue: (job: TJob) => void
 	depth: () => number
@@ -70,10 +123,10 @@ export const createRenditionQueue = <TJob extends RenditionJob>(options: {
 	run: (job: TJob) => Promise<void>
 }): RenditionQueue<TJob> => {
 	const waiting: TJob[] = []
+	let preparing = 0
 	let active = 0
 
 	const execute = async (job: TJob): Promise<void> => {
-		await claimJob(job.versionId)
 		try {
 			await options.run(job)
 		} catch (error) {
@@ -95,41 +148,24 @@ export const createRenditionQueue = <TJob extends RenditionJob>(options: {
 		}
 	}
 
+	const admit = async (job: TJob): Promise<void> => {
+		const adopted = await adoptSource(job)
+		await claimJob(adopted.versionId)
+		waiting.push(adopted)
+		logger.debug("Queued media rendition", {
+			queue: options.name,
+			depth: waiting.length + active,
+		})
+		drain()
+	}
+
 	return {
 		enqueue: (job: TJob) => {
-			waiting.push(job)
-			logger.debug("Queued media rendition", {
-				queue: options.name,
-				depth: waiting.length + active,
+			preparing += 1
+			void admit(job).finally(() => {
+				preparing -= 1
 			})
-			drain()
 		},
-		depth: () => waiting.length + active,
+		depth: () => preparing + waiting.length + active,
 	}
-}
-
-export const failAbandonedProxyJobs = async (): Promise<void> => {
-	const reclaimed = await prisma.imageVersion.updateMany({
-		where: {
-			proxyStatus: ProxyStatus.PENDING,
-			OR: [
-				{ proxyOwner: INSTANCE_ID },
-				{
-					proxyOwner: null,
-					updatedAt: { lt: new Date(Date.now() - UNCLAIMED_JOB_GRACE_MS) },
-				},
-			],
-		},
-		data: { proxyStatus: ProxyStatus.FAILED },
-	})
-
-	if (reclaimed.count > 0) {
-		logger.warn("Marked abandoned rendition jobs as failed", {
-			count: reclaimed.count,
-		})
-	}
-
-	await fs
-		.rm(processingDir, { recursive: true, force: true })
-		.catch(() => undefined)
 }

@@ -1,4 +1,4 @@
-import { describe, expect, it, vi, beforeEach } from "vitest"
+import { describe, expect, it, vi, beforeEach, afterEach } from "vitest"
 
 vi.mock("../lib/prisma", () => ({
 	prisma: {
@@ -11,6 +11,7 @@ import { Socket } from "socket.io"
 import { prisma } from "../lib/prisma"
 import { signSessionToken } from "../lib/tokens"
 import { resolveSocketUser, socketAuth } from "./socketAuth"
+import { clearSessionCache } from "../modules/auth/session.service"
 
 const mocked = vi.mocked(prisma, true)
 const JWT_SECRET = "socket-auth-test-secret-that-is-long-enough"
@@ -42,6 +43,7 @@ const userSessionCookie = (
 
 beforeEach(() => {
 	vi.clearAllMocks()
+	clearSessionCache()
 	process.env.JWT_SECRET = JWT_SECRET
 	mocked.revokedSession.findUnique.mockResolvedValue(null)
 })
@@ -129,19 +131,44 @@ describe("resolveSocketUser", () => {
 	})
 
 	it("never exposes the password column to socket consumers", async () => {
+		mocked.user.findUnique.mockResolvedValue({
+			...storedUser,
+			password: "bcrypt-hash",
+		} as never)
+
+		const user = await resolveSocketUser(socketWithCookie(userSessionCookie()))
+
+		expect(user).toEqual(publicUser)
+	})
+
+	it("reuses a verified session briefly instead of re-querying on every connection", async () => {
 		mocked.user.findUnique.mockResolvedValue(storedUser as never)
+		const cookie = userSessionCookie()
 
-		await resolveSocketUser(socketWithCookie(userSessionCookie()))
+		await resolveSocketUser(socketWithCookie(cookie))
+		await resolveSocketUser(socketWithCookie(cookie))
 
-		expect(mocked.user.findUnique).toHaveBeenCalledWith({
-			where: { id: "u1" },
-			select: {
-				id: true,
-				name: true,
-				email: true,
-				avatarUrl: true,
-				tokenVersion: true,
-			},
-		})
+		expect(mocked.user.findUnique).toHaveBeenCalledTimes(1)
+		expect(mocked.revokedSession.findUnique).toHaveBeenCalledTimes(1)
+	})
+})
+
+describe("organisation-wide two-factor", () => {
+	afterEach(() => {
+		delete process.env.MFA_REQUIRED
+	})
+
+	it("keeps realtime events from people who have not enrolled yet", async () => {
+		process.env.MFA_REQUIRED = "true"
+		mocked.user.findUnique.mockResolvedValue({ ...storedUser, totpEnabledAt: null } as never)
+
+		expect(await resolveSocketUser(socketWithCookie(userSessionCookie()))).toBeNull()
+	})
+
+	it("admits enrolled people", async () => {
+		process.env.MFA_REQUIRED = "true"
+		mocked.user.findUnique.mockResolvedValue({ ...storedUser, totpEnabledAt: new Date() } as never)
+
+		expect(await resolveSocketUser(socketWithCookie(userSessionCookie()))).toEqual(publicUser)
 	})
 })

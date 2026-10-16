@@ -48,7 +48,6 @@ import {
 } from "./ffmpeg"
 import {
 	enqueueVideoProxy,
-	failAbandonedProxyJobs,
 	stageVideoForProcessing,
 	videoQueueDepth,
 } from "./video-pipeline"
@@ -173,38 +172,6 @@ describe("enqueueVideoProxy", () => {
 		await vi.waitFor(() =>
 			expect(mockedStorage.remove).toHaveBeenCalledWith("uploads/orphan.mp4")
 		)
-	})
-})
-
-describe("failAbandonedProxyJobs", () => {
-	it("fails this instance's own abandoned jobs", async () => {
-		mockedPrisma.imageVersion.updateMany.mockResolvedValue({
-			count: 2,
-		} as never)
-
-		await failAbandonedProxyJobs()
-
-		const call = mockedPrisma.imageVersion.updateMany.mock.calls[0][0] as {
-			where: { proxyStatus: string; OR: { proxyOwner: string | null }[] }
-			data: { proxyStatus: string }
-		}
-		expect(call.data).toEqual({ proxyStatus: "FAILED" })
-		expect(call.where.proxyStatus).toBe("PENDING")
-		expect(call.where.OR[0].proxyOwner).toBe(INSTANCE_ID)
-	})
-
-	it("never touches jobs owned by another running instance", async () => {
-		mockedPrisma.imageVersion.updateMany.mockResolvedValue({
-			count: 0,
-		} as never)
-
-		await failAbandonedProxyJobs()
-
-		const call = mockedPrisma.imageVersion.updateMany.mock.calls[0][0] as {
-			where: { OR: { proxyOwner: string | null }[] }
-		}
-		const ownerFilters = call.where.OR.map((clause) => clause.proxyOwner)
-		expect(ownerFilters).toEqual([INSTANCE_ID, null])
 	})
 })
 

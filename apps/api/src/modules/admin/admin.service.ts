@@ -2,6 +2,7 @@ import { Prisma, UserRole } from "@prisma/client"
 import { prisma } from "../../lib/prisma"
 import { PageRequest, skipTake } from "../../lib/pagination"
 import { ValidationError } from "../../lib/errors"
+import { forgetCachedSessions } from "../auth/session.service"
 
 const TREND_DAYS = 30
 
@@ -38,12 +39,12 @@ export const getAllUsers = async (page: PageRequest, search?: string) => {
 }
 
 export const updateUserRole = async (userId: string, role: UserRole) => {
+	const target = await prisma.user.findUnique({
+		where: { id: userId },
+		select: { role: true },
+	})
 	if (role !== UserRole.ADMIN) {
 		const admins = await prisma.user.count({ where: { role: UserRole.ADMIN } })
-		const target = await prisma.user.findUnique({
-			where: { id: userId },
-			select: { role: true },
-		})
 		if (target?.role === UserRole.ADMIN && admins <= 1) {
 			throw new ValidationError(
 				"This is the last administrator. Promote someone else before demoting them."
@@ -51,11 +52,13 @@ export const updateUserRole = async (userId: string, role: UserRole) => {
 		}
 	}
 
-	return prisma.user.update({
+	const updated = await prisma.user.update({
 		where: { id: userId },
 		data: { role, tokenVersion: { increment: 1 } },
 		select: { id: true, email: true, name: true, role: true },
 	})
+	forgetCachedSessions(userId)
+	return { ...updated, previousRole: target?.role ?? null }
 }
 
 export const getAllProjects = async (page: PageRequest) => {
