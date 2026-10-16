@@ -26,6 +26,7 @@ import { RenameFileModal } from "./RenameFileModal"
 import { cn, mediaUrl } from "@/lib/utils"
 import { formatDistanceToNow } from "date-fns"
 import { Card, CardContent } from "./ui/card"
+import { ThumbnailPlaceholder } from "./ThumbnailPlaceholder"
 import { MoreVertical } from "lucide-react"
 import { formatBytes } from "@/lib/utils"
 import { Button } from "./ui/button"
@@ -167,9 +168,11 @@ function CardThumbnail({
 
 	const previewUrl = thumbnailUrl || file.latestVersion?.proxyUrl || fileUrl
 
+	if (imageError) return <ThumbnailPlaceholder iconSize={iconSize} />
+
 	return (
 		<img
-			src={imageError ? "/placeholder-image.svg" : mediaUrl(previewUrl)}
+			src={mediaUrl(previewUrl)}
 			alt={file.name}
 			className={cn(
 				"h-full w-full object-cover",
@@ -381,7 +384,7 @@ export function FileCard({
 		<>
 			<Card
 				className={cn(
-					"group relative overflow-hidden bg-card hover:shadow-md",
+					"group relative gap-0 overflow-hidden bg-card py-0 hover:shadow-md",
 					isSelected && "ring-2 ring-primary"
 				)}
 			>

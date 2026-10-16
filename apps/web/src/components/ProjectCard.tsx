@@ -20,6 +20,7 @@ import {
 } from "./ui/dropdown-menu"
 import { useState } from "react"
 import { UserAvatar } from "@/components/UserAvatar"
+import { ThumbnailPlaceholder } from "@/components/ThumbnailPlaceholder"
 
 interface ProjectCardProps {
 	project: Project
@@ -41,32 +42,25 @@ export function ProjectCard({ project, onEdit, onDelete }: ProjectCardProps) {
 			latest?.proxyUrl ||
 			latest?.url ||
 			(firstImage as unknown as { url?: string }).url
-		return url ? mediaUrl(url) : "/placeholder-image.svg"
+		return url ? mediaUrl(url) : null
 	}
 
 	const imageUrl = getImageUrl()
 	const [imageError, setImageError] = useState(false)
-	const placeholderUrl = "/placeholder-image.svg"
 
 	return (
 		<div className="group relative overflow-hidden rounded-lg border border-border/50 bg-card transition-all hover:border-border">
 			<Link href={`/project/${project.id}`} className="block">
 				<div className="relative aspect-video overflow-hidden rounded-t-lg bg-muted/50">
-					{imageUrl ? (
+					{imageUrl && !imageError ? (
 						<img
-							src={imageError ? placeholderUrl : imageUrl}
+							src={imageUrl}
 							alt={project.name}
 							className="h-full w-full object-cover transition-transform duration-200 group-hover:scale-105"
 							onError={() => setImageError(true)}
 						/>
 					) : (
-						<div className="flex h-full w-full items-center justify-center">
-							<img
-								src={placeholderUrl}
-								alt="No image available"
-								className="h-full w-full object-cover"
-							/>
-						</div>
+						<ThumbnailPlaceholder />
 					)}
 				</div>
 
@@ -100,7 +94,7 @@ export function ProjectCard({ project, onEdit, onDelete }: ProjectCardProps) {
 							)}
 						</div>
 
-						<span className="text-xs text-primary/80 flex items-center">
+						<span className="text-xs text-primary flex items-center">
 							View
 							<ChevronRight className="ml-0.5 h-3 w-3" aria-hidden="true" />
 						</span>
