@@ -1,8 +1,9 @@
 import { Socket } from "socket.io"
 import { parse } from "cookie"
-import { prisma } from "../lib/prisma"
 import { SESSION_COOKIE } from "../lib/cookies"
-import { authenticateSessionToken } from "../modules/auth/session.service"
+import { userForSession } from "../modules/auth/session.service"
+import { verifySessionToken } from "../lib/tokens"
+import { everyoneMfaRequired, hasMfa } from "../modules/auth/mfa.service"
 
 export interface SocketUser {
 	id: string
@@ -17,22 +18,11 @@ export const resolveSocketUser = async (
 	try {
 		const cookieHeader = socket.handshake.headers.cookie
 		if (!cookieHeader) return null
-		const claims = await authenticateSessionToken(
-			parse(cookieHeader)[SESSION_COOKIE],
-			"user"
-		)
+		const claims = verifySessionToken(parse(cookieHeader)[SESSION_COOKIE], "user")
 		if (!claims) return null
-		const user = await prisma.user.findUnique({
-			where: { id: claims.id },
-			select: {
-				id: true,
-				name: true,
-				email: true,
-				avatarUrl: true,
-				tokenVersion: true,
-			},
-		})
-		if (!user || user.tokenVersion !== claims.ver) return null
+		const user = await userForSession(claims)
+		if (!user) return null
+		if (everyoneMfaRequired() && !hasMfa(user)) return null
 		return {
 			id: user.id,
 			name: user.name,

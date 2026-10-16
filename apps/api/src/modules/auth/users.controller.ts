@@ -11,7 +11,11 @@ import {
 	clearSessionCookie,
 	setSessionCookie,
 } from "../../lib/cookies"
-import { USER_SESSION_LIFETIME_MS, issueSession } from "./session.service"
+import {
+	sessionLifetimeMs,
+	forgetCachedSessions,
+	issueSession,
+} from "./session.service"
 
 export const updateProfile = async (
 	req: AuthenticatedRequest,
@@ -53,6 +57,14 @@ export const updateNotificationPreferences = async (
 				emailOnReview: true,
 			},
 		})
+		forgetCachedSessions(user.id)
+		await recordAudit({
+			action: "user.notification_preferences_updated",
+			targetType: "user",
+			targetId: user.id,
+			actorId: user.id,
+			metadata: Object.fromEntries(requested.map((key) => [key, req.body[key]])),
+		})
 		res.status(200).json(user)
 	} catch (error) {
 		respondWithError(res, error, "update notification preferences")
@@ -73,7 +85,7 @@ export const changePassword = async (
 			select: { id: true, tokenVersion: true },
 		})
 		const { token } = issueSession(refreshed, "user")
-		setSessionCookie(res, SESSION_COOKIE, token, USER_SESSION_LIFETIME_MS)
+		setSessionCookie(res, SESSION_COOKIE, token, sessionLifetimeMs("user"))
 
 		await recordAudit({
 			action: "user.password_changed",

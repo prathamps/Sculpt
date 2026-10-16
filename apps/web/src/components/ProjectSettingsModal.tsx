@@ -12,8 +12,12 @@ import {
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import { Switch } from "@/components/ui/switch"
 import { Project } from "@/types"
 import { Loader2 } from "lucide-react"
+import { toast } from "sonner"
+import { api } from "@/lib/api"
+import { describeError } from "@/lib/errors"
 
 interface ProjectSettingsModalProps {
 	isOpen: boolean
@@ -22,43 +26,55 @@ interface ProjectSettingsModalProps {
 	onProjectChanged: () => void
 }
 
+interface ProjectSettings {
+	name: string
+	allowDownloads: boolean
+	watermarkViewers: boolean
+}
+
+const settingsOf = (project: Project): ProjectSettings => ({
+	name: project.name,
+	allowDownloads: project.allowDownloads ?? true,
+	watermarkViewers: project.watermarkViewers ?? false,
+})
+
+const changesBetween = (
+	saved: ProjectSettings,
+	edited: ProjectSettings
+): Partial<ProjectSettings> =>
+	Object.fromEntries(
+		(Object.keys(edited) as (keyof ProjectSettings)[])
+			.filter((key) => edited[key] !== saved[key])
+			.map((key) => [key, key === "name" ? edited.name.trim() : edited[key]])
+	)
+
 export function ProjectSettingsModal({
 	isOpen,
 	onClose,
 	project,
 	onProjectChanged,
 }: ProjectSettingsModalProps) {
-	const [name, setName] = useState("")
+	const [settings, setSettings] = useState<ProjectSettings | null>(null)
 	const [isSaving, setIsSaving] = useState(false)
-	const URI = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001"
+
 	useEffect(() => {
-		if (project) {
-			setName(project.name)
-		}
+		if (project) setSettings(settingsOf(project))
 	}, [project])
 
-	if (!project) return null
+	if (!project || !settings) return null
 
-	const handleSave = async (e: React.FormEvent) => {
-		e.preventDefault()
+	const changes = changesBetween(settingsOf(project), settings)
+	const hasChanges = Object.keys(changes).length > 0
+
+	const handleSave = async (event: React.FormEvent) => {
+		event.preventDefault()
 		setIsSaving(true)
 		try {
-			const res = await fetch(`${URI}/api/projects/${project.id}`, {
-				method: "PUT",
-				headers: { "Content-Type": "application/json" },
-				credentials: "include",
-				body: JSON.stringify({ name }),
-			})
-
-			if (!res.ok) {
-				throw new Error("Failed to update project.")
-			}
-
+			await api.put(`/api/projects/${project.id}`, changes)
 			onProjectChanged()
 			onClose()
 		} catch (error) {
-			console.error("Failed to save project settings", error)
-			alert("Failed to save project settings.")
+			toast.error(describeError(error, "Could not save project settings."))
 		} finally {
 			setIsSaving(false)
 		}
@@ -75,18 +91,48 @@ export function ProjectSettingsModal({
 						</DialogDescription>
 					</DialogHeader>
 
-					<div className="py-4 space-y-4">
+					<div className="py-4 space-y-5">
 						<div className="space-y-2">
 							<Label htmlFor="name" className="text-sm font-medium">
 								Project Name
 							</Label>
 							<Input
 								id="name"
-								value={name}
-								onChange={(e) => setName(e.target.value)}
+								value={settings.name}
+								onChange={(event) => setSettings({ ...settings, name: event.target.value })}
 								className="bg-background/80 border-border/50"
 								placeholder="Enter project name"
 								autoFocus
+							/>
+						</div>
+
+						<div className="flex items-start justify-between gap-4">
+							<div className="space-y-1">
+								<Label htmlFor="allow-downloads">Allow downloads</Label>
+								<p id="allow-downloads-help" className="text-xs text-muted-foreground">
+									When off, viewers and members can stream files but only editors and owners can download originals.
+								</p>
+							</div>
+							<Switch
+								id="allow-downloads"
+								checked={settings.allowDownloads}
+								onCheckedChange={(checked) => setSettings({ ...settings, allowDownloads: checked })}
+								aria-describedby="allow-downloads-help"
+							/>
+						</div>
+
+						<div className="flex items-start justify-between gap-4">
+							<div className="space-y-1">
+								<Label htmlFor="watermark-viewers">Watermark the viewer</Label>
+								<p id="watermark-viewers-help" className="text-xs text-muted-foreground">
+									Overlays each person&apos;s email address and the date on everything they view, so screenshots can be traced.
+								</p>
+							</div>
+							<Switch
+								id="watermark-viewers"
+								checked={settings.watermarkViewers}
+								onCheckedChange={(checked) => setSettings({ ...settings, watermarkViewers: checked })}
+								aria-describedby="watermark-viewers-help"
 							/>
 						</div>
 					</div>
@@ -98,7 +144,7 @@ export function ProjectSettingsModal({
 						<Button
 							type="submit"
 							size="sm"
-							disabled={isSaving || !name.trim() || name === project.name}
+							disabled={isSaving || !settings.name.trim() || !hasChanges}
 						>
 							{isSaving ? (
 								<>

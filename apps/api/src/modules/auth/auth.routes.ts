@@ -11,8 +11,11 @@ import {
 } from "./auth.controller"
 import { oauthProviders } from "./passport"
 import { validateBody } from "../../middleware/validate.middleware"
+import { verifyMfaChallengeHandler } from "./mfa.controller"
+import { recordAudit } from "../audit/audit.service"
 import {
 	completePasswordResetSchema,
+	secondFactorSchema,
 	loginSchema,
 	registerSchema,
 	requestPasswordResetSchema,
@@ -32,6 +35,12 @@ router.post(
 	register
 )
 router.post("/login", loginRateLimit(), validateBody(loginSchema), login)
+router.post(
+	"/mfa/verify",
+	loginRateLimit(),
+	validateBody(secondFactorSchema),
+	verifyMfaChallengeHandler
+)
 router.post("/logout", logout)
 router.get("/providers", getOAuthProviders)
 
@@ -69,13 +78,30 @@ router.get(
 	requireProvider("google"),
 	passport.authenticate("google", { scope: ["profile", "email"], session: false })
 )
+const completeProviderSignIn =
+	(provider: "google" | "github") =>
+	(req: Request, res: Response, next: NextFunction) =>
+		passport.authenticate(
+			provider,
+			{ session: false },
+			(error: unknown, user: Express.User | false) => {
+				if (error || !user) {
+					void recordAudit({
+						action: "user.oauth_login_failed",
+						targetType: "user",
+						metadata: { provider, reason: error ? "provider_error" : "rejected" },
+					})
+					return res.redirect(`${FRONTEND_URL}/login?error=oauth`)
+				}
+				req.user = user
+				next()
+			}
+		)(req, res, next)
+
 router.get(
 	"/google/callback",
 	requireProvider("google"),
-	passport.authenticate("google", {
-		session: false,
-		failureRedirect: `${FRONTEND_URL}/login?error=oauth`,
-	}),
+	completeProviderSignIn("google"),
 	oauthCallback
 )
 
@@ -87,10 +113,7 @@ router.get(
 router.get(
 	"/github/callback",
 	requireProvider("github"),
-	passport.authenticate("github", {
-		session: false,
-		failureRedirect: `${FRONTEND_URL}/login?error=oauth`,
-	}),
+	completeProviderSignIn("github"),
 	oauthCallback
 )
 

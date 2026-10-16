@@ -19,7 +19,21 @@ export const createProjectSchema = z.object({
 		.max(MAX_PROJECT_NAME_LENGTH),
 })
 
-export const updateProjectSchema = createProjectSchema
+export const updateProjectSchema = z
+	.object({
+		name: z
+			.string()
+			.trim()
+			.min(1, "Project name cannot be empty")
+			.max(MAX_PROJECT_NAME_LENGTH)
+			.optional(),
+		allowDownloads: z.boolean().optional(),
+		watermarkViewers: z.boolean().optional(),
+	})
+	.refine(
+		(changes) => Object.values(changes).some((value) => value !== undefined),
+		"Nothing to change"
+	)
 
 export const inviteMemberSchema = z.object({
 	email: z.string().trim().toLowerCase().email("Enter a valid email address."),

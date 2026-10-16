@@ -8,12 +8,26 @@ import {
 	setSessionCookie,
 } from "../lib/cookies"
 import {
-	USER_SESSION_LIFETIME_MS,
+	sessionLifetimeMs,
 	authenticateSessionToken,
 	issueSession,
 	shouldSlideSession,
 } from "../modules/auth/session.service"
 import { AuthenticatedRequest, AuthenticatedUser } from "../types"
+import { recordAuditOnce } from "../modules/audit/audit.service"
+import {
+	MFA_ENROLLMENT_REQUIRED,
+	mustEnrollBeforeContinuing,
+} from "./mfa-enrollment"
+import { adminMfaRequired, hasMfa } from "../modules/auth/mfa.service"
+
+const recordAdminDenial = (req: Request, userId: string) =>
+	recordAuditOnce(`${userId}:admin`, {
+		action: "access.denied",
+		targetType: "admin",
+		actorId: userId,
+		metadata: { method: req.method, path: req.originalUrl.split("?")[0] },
+	})
 
 const slideSessionCookie = (req: Request, res: Response): void => {
 	const claims = req.sessionClaims
@@ -26,7 +40,7 @@ const slideSessionCookie = (req: Request, res: Response): void => {
 		"user",
 		claims.sst
 	)
-	setSessionCookie(res, SESSION_COOKIE, token, USER_SESSION_LIFETIME_MS)
+	setSessionCookie(res, SESSION_COOKIE, token, sessionLifetimeMs("user"))
 }
 
 export const authenticateJWT = (
@@ -46,6 +60,12 @@ export const authenticateJWT = (
 			}
 			req.user = user as AuthenticatedUser
 			slideSessionCookie(req, res)
+			if (mustEnrollBeforeContinuing(req, user as AuthenticatedUser)) {
+				return res.status(403).json({
+					code: MFA_ENROLLMENT_REQUIRED,
+					message: "Turn on two-factor authentication to keep using Sculpt.",
+				})
+			}
 			next()
 		}
 	)(req, res, next)
@@ -72,7 +92,16 @@ export const authenticateAdmin = async (
 	}
 
 	if (admin.role !== UserRole.ADMIN) {
+		await recordAdminDenial(req, admin.id)
 		return res.status(403).json({ message: "Admin privileges required" })
+	}
+
+	if (adminMfaRequired() && !hasMfa(admin)) {
+		return res.status(403).json({
+			code: MFA_ENROLLMENT_REQUIRED,
+			message:
+				"Turn on two-factor authentication in your account settings before using the admin console.",
+		})
 	}
 
 	req.user = admin
@@ -82,6 +111,7 @@ export const authenticateAdmin = async (
 export const adminOnly = (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
 	const user = req.user as AuthenticatedUser
 	if (!user || user.role !== UserRole.ADMIN) {
+		if (user) void recordAdminDenial(req, user.id)
 		return res.status(403).json({ message: "Forbidden: Admin access required" })
 	}
 	return next()

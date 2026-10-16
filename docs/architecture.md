@@ -98,11 +98,15 @@ original file). Completion is pushed to viewers over the version's socket room a
 `version-updated`.
 
 Both the video and image queues share `rendition-queue.ts`, which bounds
-concurrency (`VIDEO_WORKER_CONCURRENCY`, `IMAGE_WORKER_CONCURRENCY`) and stamps
-each job with the processing instance's id. Boot-time recovery therefore only
-fails jobs **this** instance owned, plus long-unclaimed ones — restarting one
-replica no longer cancels another's in-flight work, and each instance keeps its
-own scratch directory.
+concurrency (`VIDEO_WORKER_CONCURRENCY`, `IMAGE_WORKER_CONCURRENCY`), stamps
+each job with the processing instance's id, and moves the job's source to
+`source-<versionId>` in that instance's scratch directory. The instance id is
+stable across restarts (`SCULPT_INSTANCE_ID`, or one generated once and kept in
+`uploads/.instance-id`), so `rendition-recovery.ts` can resume its own pending
+jobs at boot from those sources and fail only the ones whose source is gone.
+Owned jobs are heartbeated every minute; a sweep fails pending jobs whose owner
+has been silent for ten minutes and removes that owner's scratch space, so a
+replica that dies never leaves media stuck in "processing".
 
 ### 3D model ingest
 
@@ -110,12 +114,24 @@ own scratch directory.
 
 Compressed glTF is handled in both the viewer and the thumbnail pass via `lib/gltf-decoders.ts`: **Draco** geometry, **KTX2/Basis** textures and **EXT_meshopt_compression**. The decoders ship inside the `three` package and are copied to `public/three/` by `npm run copy-decoders` (wired to `predev`/`prebuild`), so a self-hosted instance never fetches them from a CDN and works fully offline. `public/three/` is generated, not committed.
 
+### Hot-path caching
+
+Every request verifies a session and most resolve a project membership. Three
+small in-process TTL caches (`lib/ttl-cache.ts`) keep that off the database:
+verified sessions (5 s, keyed by token id), membership roles (5 s), and the
+immutable id → project and stored file → project mappings (60 s). Only
+positive answers are cached, so a fresh grant is seen at once. Every write that
+changes access — logout, password change, role change, removal, leaving,
+joining, account and project deletion — evicts the affected entries on the
+instance that made it; other replicas converge within the TTL.
+
 ### Real-time
 
 `realtime/socket.ts` owns the Socket.IO server. Connections are rejected unless they carry a valid session cookie, and identity
 always comes from that session — never from the client's payload. Clients join
-rooms per user (`user:<id>`), per project (`project:<id>`, membership-checked)
-and per image version (`imageVersion:<id>`, membership-checked); services emit
+rooms per user (`user:<id>`), per project (`project:<id>` — every project the
+user belongs to is joined server-side on connect, and `joinProject` adds one
+joined later, membership-checked) and per image version (`imageVersion:<id>`, membership-checked); services emit
 domain events (`comment-updated`, `comment-deleted`, `review-updated`,
 `notification`, …) into those rooms.
 
@@ -136,7 +152,39 @@ bypass the membership check entirely, and the server warns about it at startup.
 
 ### Audit logging
 
-Every security-relevant mutation is recorded via `modules/audit/audit.service.ts`: logins (including failures), role changes, project/membership changes, share-link lifecycle, media uploads/deletions and report exports. Entries capture actor, action, target, metadata and source IP. Writes are best-effort — a failed audit write is logged but never fails the user's request. Admins browse the trail at `/admin/audit`.
+`modules/audit/audit.service.ts` records who did what to which object, when,
+from where. Coverage is every change to data or access (sign-in and its
+failures, lockouts, two-factor events, profile and preference changes, roles,
+membership, invitations, share links, project settings, media, versions,
+folders, comments including edits and deletions by their authors, reviews and
+due dates, exports), every permission refusal (`access.denied`), failed
+share-link and invitation attempts, every view or download of an original,
+proxy or attachment (`media.accessed`), and every admin read of users,
+projects or the audit trail itself. High-volume events go through
+`recordAuditOnce`, which writes one entry per actor and object per fifteen
+minutes per instance, so a video seek or a retry loop cannot flood the table.
+
+Each entry carries actor, action, target, metadata, source IP, user agent and
+the request id (`lib/request-context.ts` keeps them in AsyncLocalStorage and
+echoes `X-Request-Id`). The actor is a plain id with no foreign key, so
+entries stay attributable after the account is deleted; the admin view shows
+"Deleted account" with that id.
+
+**Tamper evidence.** Writes are serialized by a Postgres advisory lock. Each
+entry gets the next `sequence` and `hash = sha256(canonical entry + prevHash)`,
+so altering, inserting or deleting an entry breaks every hash after it.
+`verifyAuditChain()` recomputes the chain and reports the first broken
+sequence; retention may trim the oldest entries, which only moves the anchor.
+A database trigger rejects every `UPDATE` on the table, and each entry is also
+emitted as an `audit` log line (ids and hash, no personal data) so a log
+pipeline holds an independent copy. Entries written before chaining existed are
+reported as unverifiable rather than failed.
+
+Writes are best-effort: a failed write is logged and counted in
+`sculpt_audit_write_failures_total` but never fails the user's request. Admins
+filter by action, actor, target, IP and date, export CSV, and verify the chain
+at `/admin/audit`. See [compliance.md](compliance.md) for how this maps to
+SOC 2, ISO 27001, GDPR and TPN.
 
 ### Errors
 
@@ -147,6 +195,15 @@ known errors to their status and everything else to a logged `500` with a generi
 body — unknown failures never become 4xx, and internal error objects never reach
 a client. Request bodies and query strings are validated by zod schemas
 (`*.schema.ts`) declared on the route.
+
+### Retention and monitoring
+
+Background jobs share `lib/schedule.ts`, which never overlaps a run with the
+previous one. Revoked sessions are pruned hourly, notifications after
+`NOTIFICATION_RETENTION_DAYS` (default 90) and audit entries after
+`AUDIT_RETENTION_DAYS` (default: never). With `METRICS_TOKEN` set,
+`GET /metrics` serves Prometheus metrics: request latency by route template,
+realtime connections, queue depths and Node process metrics.
 
 ### Logging
 

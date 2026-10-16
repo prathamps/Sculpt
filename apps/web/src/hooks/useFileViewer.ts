@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react"
 import { usePathname, useRouter, useSearchParams } from "next/navigation"
 import { Image, ImageVersion, ProjectRole } from "@/types"
+import { ContentPolicy, OPEN_CONTENT_POLICY } from "@/lib/content-policy"
 import {
 	VersionProcessingUpdate,
 	useVersionProcessingUpdates,
@@ -28,6 +29,7 @@ export function useFileViewer({
 	searchParamsRef.current = searchParams
 
 	const [role, setRole] = useState<ProjectRole | null>(null)
+	const [contentPolicy, setContentPolicy] = useState<ContentPolicy>(OPEN_CONTENT_POLICY)
 	const [loadError, setLoadError] = useState(false)
 	const [image, setImage] = useState<Image | null>(null)
 	const [selectedVersion, setSelectedVersion] = useState<ImageVersion | null>(
@@ -93,6 +95,10 @@ export function useFileViewer({
 				if (res.ok) {
 					const data = await res.json()
 					setRole(data?.role ?? null)
+					setContentPolicy({
+						allowDownloads: data?.allowDownloads ?? true,
+						watermarkViewers: data?.watermarkViewers ?? false,
+					})
 					return
 				}
 				if (res.status === 403) {
@@ -127,6 +133,7 @@ export function useFileViewer({
 		searchParams,
 		buildUrl,
 		role,
+		contentPolicy,
 		loadError,
 		image,
 		setImage,

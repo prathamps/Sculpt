@@ -45,7 +45,7 @@ const MOUNTS: { router: Router; prefix: string }[] = [
 	{ router: searchRoutes, prefix: "/api/search" },
 ]
 
-const APP_LEVEL_ROUTES = ["/health", "/uploads/:filename"]
+const APP_LEVEL_ROUTES = ["/health", "/metrics", "/uploads/:filename"]
 
 const asOpenApiPath = (expressPath: string): string =>
 	expressPath.replace(/:([A-Za-z0-9_]+)/g, "{$1}")

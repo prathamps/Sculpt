@@ -1,7 +1,7 @@
-import { describe, expect, it } from "vitest"
+import { describe, expect, it, afterEach } from "vitest"
 import { SessionClaims } from "../../lib/tokens"
 import {
-	USER_SESSION_LIFETIME_MS,
+	sessionLifetimeMs,
 	absoluteSessionLifetimeMs,
 	shouldSlideSession,
 } from "./session.service"
@@ -14,7 +14,7 @@ const claims = (overrides: Partial<SessionClaims> = {}): SessionClaims => ({
 	ver: 0,
 	jti: "j1",
 	sst: NOW,
-	exp: (NOW + USER_SESSION_LIFETIME_MS) / 1000,
+	exp: (NOW + sessionLifetimeMs("user")) / 1000,
 	...overrides,
 })
 
@@ -24,7 +24,7 @@ describe("shouldSlideSession", () => {
 	})
 
 	it("renews once the token is past half its life", () => {
-		const past = NOW + USER_SESSION_LIFETIME_MS / 2 + 1000
+		const past = NOW + sessionLifetimeMs("user") / 2 + 1000
 		expect(shouldSlideSession(claims(), past)).toBe(true)
 	})
 
@@ -48,5 +48,25 @@ describe("shouldSlideSession", () => {
 
 	it("renews when the token carries no expiry", () => {
 		expect(shouldSlideSession(claims({ exp: undefined }), NOW)).toBe(true)
+	})
+})
+
+describe("idle timeout", () => {
+	afterEach(() => {
+		delete process.env.SESSION_IDLE_TIMEOUT_MINUTES
+	})
+
+	it("signs people out after an hour of inactivity by default", () => {
+		expect(sessionLifetimeMs("user")).toBe(60 * 60000)
+	})
+
+	it("honours a shorter idle timeout for stricter environments", () => {
+		process.env.SESSION_IDLE_TIMEOUT_MINUTES = "30"
+		expect(sessionLifetimeMs("user")).toBe(30 * 60000)
+	})
+
+	it("never goes below five minutes", () => {
+		process.env.SESSION_IDLE_TIMEOUT_MINUTES = "1"
+		expect(sessionLifetimeMs("user")).toBe(5 * 60000)
 	})
 })

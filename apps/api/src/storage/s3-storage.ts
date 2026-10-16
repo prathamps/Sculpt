@@ -11,12 +11,16 @@ import { getSignedUrl } from "@aws-sdk/s3-request-presigner"
 import { IncomingFile, StoragePort } from "./storage"
 import { logger } from "../lib/logger"
 
+export type ServerSideEncryption = "AES256" | "aws:kms"
+
 export interface S3Config {
 	bucket: string
 	region: string
 	endpoint?: string
 	publicBaseUrl?: string
 	private?: boolean
+	serverSideEncryption?: ServerSideEncryption
+	kmsKeyId?: string
 }
 
 export class S3Storage implements StoragePort {
@@ -46,6 +50,12 @@ export class S3Storage implements StoragePort {
 				Key: key,
 				Body: createReadStream(file.path),
 				ContentType: file.mimeType,
+				...(this.config.serverSideEncryption
+					? { ServerSideEncryption: this.config.serverSideEncryption }
+					: {}),
+				...(this.config.serverSideEncryption === "aws:kms" && this.config.kmsKeyId
+					? { SSEKMSKeyId: this.config.kmsKeyId }
+					: {}),
 			})
 		)
 		await fs.unlink(file.path).catch(() => undefined)

@@ -8,7 +8,13 @@ vi.mock("../../lib/prisma", () => ({
 }))
 
 import { prisma } from "../../lib/prisma"
-import { roleMeets, canViewVersion } from "./access"
+import {
+	canViewVersion,
+	clearAccessCaches,
+	forgetMembership,
+	getMemberRole,
+	roleMeets,
+} from "./access"
 
 const mocked = vi.mocked(prisma, true)
 
@@ -37,7 +43,10 @@ describe("roleMeets", () => {
 })
 
 describe("canViewVersion", () => {
-	beforeEach(() => vi.clearAllMocks())
+	beforeEach(() => {
+		vi.clearAllMocks()
+		clearAccessCaches()
+	})
 
 	it("denies when the version does not exist", async () => {
 		mocked.imageVersion.findUnique.mockResolvedValue(null)
@@ -60,5 +69,43 @@ describe("canViewVersion", () => {
 			role: "VIEWER",
 		} as never)
 		expect(await canViewVersion("member", "v1")).toBe(true)
+	})
+})
+
+describe("membership caching", () => {
+	beforeEach(() => {
+		vi.clearAllMocks()
+		clearAccessCaches()
+	})
+
+	it("answers repeated checks for the same member from one lookup", async () => {
+		mocked.projectMember.findFirst.mockResolvedValue({ role: "EDITOR" } as never)
+
+		await getMemberRole("p1", "u1")
+		await getMemberRole("p1", "u1")
+
+		expect(mocked.projectMember.findFirst).toHaveBeenCalledTimes(1)
+	})
+
+	it("sees a removal immediately once the membership is forgotten", async () => {
+		mocked.projectMember.findFirst.mockResolvedValueOnce({ role: "EDITOR" } as never)
+		await getMemberRole("p1", "u1")
+
+		forgetMembership("p1", "u1")
+		mocked.projectMember.findFirst.mockResolvedValueOnce(null)
+
+		expect(await getMemberRole("p1", "u1")).toBeNull()
+	})
+
+	it("forgets every member of a deleted project", async () => {
+		mocked.projectMember.findFirst.mockResolvedValue({ role: "OWNER" } as never)
+		await getMemberRole("p1", "u1")
+		await getMemberRole("p1", "u2")
+
+		forgetMembership("p1")
+		await getMemberRole("p1", "u1")
+		await getMemberRole("p1", "u2")
+
+		expect(mocked.projectMember.findFirst).toHaveBeenCalledTimes(4)
 	})
 })

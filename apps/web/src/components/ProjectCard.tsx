@@ -35,9 +35,11 @@ export function ProjectCard({ project, onEdit, onDelete }: ProjectCardProps) {
 	})
 	const getImageUrl = () => {
 		if (!firstImage) return null
+		const latest = firstImage.latestVersion ?? firstImage.versions?.[0]
 		const url =
-			firstImage.latestVersion?.url ??
-			firstImage.versions?.[0]?.url ??
+			latest?.thumbnailUrl ||
+			latest?.proxyUrl ||
+			latest?.url ||
 			(firstImage as unknown as { url?: string }).url
 		return url ? mediaUrl(url) : "/placeholder-image.svg"
 	}

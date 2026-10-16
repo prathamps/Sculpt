@@ -40,7 +40,10 @@ const buildRendition = async (job: ImageRenditionJob): Promise<void> => {
 			include: { image: { select: { projectId: true } } },
 		})
 
-		await recordProjectAssets([proxyUrl], version.image.projectId)
+		await recordProjectAssets(
+			[{ url: proxyUrl, kind: "PROXY", imageVersionId: version.id }],
+			version.image.projectId
+		)
 		emitVersionUpdated(version)
 	} catch (error) {
 		await storage.remove(proxyUrl)

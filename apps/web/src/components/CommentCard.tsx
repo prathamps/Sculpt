@@ -31,6 +31,7 @@ import { useAuth } from "@/context/AuthContext"
 import { MentionTextarea } from "@/components/MentionTextarea"
 import { CommentAttachments } from "@/components/CommentAttachments"
 import { useMentionDraft } from "@/hooks/useMentionDraft"
+import { CommentHistoryDialog } from "@/components/CommentHistoryDialog"
 
 const escapeRegExp = (value: string): string =>
 	value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
@@ -87,6 +88,7 @@ export function CommentCard({
 		liked: boolean
 	} | null>(null)
 	const [isReplying, setIsReplying] = useState(false)
+	const [isHistoryOpen, setIsHistoryOpen] = useState(false)
 	const [replyContent, setReplyContent] = useState("")
 	const [isSubmittingReply, setIsSubmittingReply] = useState(false)
 	const { addMention, mentionIdsIn, resetMentions } = useMentionDraft()
@@ -232,7 +234,33 @@ export function CommentCard({
 							<p className="truncate text-sm font-medium leading-tight">
 								{comment.user.name || comment.user.email}
 							</p>
-							<p className="text-xs text-muted-foreground">{timestamp}</p>
+							<p className="text-xs text-muted-foreground">
+								{timestamp}
+								{comment.editedAt && (
+									<>
+										{" · "}
+										<button
+											type="button"
+											onClick={(event) => {
+												event.stopPropagation()
+												setIsHistoryOpen(true)
+											}}
+											className="underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring rounded"
+											aria-label="Edited. Show edit history"
+										>
+											edited
+										</button>
+									</>
+								)}
+							</p>
+							{comment.editedAt && (
+								<CommentHistoryDialog
+									commentId={comment.id}
+									currentContent={comment.content}
+									open={isHistoryOpen}
+									onOpenChange={setIsHistoryOpen}
+								/>
+							)}
 						</div>
 						{isAuthor && (
 							<DropdownMenu>

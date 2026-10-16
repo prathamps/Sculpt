@@ -1,4 +1,5 @@
 import { isProduction } from "./config"
+import { currentRequestContext } from "./request-context"
 
 type Level = "debug" | "info" | "warn" | "error"
 
@@ -32,10 +33,12 @@ const describeError = (error: unknown): LogContext => {
 const write = (level: Level, message: string, context: LogContext): void => {
 	if (LEVEL_RANK[level] < LEVEL_RANK[configuredLevel()]) return
 
+	const requestId = currentRequestContext()?.requestId
 	const entry = {
 		level,
 		message,
 		time: new Date().toISOString(),
+		...(requestId ? { requestId } : {}),
 		...context,
 	}
 

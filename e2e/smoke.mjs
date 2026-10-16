@@ -4,6 +4,7 @@ import { fileURLToPath } from "node:url"
 import { dirname, join } from "node:path"
 import { writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
+import { createRequire } from "node:module"
 import {
 	PNG_1PX,
 	buildCubeGlb,
@@ -14,6 +15,11 @@ import {
 const API = process.env.SCULPT_API_URL || "http://localhost:3001"
 const WEB = process.env.SCULPT_WEB_URL || "http://localhost:3000"
 const PROXY_READY_TIMEOUT_MS = 180000
+const AXE_SOURCE = readFileSync(
+	createRequire(import.meta.url).resolve("axe-core/axe.min.js"),
+	"utf8"
+)
+const BLOCKING_IMPACTS = new Set(["serious", "critical"])
 
 const stamp = Date.now()
 const email = `smoke-${stamp}@example.com`
@@ -175,7 +181,26 @@ const navigate = async (url, options) => {
 	}
 }
 
+const checkAccessibility = async (label) => {
+	await page.addScriptTag({ content: AXE_SOURCE })
+	const violations = await page.evaluate(async () => {
+		const results = await window.axe.run(document, { resultTypes: ["violations"] })
+		return results.violations.map((violation) => ({
+			id: violation.id,
+			impact: violation.impact,
+			targets: violation.nodes.slice(0, 3).map((node) => node.target.join(" ")),
+		}))
+	})
+	const blocking = violations.filter((violation) => BLOCKING_IMPACTS.has(violation.impact))
+	check(
+		`${label} has no serious accessibility violations`,
+		blocking.length === 0,
+		blocking.map((violation) => `${violation.id} @ ${violation.targets.join(", ")}`).join("; ")
+	)
+}
+
 await navigate(`${WEB}/login`, { waitUntil: "networkidle", timeout: 90000 })
+await checkAccessibility("sign-in page")
 await page.fill("#email", email)
 await page.fill("#password", password)
 let loggedIn = false
@@ -192,6 +217,7 @@ for (let attempt = 0; attempt < 3 && !loggedIn; attempt++) {
 }
 check("UI login reaches dashboard", loggedIn)
 if (!loggedIn) fatal("cannot continue without a session")
+await checkAccessibility("dashboard")
 
 const openViewer = async (imageName) => {
 	const image = byName(imageName)
@@ -303,6 +329,8 @@ await navigate(`${WEB}/project/${project.id}`, {
 	waitUntil: "domcontentloaded",
 	timeout: 120000,
 })
+await page.waitForSelector('button:has-text("Upload")', { timeout: 60000 })
+await checkAccessibility("project file view")
 await page.click('button:has-text("Upload")')
 await page.setInputFiles("#dropzone-file", stlPath)
 await page.click('button:has-text("Upload 1 file")')
@@ -1191,6 +1219,10 @@ const ignorable = ({ message, duringNavigation }) =>
 	message.includes("favicon") ||
 	EXPECTED_BEFORE_LOGIN.test(message) ||
 	(duringNavigation && REQUEST_ABORTED.test(message))
+
+await navigate(`${WEB}/account`, { waitUntil: "domcontentloaded", timeout: 60000 })
+await page.waitForSelector("#two-factor", { timeout: 30000 })
+await checkAccessibility("account and two-factor settings")
 
 const unexpectedErrors = consoleErrors.filter((entry) => !ignorable(entry))
 const abortsIgnored = consoleErrors.filter(

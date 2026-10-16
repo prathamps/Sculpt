@@ -9,7 +9,21 @@ import {
 	updateNotificationPreferences,
 	updateProfile,
 } from "./users.controller"
-import { changePasswordSchema, updateProfileSchema } from "./auth.schema"
+import {
+	changePasswordSchema,
+	disableMfaSchema,
+	enableMfaSchema,
+	secondFactorSchema,
+	updateProfileSchema,
+} from "./auth.schema"
+import {
+	disableMfaHandler,
+	enableMfa,
+	getMfaStatus,
+	regenerateMfaRecoveryCodes,
+	startMfaSetup,
+} from "./mfa.controller"
+import { loginRateLimit } from "../../middleware/rate-limit.middleware"
 
 const notificationPreferencesSchema = z
 	.object({
@@ -46,6 +60,21 @@ router.patch(
 	updateNotificationPreferences
 )
 router.get("/me/export", exportMyData)
+router.get("/me/mfa", getMfaStatus)
+router.post("/me/mfa/setup", startMfaSetup)
+router.post("/me/mfa/enable", loginRateLimit(), validateBody(enableMfaSchema), enableMfa)
+router.post(
+	"/me/mfa/recovery-codes",
+	loginRateLimit(),
+	validateBody(secondFactorSchema),
+	regenerateMfaRecoveryCodes
+)
+router.post(
+	"/me/mfa/disable",
+	loginRateLimit(),
+	validateBody(disableMfaSchema),
+	disableMfaHandler
+)
 router.delete("/me", validateBody(deleteAccountSchema), deleteMyAccount)
 
 export default router

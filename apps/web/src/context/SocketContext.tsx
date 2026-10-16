@@ -12,8 +12,6 @@ import {
 } from "react"
 import { io, Socket } from "socket.io-client"
 import { useAuth } from "./AuthContext"
-import { Paginated, api } from "@/lib/api"
-import { ignoreFailure } from "@/lib/errors"
 
 const SOCKET_URL = process.env.NEXT_PUBLIC_SOCKET_URL || "http://localhost:3001"
 
@@ -60,21 +58,10 @@ export const SocketProvider = ({ children }: SocketProviderProps) => {
 			transports: ["websocket", "polling"],
 		})
 
-		const joinAccessibleProjects = () =>
-			api
-				.get<Paginated<{ id: string }>>("/api/projects?pageSize=100")
-				.then((response) =>
-					response.items.forEach((project) =>
-						instance.emit("joinProject", project.id)
-					)
-				)
-				.catch(ignoreFailure)
-
 		instance.on("connect", () => {
 			setIsConnected(true)
 
 			instance.emit("join")
-			void joinAccessibleProjects()
 
 			const rejoinVersionId = joinedVersionRef.current
 			if (rejoinVersionId) {

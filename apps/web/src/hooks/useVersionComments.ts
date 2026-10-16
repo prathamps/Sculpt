@@ -1,12 +1,21 @@
 "use client"
 
-import { useState, useEffect, useCallback } from "react"
+import { useState, useEffect, useCallback, useRef } from "react"
 import { useAuth } from "@/context/AuthContext"
 import { useSocket } from "@/context/SocketContext"
 import { Paginated, api } from "@/lib/api"
+import {
+	insertIntoThread,
+	mergePages,
+	removeFromThread,
+	updateInThread,
+} from "@/lib/comment-thread"
 import { Comment } from "@/types"
 
 const COMMENT_PAGE_SIZE = 50
+
+const pageNumbersUpTo = (count: number): number[] =>
+	Array.from({ length: Math.max(1, count) }, (_, index) => index + 1)
 
 export function useVersionComments(imageVersionId: string | null) {
 	const { user } = useAuth()
@@ -23,6 +32,12 @@ export function useVersionComments(imageVersionId: string | null) {
 	const [error, setError] = useState<string | null>(null)
 	const [loadedPages, setLoadedPages] = useState(0)
 	const [totalPages, setTotalPages] = useState(0)
+	const loadedPagesRef = useRef(0)
+
+	const rememberLoadedPages = useCallback((count: number) => {
+		loadedPagesRef.current = count
+		setLoadedPages(count)
+	}, [])
 
 	const fetchPage = useCallback(
 		async (page: number): Promise<Paginated<Comment> | null> => {
@@ -39,11 +54,17 @@ export function useVersionComments(imageVersionId: string | null) {
 		setIsLoading(true)
 		setError(null)
 		try {
-			const first = await fetchPage(1)
-			if (!first) return
-			setComments(first.items)
-			setTotalPages(first.totalPages)
-			setLoadedPages(1)
+			const pages = await Promise.all(
+				pageNumbersUpTo(loadedPagesRef.current).map(fetchPage)
+			)
+			const loaded = pages.filter(
+				(page): page is Paginated<Comment> => page !== null
+			)
+			const lastPage = loaded.at(-1)
+			if (!lastPage) return
+			setComments(mergePages(loaded.map((page) => page.items)))
+			setTotalPages(lastPage.totalPages)
+			rememberLoadedPages(loaded.length)
 		} catch (caught) {
 			setError(
 				caught instanceof Error ? caught.message : "Could not load comments."
@@ -51,7 +72,7 @@ export function useVersionComments(imageVersionId: string | null) {
 		} finally {
 			setIsLoading(false)
 		}
-	}, [imageVersionId, fetchPage])
+	}, [imageVersionId, fetchPage, rememberLoadedPages])
 
 	const loadMore = useCallback(async () => {
 		if (isLoadingMore || loadedPages === 0 || loadedPages >= totalPages) return
@@ -59,12 +80,9 @@ export function useVersionComments(imageVersionId: string | null) {
 		try {
 			const next = await fetchPage(loadedPages + 1)
 			if (!next) return
-			setComments((prev) => {
-				const seen = new Set(prev.map((comment) => comment.id))
-				return [...prev, ...next.items.filter((item) => !seen.has(item.id))]
-			})
+			setComments((prev) => mergePages([prev, next.items]))
 			setTotalPages(next.totalPages)
-			setLoadedPages((page) => page + 1)
+			rememberLoadedPages(loadedPages + 1)
 		} catch (caught) {
 			setError(
 				caught instanceof Error ? caught.message : "Could not load comments."
@@ -72,14 +90,18 @@ export function useVersionComments(imageVersionId: string | null) {
 		} finally {
 			setIsLoadingMore(false)
 		}
-	}, [fetchPage, isLoadingMore, loadedPages, totalPages])
+	}, [fetchPage, isLoadingMore, loadedPages, totalPages, rememberLoadedPages])
+
+	const syncAfterChange = useCallback(() => {
+		if (!isConnected) void refetch()
+	}, [isConnected, refetch])
 
 	useEffect(() => {
 		setComments([])
-		setLoadedPages(0)
+		rememberLoadedPages(0)
 		setTotalPages(0)
 		void refetch()
-	}, [refetch])
+	}, [refetch, rememberLoadedPages])
 
 	useEffect(() => {
 		if (!imageVersionId || reconnectCount === 0) return
@@ -98,21 +120,16 @@ export function useVersionComments(imageVersionId: string | null) {
 
 		const handleNewComment = (newComment: Comment) => {
 			if (!isForThisVersion(newComment.imageVersionId)) return
-			setComments((prev) =>
-				prev.some((comment) => comment.id === newComment.id)
-					? prev
-					: [newComment, ...prev]
-			)
+			setComments((prev) => insertIntoThread(prev, newComment))
 		}
 
 		const handleCommentUpdated = (updatedComment: Comment) => {
 			if (!isForThisVersion(updatedComment.imageVersionId)) return
 			setComments((prev) =>
-				prev.map((comment) =>
-					comment.id === updatedComment.id
-						? { ...comment, ...updatedComment }
-						: comment
-				)
+				updateInThread(prev, updatedComment.id, (comment) => ({
+					...comment,
+					...updatedComment,
+				}))
 			)
 		}
 
@@ -121,7 +138,7 @@ export function useVersionComments(imageVersionId: string | null) {
 			imageVersionId: string
 		}) => {
 			if (!isForThisVersion(payload.imageVersionId)) return
-			setComments((prev) => prev.filter((comment) => comment.id !== payload.id))
+			setComments((prev) => removeFromThread(prev, payload.id))
 		}
 
 		const handleLikeUpdate = (payload: {
@@ -133,18 +150,14 @@ export function useVersionComments(imageVersionId: string | null) {
 		}) => {
 			if (!isForThisVersion(payload.imageVersionId)) return
 			setComments((prev) =>
-				prev.map((comment) =>
-					comment.id === payload.id
-						? {
-								...comment,
-								likeCount: payload.count,
-								isLikedByCurrentUser:
-									user?.id === payload.userId
-										? payload.liked
-										: comment.isLikedByCurrentUser,
-							}
-						: comment
-				)
+				updateInThread(prev, payload.id, (comment) => ({
+					...comment,
+					likeCount: payload.count,
+					isLikedByCurrentUser:
+						user?.id === payload.userId
+							? payload.liked
+							: comment.isLikedByCurrentUser,
+				}))
 			)
 		}
 
@@ -176,5 +189,6 @@ export function useVersionComments(imageVersionId: string | null) {
 		loadMore,
 		error,
 		refetch,
+		syncAfterChange,
 	}
 }

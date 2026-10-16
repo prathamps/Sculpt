@@ -6,12 +6,15 @@ import {
 	getProject,
 	getStats,
 	getAuditLogs,
+	exportAuditLogs,
+	verifyAuditLogs,
 	adminLogin,
 	adminProfile,
 	adminLogout,
 } from "./admin.controller"
 import { authenticateAdmin } from "../../middleware/auth.middleware"
-import { validateBody } from "../../middleware/validate.middleware"
+import { validateBody, validateQuery } from "../../middleware/validate.middleware"
+import { auditQuerySchema } from "../audit/audit.schema"
 import { adminLoginSchema } from "../auth/auth.schema"
 import { loginRateLimit } from "../../middleware/rate-limit.middleware"
 
@@ -32,6 +35,8 @@ router.get("/projects/:projectId", getProject)
 
 router.get("/stats", getStats)
 
-router.get("/audit-logs", getAuditLogs)
+router.get("/audit-logs", validateQuery(auditQuerySchema), getAuditLogs)
+router.get("/audit-logs/export.csv", validateQuery(auditQuerySchema), exportAuditLogs)
+router.get("/audit-logs/verify", verifyAuditLogs)
 
 export default router

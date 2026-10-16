@@ -6,6 +6,105 @@ All notable changes to Sculpt are recorded here. The format follows
 
 ## [Unreleased]
 
+### Upgrade notes
+
+- **Administrators now need two-factor authentication** to open the admin
+  console (`ADMIN_MFA_REQUIRED=true` by default). Each admin enrols from
+  Account → Two-factor authentication first. Set `MFA_ENCRYPTION_KEY` before
+  anyone enrols.
+- **Production refuses a plain-HTTP `FRONTEND_URL` on a network address**
+  unless `ALLOW_INSECURE_HTTP=true`. `http://localhost` still works.
+- **Share links expire after seven days unless "No expiry" is chosen.** API
+  clients that omit `expiresInDays` now get the default; send `null` for a
+  link that never expires.
+- The migration backfills audit sequence numbers and classifies existing
+  stored files. Entries written before it are reported as unchained by
+  verification.
+
+### Compliance and traceability
+
+- **Complete audit trail.** Comment creation, edits, deletions and attachments;
+  invitation revokes; version renames; review due dates; notification
+  preferences; project content settings; every view or download of an
+  original, proxy or attachment; every permission refusal; failed share-link,
+  invitation and OAuth attempts; and every admin read of users, projects or the
+  audit trail are now recorded. Role changes record the previous role.
+- **Entries capture request id and user agent** alongside actor, target and IP,
+  and the API returns `X-Request-Id` on every response.
+- **Tamper-evident audit log.** Entries are sequence-numbered and hash-chained,
+  updates are rejected by a database trigger, and **Verify integrity** in the
+  admin console recomputes the chain. Each entry is also written to the log
+  stream.
+- **Auditors can self-serve.** The audit view filters by action, actor, target,
+  IP and date range, and exports CSV including the hash chain.
+- **Actions stay attributable after an account is deleted**, and the deleted
+  person's review approvals are kept.
+- **Comment edit history.** Edited comments are marked and keep every earlier
+  version.
+- **Two-factor authentication** with authenticator apps and recovery codes,
+  required for admins and optionally for everyone (`MFA_REQUIRED`).
+- **Per-account lockout** after repeated failed passwords or codes, and
+  sign-in no longer reveals whether an address has an account through timing.
+- **Per-project download control and viewer watermark.** Owners can stop
+  viewers and members downloading originals and overlay each viewer's email on
+  everything they view.
+- **Configurable idle timeout** (`SESSION_IDLE_TIMEOUT_MINUTES`) and share-link
+  limits (`SHARE_LINK_DEFAULT_EXPIRY_DAYS`, `SHARE_LINK_MAX_DAYS`).
+- **S3 server-side encryption** via `S3_SERVER_SIDE_ENCRYPTION`.
+- **Storage limitation.** Expired invitations (with the addresses they hold)
+  and password-reset tokens are pruned automatically.
+- **Accessibility checks.** axe-core runs against new components in unit tests
+  and against key pages in the browser smoke suite.
+- **The OpenAPI description validates** under OpenAPI 3.1.
+- New [docs/compliance.md](docs/compliance.md) maps Sculpt's controls to SOC 2,
+  ISO 27001, GDPR, TPN and OWASP ASVS.
+
+### Fixed
+
+- **Media no longer gets stuck "processing" after a restart.** The instance id
+  used to be random per boot, so jobs claimed before a restart were never
+  recovered and their scratch copies leaked. The id is now persisted, pending
+  renditions resume from a durable source, and jobs of a replica that stops
+  heartbeating are failed after ten minutes.
+- **Live replies appear under their thread.** A reply arriving over the socket
+  was listed as a new top-level comment for everyone else, and edits, likes,
+  deletes and resolves on replies did not update live.
+- **Replying to a reply no longer loses the comment.** It is filed under the
+  thread root (existing ones are re-parented by a migration), while the person
+  replied to is still the one notified.
+- **Comment actions keep your place.** Liking, resolving, replying or deleting
+  no longer reloads the first page of comments and discards older pages.
+- **Deleted comments, versions and media take their attachments with them.**
+  Files attached to replies, or to comments on a deleted version or file, were
+  left in storage.
+- **Sign-in works on plain-HTTP private networks.** Cookies are marked
+  `Secure` only when `FRONTEND_URL` is HTTPS; the API warns at startup when
+  it is not.
+- **Rate limits no longer throttle whole offices.** The write limit counts
+  mutations only and buckets signed-in users by account rather than IP. The API
+  warns when it sees forwarded headers without `TRUST_PROXY`.
+- **Realtime project updates reach users in more than 100 projects.** The
+  server joins every project room on connect.
+
+### Performance
+
+- Session verification, membership roles and ownership lookups are cached
+  briefly in-process and evicted on every access change, removing most
+  per-request database round trips (a 100-thumbnail grid drops from roughly
+  500 queries to roughly 100).
+- Socket access re-checks run with bounded concurrency and never overlap.
+- The project media list is paginated, filtered and sorted on the server, with
+  per-type counts; uploads return only what they created.
+- New indexes for notification pruning and folder listings.
+
+### Added
+
+- `GET /metrics` for Prometheus, enabled by `METRICS_TOKEN`.
+- `NOTIFICATION_RETENTION_DAYS` (default 90) and `AUDIT_RETENTION_DAYS`.
+- Graceful shutdown closes realtime connections and drains queued
+  notifications before exiting.
+- A "3D models" filter in the project file view.
+
 ### Security
 
 **These fixes close vulnerabilities present in every earlier build. Upgrade

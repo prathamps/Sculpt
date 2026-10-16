@@ -80,6 +80,30 @@ describe("S3Storage", () => {
 		)
 	})
 
+	it("asks the bucket to encrypt objects at rest when configured", async () => {
+		const storage = new S3Storage({
+			bucket: "media",
+			region: "us-east-1",
+			serverSideEncryption: "aws:kms",
+			kmsKeyId: "key-123",
+		})
+		await storage.store({
+			path: "/tmp/image-5.png",
+			originalName: "e.png",
+			mimeType: "image/png",
+		})
+
+		expect(sendMock).toHaveBeenCalledWith(
+			expect.objectContaining({
+				kind: "put",
+				input: expect.objectContaining({
+					ServerSideEncryption: "aws:kms",
+					SSEKMSKeyId: "key-123",
+				}),
+			})
+		)
+	})
+
 	it("never deletes urls that belong to a different origin", async () => {
 		const storage = new S3Storage({ bucket: "media", region: "us-east-1" })
 		await storage.remove("https://evil.example.com/image-4.png")

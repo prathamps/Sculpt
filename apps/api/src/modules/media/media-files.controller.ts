@@ -2,11 +2,19 @@ import path from "path"
 import { Request, Response } from "express"
 import { AuthenticatedUser } from "../../types"
 import { storage, uploadsDir } from "../../storage"
-import { isProjectMember } from "../projects/access"
-import { projectIdForStoredPath, storedPathOf } from "./media-access.service"
+import { prisma } from "../../lib/prisma"
+import { getMemberRole } from "../projects/access"
+import {
+	contentPolicyFor,
+	mayDownloadOriginals,
+} from "../projects/content-policy"
+import { StoredAsset, assetForStoredPath, storedPathOf } from "./media-access.service"
+import { recordAuditOnce } from "../audit/audit.service"
 import { respondWithError } from "../../lib/http"
 
 const PRESIGNED_URL_TTL_SECONDS = 300
+
+const AUDITED_ASSET_KINDS = new Set(["ORIGINAL", "PROXY", "ATTACHMENT"])
 
 const setNonExecutableHeaders = (res: Response): void => {
 	res.setHeader("X-Content-Type-Options", "nosniff")
@@ -14,6 +22,32 @@ const setNonExecutableHeaders = (res: Response): void => {
 	res.setHeader("Content-Security-Policy", "default-src 'none'")
 	res.setHeader("Cache-Control", "private, max-age=3600")
 }
+
+const hasViewableProxy = async (imageVersionId: string | null): Promise<boolean> => {
+	if (!imageVersionId) return false
+	const version = await prisma.imageVersion.findUnique({
+		where: { id: imageVersionId },
+		select: { proxyUrl: true },
+	})
+	return !!version?.proxyUrl
+}
+
+const originalIsWithheld = async (
+	asset: StoredAsset,
+	mayDownload: boolean
+): Promise<boolean> =>
+	asset.kind === "ORIGINAL" && !mayDownload && (await hasViewableProxy(asset.imageVersionId))
+
+const recordAccess = (userId: string, storedPath: string, asset: StoredAsset) =>
+	AUDITED_ASSET_KINDS.has(asset.kind)
+		? recordAuditOnce(`${userId}:${storedPath}`, {
+				action: "media.accessed",
+				targetType: asset.imageVersionId ? "imageVersion" : "mediaAsset",
+				targetId: asset.imageVersionId ?? storedPath,
+				actorId: userId,
+				metadata: { projectId: asset.projectId, kind: asset.kind, storedPath },
+			})
+		: Promise.resolve()
 
 export const serveMediaFile = async (
 	req: Request,
@@ -32,16 +66,27 @@ export const serveMediaFile = async (
 			return
 		}
 
-		const projectId = await projectIdForStoredPath(storedPath)
-		if (!projectId) {
+		const asset = await assetForStoredPath(storedPath)
+		if (!asset) {
 			res.status(404).json({ message: "Not found" })
 			return
 		}
 
-		if (!(await isProjectMember(projectId, userId))) {
+		const role = await getMemberRole(asset.projectId, userId)
+		if (!role) {
 			res.status(403).json({ message: "You are not a member of this project" })
 			return
 		}
+
+		const policy = await contentPolicyFor(asset.projectId)
+		if (await originalIsWithheld(asset, mayDownloadOriginals(policy, role))) {
+			res.status(403).json({
+				message: "Original files are not available to your role in this project.",
+			})
+			return
+		}
+
+		await recordAccess(userId, storedPath, asset)
 
 		if (storage.temporaryReadUrl) {
 			const signed = await storage.temporaryReadUrl(

@@ -4,32 +4,19 @@ import { useEffect, useState, useCallback, useMemo, Suspense } from "react"
 import { useAuth } from "@/context/AuthContext"
 import { ProjectMembersProvider } from "@/context/ProjectMembersContext"
 import { useParams } from "next/navigation"
-import type {
-	ModelFlyToRequest,
-	ModelPin,
-} from "@/components/ModelAnnotationCanvas"
+import type { ModelFlyToRequest } from "@/components/ModelAnnotationCanvas"
 import { ViewerSurface } from "@/components/ViewerSurface"
-import { AnnotationFooter, ComposeRange } from "@/components/AnnotationFooter"
+import { AnnotationFooter } from "@/components/AnnotationFooter"
 import { CommentSidebar } from "@/components/CommentSidebar"
 import { CompareView } from "@/components/CompareView"
 import { TopHeader } from "@/components/TopHeader"
 import { ExportMenu } from "@/components/ExportMenu"
-import {
-	Loader2,
-	ChevronDown,
-	Upload,
-	Trash2,
-	Columns2,
-	Eye,
-} from "lucide-react"
+import { VersionMenu } from "@/components/VersionMenu"
+import { ViewerPresenceStrip } from "@/components/ViewerPresenceStrip"
+import { ViewerWatermark } from "@/components/ViewerWatermark"
+import { mayDownloadOriginals } from "@/lib/content-policy"
+import { Loader2, Columns2, Eye } from "lucide-react"
 import { Button } from "@/components/ui/button"
-import {
-	DropdownMenu,
-	DropdownMenuContent,
-	DropdownMenuItem,
-	DropdownMenuTrigger,
-	DropdownMenuSeparator,
-} from "@/components/ui/dropdown-menu"
 import {
 	Annotation,
 	AnnotationTool,
@@ -38,27 +25,27 @@ import {
 	ModelAnchor,
 } from "@/types"
 import { roleAtLeast } from "@/lib/utils"
+import { api } from "@/lib/api"
+import { describeError } from "@/lib/errors"
 import { extensionOf } from "@/lib/model-formats"
 import { isNativelyPlayableVideo } from "@/lib/upload-formats"
+import {
+	canvasAnnotationsFor,
+	modelPinsFor,
+	scrubberPeersFor,
+	timelineMarkersFor,
+	viewingPeopleFor,
+} from "@/lib/viewer-overlays"
 import { useVersionComments } from "@/hooks/useVersionComments"
 import { useAnnotationHistory } from "@/hooks/useAnnotationHistory"
+import { useComposeRange } from "@/hooks/useComposeRange"
 import { usePresence } from "@/hooks/usePresence"
 import { useMediaQuery } from "@/hooks/useMediaQuery"
 import { useCompareMode, useFileViewer } from "@/hooks/useFileViewer"
 import { ReviewPanel } from "@/components/ReviewPanel"
-import { UserAvatar } from "@/components/UserAvatar"
 import { UploadVersionDialog } from "@/components/UploadVersionDialog"
 import { ConfirmationModal } from "@/components/ConfirmationModal"
 import { toast } from "sonner"
-
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001"
-
-const annotationsOf = (comment: Comment): Annotation[] =>
-	Array.isArray(comment.annotation)
-		? comment.annotation
-		: comment.annotation
-		? [comment.annotation]
-		: []
 
 function ProjectFileViewPageInner() {
 	const params = useParams()
@@ -71,6 +58,7 @@ function ProjectFileViewPageInner() {
 		searchParams,
 		buildUrl,
 		role,
+		contentPolicy,
 		loadError,
 		image,
 		setImage,
@@ -111,7 +99,13 @@ function ProjectFileViewPageInner() {
 		time: number
 		nonce: number
 	} | null>(null)
-	const [composeRange, setComposeRange] = useState<ComposeRange | null>(null)
+	const {
+		composeRange,
+		composingRange,
+		handleMarkIn,
+		handleMarkOut,
+		clearRange,
+	} = useComposeRange(currentVideoTime)
 
 	const [currentPdfPage, setCurrentPdfPage] = useState(1)
 
@@ -145,7 +139,7 @@ function ProjectFileViewPageInner() {
 		isLoadingMore: commentsLoadingMore,
 		hasMore: hasMoreComments,
 		loadMore: loadMoreComments,
-		refetch: refetchComments,
+		syncAfterChange: syncCommentsAfterChange,
 	} = useVersionComments(selectedVersion?.id ?? null)
 	const peers = usePresence(
 		selectedVersion?.id ?? null,
@@ -173,11 +167,11 @@ function ProjectFileViewPageInner() {
 		setSelectedCommentId(null)
 		setCurrentVideoTime(0)
 		setSeekRequest(null)
-		setComposeRange(null)
+		clearRange()
 		setCurrentPdfPage(1)
 		setPendingPin(null)
 		setModelFlyTo(null)
-	}, [clear])
+	}, [clear, clearRange])
 
 	const handleVersionSelect = (version: ImageVersion) => {
 		setSelectedVersion(version)
@@ -255,160 +249,58 @@ function ProjectFileViewPageInner() {
 		clear()
 	}
 
-	const handleMarkIn = () => {
-		setComposeRange((prev) => {
-			const start = currentVideoTime
-			const end = prev?.end != null && prev.end >= start ? prev.end : null
-			return { start, end }
-		})
-	}
-
-	const handleMarkOut = () => {
-		setComposeRange((prev) => {
-			const end = currentVideoTime
-			const start = prev?.start ?? end
-			return start <= end
-				? { start, end }
-				: { start: end, end: start }
-		})
-	}
-
-	const handleClearRange = () => setComposeRange(null)
-
-	const composingRange =
-		composeRange?.start != null && composeRange?.end != null
-			? { start: composeRange.start, end: composeRange.end }
-			: null
-
 	const timelineMarkers = useMemo(
-		() =>
-			comments
-				.filter((c) => typeof c.timestamp === "number")
-				.map((c) => {
-					const name = c.user.name || c.user.email
-					return {
-						commentId: c.id,
-						t: c.timestamp as number,
-						tEnd:
-							typeof c.timestampEnd === "number" ? c.timestampEnd : undefined,
-						label: name,
-						initial: name.charAt(0).toUpperCase(),
-						selected: c.id === selectedCommentId,
-					}
-				}),
+		() => timelineMarkersFor(comments, selectedCommentId),
 		[comments, selectedCommentId]
 	)
 
-	const canvasAnnotations = useMemo(() => {
-		let derived: Annotation[]
-		if (isVideo) {
-			const visibleComments = selectedComment ? [selectedComment] : comments
-
-			derived = visibleComments.flatMap((c) =>
-				annotationsOf(c).map((a) => ({
-					...a,
-					t: typeof c.timestamp === "number" ? c.timestamp : a.t,
-					tEnd: typeof c.timestampEnd === "number" ? c.timestampEnd : a.tEnd,
-					isHighlighted: !!selectedComment,
-					pinned: !!selectedComment,
-				}))
-			)
-			return [
-				...annotations.map(
-					(a): Annotation => ({ ...a, t: undefined, tEnd: undefined })
-				),
-				...derived,
-			]
-		}
-		const source = isPdf
-			? comments.filter((c) => (c.page ?? 1) === currentPdfPage)
-			: comments
-		if (showAllAnnotations) {
-			derived = source.flatMap((c) =>
-				annotationsOf(c).map((a) => ({
-					...a,
-					isHighlighted: c.id === selectedCommentId,
-					dimmed: c.id !== selectedCommentId,
-				}))
-			)
-		} else if (
-			selectedComment &&
-			(!isPdf || (selectedComment.page ?? 1) === currentPdfPage)
-		) {
-			derived = annotationsOf(selectedComment).map((a) => ({
-				...a,
-				isHighlighted: true,
-			}))
-		} else {
-			derived = []
-		}
-		return [...annotations, ...derived]
-	}, [
-		annotations,
-		comments,
-		isVideo,
-		isPdf,
-		currentPdfPage,
-		selectedComment,
-		selectedCommentId,
-		showAllAnnotations,
-	])
-
-	const scrubberPeers = useMemo(
+	const canvasAnnotations = useMemo(
 		() =>
-			peers.map((p) => ({
-				socketId: p.socketId,
-				name: p.user.name || "Someone",
-				initial: (p.user.name || "S").charAt(0).toUpperCase(),
-				time: p.time,
-			})),
-		[peers]
+			canvasAnnotationsFor({
+				drafts: annotations,
+				comments,
+				selectedComment,
+				selectedCommentId,
+				isVideo,
+				isPdf,
+				currentPdfPage,
+				showAllAnnotations,
+			}),
+		[
+			annotations,
+			comments,
+			isVideo,
+			isPdf,
+			currentPdfPage,
+			selectedComment,
+			selectedCommentId,
+			showAllAnnotations,
+		]
 	)
 
-	const viewerStrip = useMemo(() => {
-		const byUser = new Map<string, { name: string; avatarUrl?: string | null }>()
-		peers.forEach((p) => {
-			if (!byUser.has(p.user.id)) {
-				byUser.set(p.user.id, {
-					name: p.user.name || "Someone",
-					avatarUrl: p.user.avatarUrl ?? null,
-				})
-			}
-		})
-		return Array.from(byUser.values())
-	}, [peers])
+	const scrubberPeers = useMemo(() => scrubberPeersFor(peers), [peers])
 
-	const modelPins = useMemo<ModelPin[]>(() => {
-		if (!isModel) return []
-		return comments
-			.filter((c) => c.modelAnchor)
-			.slice()
-			.sort(
-				(a, b) =>
-					new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
-			)
-			.map((c, index) => ({
-				commentId: c.id,
-				number: index + 1,
-				label: c.user.name || c.user.email,
-				anchor: c.modelAnchor as ModelAnchor,
-				selected: c.id === selectedCommentId,
-			}))
-	}, [comments, isModel, selectedCommentId])
+	const viewingPeople = useMemo(() => viewingPeopleFor(peers), [peers])
+
+	const modelPins = useMemo(
+		() => (isModel ? modelPinsFor(comments, selectedCommentId) : []),
+		[comments, isModel, selectedCommentId]
+	)
 
 	const handlePlacePin = useCallback((anchor: ModelAnchor) => {
 		setSelectedCommentId(null)
 		setPendingPin(anchor)
 	}, [])
 
+	const showWatermark = contentPolicy.watermarkViewers && !!user?.email
 	const canComment = roleAtLeast(role, "MEMBER")
 	const canEditMedia = roleAtLeast(role, "EDITOR")
 
 	const handleCommentAdded = () => {
 		setCurrentAnnotation(null)
-		setComposeRange(null)
+		clearRange()
 		setPendingPin(null)
-		refetchComments()
+		syncCommentsAfterChange()
 	}
 
 	const handleVersionUploaded = (updatedImage: NonNullable<typeof image>) => {
@@ -423,34 +315,25 @@ function ProjectFileViewPageInner() {
 	const handleDeleteVersion = async (versionId: string) => {
 		setIsDeletingVersion(true)
 		try {
-			const res = await fetch(`${API_URL}/api/images/versions/${versionId}`, {
-				method: "DELETE",
-				credentials: "include",
-			})
+			await api.delete(`/api/images/versions/${versionId}`)
 
-			if (res.ok) {
-				const remainingVersions =
-					image?.versions.filter((v) => v.id !== versionId) ?? []
-				setImage((prev) =>
-					prev ? { ...prev, versions: remainingVersions } : null
-				)
+			const remainingVersions =
+				image?.versions.filter((v) => v.id !== versionId) ?? []
+			setImage((prev) =>
+				prev ? { ...prev, versions: remainingVersions } : null
+			)
 
-				if (selectedVersion?.id === versionId) {
-					const next = remainingVersions[0] ?? null
-					setSelectedVersion(next)
-					resetPerVersionState()
-					router.replace(buildUrl({ v: next?.id ?? null }), { scroll: false })
-				}
-				if (compareId === versionId) {
-					router.replace(buildUrl({ compare: null }), { scroll: false })
-				}
-			} else {
-				const errorData = await res.json().catch(() => null)
-				toast.error(errorData?.message || "Failed to delete version")
+			if (selectedVersion?.id === versionId) {
+				const next = remainingVersions[0] ?? null
+				setSelectedVersion(next)
+				resetPerVersionState()
+				router.replace(buildUrl({ v: next?.id ?? null }), { scroll: false })
+			}
+			if (compareId === versionId) {
+				router.replace(buildUrl({ compare: null }), { scroll: false })
 			}
 		} catch (error) {
-			console.error("Error deleting version:", error)
-			toast.error("An error occurred while deleting the version")
+			toast.error(describeError(error, "Could not delete the version."))
 		} finally {
 			setIsDeletingVersion(false)
 			setVersionToDelete(null)
@@ -492,33 +375,7 @@ function ProjectFileViewPageInner() {
 				onToggleSidebar={() => setIsSidebarOpen(!isSidebarOpen)}
 				isSidebarOpen={isSidebarOpen}
 			>
-				{viewerStrip.length > 0 && (
-					<div
-						className="flex items-center -space-x-2"
-						aria-label={`${viewerStrip.length} other ${
-							viewerStrip.length === 1 ? "person is" : "people are"
-						} viewing this version`}
-					>
-						{viewerStrip.slice(0, 5).map((viewer, i) => (
-							<span
-								key={`${viewer.name}-${i}`}
-								title={`${viewer.name} is viewing`}
-							>
-								<UserAvatar
-									className="h-6 w-6 border-2 border-background"
-									fallbackClassName="text-[10px]"
-									name={viewer.name}
-									avatarUrl={viewer.avatarUrl}
-								/>
-							</span>
-						))}
-						{viewerStrip.length > 5 && (
-							<div className="flex h-6 w-6 items-center justify-center rounded-full border-2 border-background bg-muted text-[10px]">
-								+{viewerStrip.length - 5}
-							</div>
-						)}
-					</div>
-				)}
+				<ViewerPresenceStrip viewers={viewingPeople} />
 				{selectedVersion?.proxyStatus === "PENDING" && (
 					<span className="flex items-center gap-1 text-xs text-muted-foreground">
 						<Loader2 className="h-3 w-3 animate-spin" aria-hidden="true" />
@@ -557,75 +414,39 @@ function ProjectFileViewPageInner() {
 					image &&
 					image.versions &&
 					image.versions.length > 0 && (
-						<div className="flex items-center gap-2">
-							<DropdownMenu>
-								<DropdownMenuTrigger asChild>
-									<Button variant="outline" size="sm" className="gap-1">
-										{selectedVersion?.versionName || "Select version"}
-										<ChevronDown className="h-3.5 w-3.5" aria-hidden="true" />
-									</Button>
-								</DropdownMenuTrigger>
-								<DropdownMenuContent align="end">
-									{image.versions.map((version) => (
-										<DropdownMenuItem
-											key={version.id}
-											onClick={() => handleVersionSelect(version)}
-											className={
-												selectedVersion?.id === version.id ? "bg-accent" : ""
-											}
-										>
-											<div className="flex w-full justify-between items-center">
-												<span>{version.versionName}</span>
-												{image.versions.length > 1 && canEditMedia && (
-													<Button
-														variant="ghost"
-														size="icon"
-														className="h-6 w-6 ml-2 text-destructive"
-														onClick={(e) => {
-															e.stopPropagation()
-															setVersionToDelete(version)
-														}}
-														aria-label={`Delete ${version.versionName}`}
-													>
-														<Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
-													</Button>
-												)}
-											</div>
-										</DropdownMenuItem>
-									))}
-									{canEditMedia && (
-										<>
-											<DropdownMenuSeparator />
-											<DropdownMenuItem onClick={() => setIsUploadModalOpen(true)}>
-												<Upload className="mr-2 h-4 w-4" aria-hidden="true" />
-												Upload new version
-											</DropdownMenuItem>
-										</>
-									)}
-								</DropdownMenuContent>
-							</DropdownMenu>
-						</div>
+						<VersionMenu
+							versions={image.versions}
+							selectedVersion={selectedVersion}
+							canEdit={canEditMedia}
+							onSelect={handleVersionSelect}
+							onRequestDelete={setVersionToDelete}
+							onRequestUpload={() => setIsUploadModalOpen(true)}
+						/>
 					)}
 				{!isCompareMode && !isPdf && !isModel && image && selectedVersion && (
 					<ExportMenu
 						image={image}
 						selectedVersion={selectedVersion}
 						annotations={annotations}
+						canDownloadOriginal={mayDownloadOriginals(contentPolicy, role)}
 					/>
 				)}
 			</TopHeader>
 			{isCompareMode && image && selectedVersion && compareVersion ? (
-				<CompareView
-					versions={image.versions}
-					leftVersion={selectedVersion}
-					rightVersion={compareVersion}
-					onLeftChange={handleVersionSelect}
-					onRightChange={(version) =>
-						router.replace(buildUrl({ compare: version.id }), {
-							scroll: false,
-						})
-					}
-				/>
+				<div className="relative flex flex-1 overflow-hidden">
+					{showWatermark && <ViewerWatermark email={user?.email ?? ""} />}
+					<CompareView
+						versions={image.versions}
+						leftVersion={selectedVersion}
+						rightVersion={compareVersion}
+						onLeftChange={handleVersionSelect}
+						onRightChange={(version) =>
+							router.replace(buildUrl({ compare: version.id }), {
+								scroll: false,
+							})
+						}
+					/>
+				</div>
 			) : (
 				<div
 					className={`flex flex-1 overflow-hidden ${
@@ -637,7 +458,8 @@ function ProjectFileViewPageInner() {
 							isSmallScreen && isSidebarOpen ? "h-[60%]" : "h-full"
 						}`}
 					>
-						<div className="flex-1 flex items-center justify-center bg-muted/20 overflow-auto">
+						<div className="relative flex-1 flex items-center justify-center bg-muted/20 overflow-auto">
+							{showWatermark && <ViewerWatermark email={user?.email ?? ""} />}
 							<ViewerSurface
 								isImageLoading={isImageLoading}
 								selectedVersion={selectedVersion}
@@ -647,6 +469,7 @@ function ProjectFileViewPageInner() {
 								tool={tool}
 								color={color}
 								canComment={canComment}
+								canExportFrames={mayDownloadOriginals(contentPolicy, role)}
 								canvasAnnotations={canvasAnnotations}
 								onAddAnnotation={handleAddAnnotation}
 								onSelectCommentById={handleSelectCommentById}
@@ -686,7 +509,7 @@ function ProjectFileViewPageInner() {
 									composeRange={isVideo ? composeRange ?? undefined : undefined}
 									onMarkIn={handleMarkIn}
 									onMarkOut={handleMarkOut}
-									onClearRange={handleClearRange}
+									onClearRange={clearRange}
 									page={isPdf ? currentPdfPage : null}
 									modelAnchor={isModel ? pendingPin : undefined}
 									onClearModelAnchor={() => setPendingPin(null)}
@@ -708,7 +531,7 @@ function ProjectFileViewPageInner() {
 							onLoadMore={loadMoreComments}
 							comments={comments}
 							isLoading={commentsLoading}
-							onRefresh={refetchComments}
+							onRefresh={syncCommentsAfterChange}
 							selectedCommentId={selectedCommentId}
 							onSelectComment={handleSelectComment}
 							className={

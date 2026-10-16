@@ -47,6 +47,7 @@ interface ViewerSurfaceProps {
 	tool: AnnotationTool
 	color: string
 	canComment: boolean
+	canExportFrames: boolean
 	canvasAnnotations: Annotation[]
 	onAddAnnotation: (annotation: Omit<Annotation, "id">) => void
 	onSelectCommentById: (commentId: string) => void
@@ -73,6 +74,7 @@ export function ViewerSurface({
 	tool,
 	color,
 	canComment,
+	canExportFrames,
 	canvasAnnotations,
 	onAddAnnotation,
 	onSelectCommentById,
@@ -111,6 +113,7 @@ export function ViewerSurface({
 				tool={tool}
 				color={color}
 				canDraw={canComment}
+				canExportFrames={canExportFrames}
 				markers={timelineMarkers}
 				peers={scrubberPeers}
 				composingRange={composingRange}

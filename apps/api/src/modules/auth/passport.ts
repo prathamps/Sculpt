@@ -3,11 +3,10 @@ import { Strategy as JwtStrategy } from "passport-jwt"
 import { Strategy as GoogleStrategy } from "passport-google-oauth20"
 import { Strategy as GitHubStrategy } from "passport-github2"
 import { Request } from "express"
-import { prisma } from "../../lib/prisma"
 import { jwtSecret } from "../../lib/config"
 import { SESSION_COOKIE } from "../../lib/cookies"
 import { findOrCreateOAuthUser } from "./auth.service"
-import { isSessionRevoked } from "./session.service"
+import { userForSession } from "./session.service"
 import { SessionClaims } from "../../lib/tokens"
 import { CookieOAuthStateStore } from "./oauth-state"
 import { logger } from "../../lib/logger"
@@ -32,12 +31,8 @@ passport.use(
 			if (jwt_payload?.typ !== "user") return done(null, false)
 			if (typeof jwt_payload?.ver !== "number") return done(null, false)
 			if (typeof jwt_payload?.jti !== "string") return done(null, false)
-			if (await isSessionRevoked(jwt_payload.jti)) return done(null, false)
-			const user = await prisma.user.findUnique({
-				where: { id: jwt_payload.id },
-			})
+			const user = await userForSession(jwt_payload)
 			if (!user) return done(null, false)
-			if (user.tokenVersion !== jwt_payload.ver) return done(null, false)
 			req.sessionClaims = jwt_payload as SessionClaims
 			return done(null, user)
 		} catch (error) {

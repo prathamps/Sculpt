@@ -16,8 +16,11 @@ import {
 	canViewInternalComments,
 	canViewVersion,
 	isProjectMember,
+	projectIdsForUser,
 } from "../modules/projects/access"
 import { logger } from "../lib/logger"
+import { runPeriodically } from "../lib/schedule"
+import { forEachConcurrently } from "../lib/concurrency"
 
 export const io = new Server({
 	cors: {
@@ -36,6 +39,7 @@ export const io = new Server({
 })
 
 export const SESSION_REVALIDATION_INTERVAL_MS = 60000
+const REVALIDATION_CONCURRENCY = 8
 
 const socketUser = (socket: Socket): SocketUser | null =>
 	(socket.data.user as SocketUser | null) ?? null
@@ -134,13 +138,17 @@ export const revalidateSocketAccess = async (
 }
 
 export const revalidateConnections = async (): Promise<void> => {
-	for (const socket of Array.from(io.sockets.sockets.values())) {
-		await revalidateSocketAccess(socket).catch((error) =>
-			logger.error("Socket revalidation failed", error, {
-				socketId: socket.id,
-			})
-		)
-	}
+	await forEachConcurrently(
+		Array.from(io.sockets.sockets.values()),
+		REVALIDATION_CONCURRENCY,
+		async (socket) => {
+			await revalidateSocketAccess(socket).catch((error) =>
+				logger.error("Socket revalidation failed", error, {
+					socketId: socket.id,
+				})
+			)
+		}
+	)
 }
 
 const VIEWER_HEARTBEAT_MS = 45000
@@ -155,28 +163,34 @@ export const startViewerPresenceHeartbeat = (): NodeJS.Timeout => {
 	return timer
 }
 
-export const startSessionRevalidation = (): NodeJS.Timeout => {
-	const timer = setInterval(() => {
-		void revalidateConnections()
-	}, SESSION_REVALIDATION_INTERVAL_MS)
-	timer.unref()
-	return timer
-}
+export const startSessionRevalidation = (): NodeJS.Timeout =>
+	runPeriodically(
+		"Socket session revalidation",
+		SESSION_REVALIDATION_INTERVAL_MS,
+		revalidateConnections
+	)
 
 export const registerHandlers = (socket: Socket) => {
-	socket.on("join", () => {
-		const user = socketUser(socket)
-		if (!user) return
-		socket.join(`user:${user.id}`)
-		socket.data.userId = user.id
-		markOnline(user.id, socket.id).catch((e) =>
-			logger.error("presence markOnline failed", e)
-		)
-		socket.emit("connection_confirmed", {
-			message: "Successfully connected to notification service",
-			userId: user.id,
+	socket.on(
+		"join",
+		guardedHandler("join", async () => {
+			const user = socketUser(socket)
+			if (!user) return
+			socket.join(`user:${user.id}`)
+			socket.data.userId = user.id
+			markOnline(user.id, socket.id).catch((e) =>
+				logger.error("presence markOnline failed", e)
+			)
+			for (const projectId of await projectIdsForUser(user.id)) {
+				socket.join(`project:${projectId}`)
+				joinedProjects(socket).add(projectId)
+			}
+			socket.emit("connection_confirmed", {
+				message: "Successfully connected to notification service",
+				userId: user.id,
+			})
 		})
-	})
+	)
 
 	socket.on(
 		"joinProject",

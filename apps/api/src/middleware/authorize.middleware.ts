@@ -8,6 +8,7 @@ import {
 	getVersionProjectId,
 	roleMeets,
 } from "../modules/projects/access"
+import { recordAuditOnce } from "../modules/audit/audit.service"
 
 export type ProjectIdResolver = (
 	req: Request
@@ -41,6 +42,26 @@ export interface AuthorizedScope {
 
 const SCOPE_KEY = "authorizedScope"
 
+const recordDenial = (
+	req: Request,
+	userId: string,
+	projectId: string,
+	minimum: ProjectRole,
+	role: ProjectRole | null
+) =>
+	recordAuditOnce(`${userId}:${projectId}:${minimum}:${req.method}`, {
+		action: "access.denied",
+		targetType: "project",
+		targetId: projectId,
+		actorId: userId,
+		metadata: {
+			method: req.method,
+			route: `${req.baseUrl}${req.route?.path ?? ""}`,
+			requiredRole: minimum,
+			role,
+		},
+	})
+
 export const authorizedScope = (res: Response): AuthorizedScope => {
 	const scope = res.locals[SCOPE_KEY] as AuthorizedScope | undefined
 	if (!scope) {
@@ -70,10 +91,12 @@ export const requireProjectRole = (
 
 		const role = await getMemberRole(projectId, userId)
 		if (!role) {
+			await recordDenial(req, userId, projectId, minimum, role)
 			res.status(403).json({ message: "You are not a member of this project" })
 			return
 		}
 		if (!roleMeets(role, minimum)) {
+			await recordDenial(req, userId, projectId, minimum, role)
 			res.status(403).json({ message: "Your project role does not allow this" })
 			return
 		}

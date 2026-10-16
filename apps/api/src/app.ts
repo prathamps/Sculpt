@@ -14,11 +14,15 @@ import adminRoutes from "./modules/admin/admin.routes"
 import searchRoutes from "./modules/search/search.routes"
 import { serveMediaFile } from "./modules/media/media-files.controller"
 import { healthCheck } from "./modules/health/health.controller"
+import { serveMetrics } from "./modules/health/metrics.controller"
+import { recordRequestMetrics } from "./lib/metrics"
 import { isAllowedOrigin } from "./lib/cors"
 import { isProduction } from "./lib/config"
 import { logger } from "./lib/logger"
 import { authenticateJWT } from "./middleware/auth.middleware"
 import { rejectCrossSiteMutations } from "./middleware/csrf.middleware"
+import { warnWhenForwardedHeadersAreIgnored } from "./middleware/proxy-trust.middleware"
+import { bindRequestContext } from "./lib/request-context"
 import { oversizedUploadMessage } from "./middleware/upload.middleware"
 
 const pdfJsRangedFetchHeader = "Range"
@@ -36,8 +40,10 @@ const corsOptions: cors.CorsOptions = {
 		"Content-Type",
 		"Authorization",
 		"Cookie",
+		"X-Request-Id",
 		pdfJsRangedFetchHeader,
 	],
+	exposedHeaders: ["X-Request-Id"],
 }
 
 const trustProxyOnlyWithKnownHopCount = (app: express.Express): void => {
@@ -80,6 +86,9 @@ export const createApp = (): express.Express => {
 	const app = express()
 
 	trustProxyOnlyWithKnownHopCount(app)
+	app.use(bindRequestContext)
+	app.use(warnWhenForwardedHeadersAreIgnored())
+	app.use(recordRequestMetrics)
 
 	app.use(cors(corsOptions))
 	app.use(rejectCrossSiteMutations)
@@ -91,6 +100,7 @@ export const createApp = (): express.Express => {
 	app.get("/uploads/:filename", authenticateJWT, serveMediaFile)
 
 	app.get("/health", healthCheck)
+	app.get("/metrics", serveMetrics)
 
 	app.use("/api/auth", authRoutes)
 	app.use("/api/users", userRoutes)

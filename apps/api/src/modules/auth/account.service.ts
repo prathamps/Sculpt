@@ -4,6 +4,8 @@ import { prisma } from "../../lib/prisma"
 import { ForbiddenError, ValidationError } from "../../lib/errors"
 import { logger } from "../../lib/logger"
 import { storage } from "../../storage"
+import { forgetCachedSessions } from "./session.service"
+import { forgetMembership, forgetMembershipsOfUser } from "../projects/access"
 
 export interface AccountExport {
 	exportedAt: string
@@ -138,6 +140,9 @@ export const deleteAccount = async (
 			: []),
 		prisma.user.delete({ where: { id: userId } }),
 	])
+	forgetCachedSessions(userId)
+	forgetMembershipsOfUser(userId)
+	orphanedProjects.forEach((projectId) => forgetMembership(projectId))
 
 	await Promise.all(
 		assets.map((asset) =>

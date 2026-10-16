@@ -59,6 +59,9 @@ components:
       type: apiKey
       in: cookie
       name: admin_token
+    metricsToken:
+      type: http
+      scheme: bearer
 
   parameters:
     page:
@@ -69,6 +72,34 @@ components:
       name: pageSize
       in: query
       schema: { type: integer, minimum: 1, maximum: 100, default: 30 }
+    auditAction:
+      name: action
+      in: query
+      schema: { type: string }
+    auditActor:
+      name: actorId
+      in: query
+      schema: { type: string }
+    auditTargetType:
+      name: targetType
+      in: query
+      schema: { type: string }
+    auditTargetId:
+      name: targetId
+      in: query
+      schema: { type: string }
+    auditIp:
+      name: ipAddress
+      in: query
+      schema: { type: string }
+    auditFrom:
+      name: from
+      in: query
+      schema: { type: string, format: date-time }
+    auditTo:
+      name: to
+      in: query
+      schema: { type: string, format: date-time }
 
   schemas:
     Error:
@@ -98,9 +129,9 @@ components:
       properties:
         id: { type: string }
         email: { type: string, format: email }
-        name: { type: string, nullable: true }
+        name: { type: [string, "null"] }
         role: { type: string, enum: [USER, ADMIN] }
-        avatarUrl: { type: string, nullable: true }
+        avatarUrl: { type: [string, "null"] }
         emailNotifications: { type: boolean }
 
     ImageVersion:
@@ -113,19 +144,17 @@ components:
         versionName: { type: string }
         versionNumber: { type: integer }
         mediaType: { $ref: "#/components/schemas/MediaType" }
-        duration: { type: number, nullable: true }
+        duration: { type: [number, "null"] }
         frameRate:
-          type: number
-          nullable: true
+          type: [number, "null"]
           description: Probed with ffprobe; drives frame-accurate stepping.
-        thumbnailUrl: { type: string, nullable: true }
+        thumbnailUrl: { type: [string, "null"] }
         proxyUrl:
-          type: string
-          nullable: true
+          type: [string, "null"]
           description: Browser-viewable derivative. Consumers prefer this over `url`.
         proxyStatus: { $ref: "#/components/schemas/ProxyStatus" }
         reviewStatus: { $ref: "#/components/schemas/ReviewStatus" }
-        dueAt: { type: string, format: date-time, nullable: true }
+        dueAt: { type: [string, "null"], format: date-time }
         createdAt: { type: string, format: date-time }
 
     Image:
@@ -196,14 +225,13 @@ components:
         id: { type: string }
         content: { type: string }
         imageVersionId: { type: string }
-        parentId: { type: string, nullable: true }
+        parentId: { type: [string, "null"] }
         annotation: { $ref: "#/components/schemas/Annotation" }
         timestamp:
-          type: number
-          nullable: true
+          type: [number, "null"]
           description: Video anchor, in seconds.
-        timestampEnd: { type: number, nullable: true }
-        page: { type: integer, nullable: true, description: PDF page anchor. }
+        timestampEnd: { type: [number, "null"] }
+        page: { type: [integer, "null"], description: PDF page anchor. }
         modelAnchor: { $ref: "#/components/schemas/ModelAnchor" }
         resolved: { type: boolean }
         likeCount: { type: integer }
@@ -219,7 +247,7 @@ components:
       properties:
         id: { type: string }
         decision: { type: string, enum: [APPROVED, CHANGES_REQUESTED] }
-        note: { type: string, nullable: true }
+        note: { type: [string, "null"] }
         user: { $ref: "#/components/schemas/User" }
         updatedAt: { type: string, format: date-time }
 
@@ -231,8 +259,8 @@ components:
       properties:
         id: { type: string }
         role: { $ref: "#/components/schemas/ProjectRole" }
-        expiresAt: { type: string, format: date-time, nullable: true }
-        maxUses: { type: integer, nullable: true }
+        expiresAt: { type: [string, "null"], format: date-time }
+        maxUses: { type: [integer, "null"] }
         useCount: { type: integer }
         createdAt: { type: string, format: date-time }
 
@@ -250,7 +278,7 @@ components:
       properties:
         id: { type: string }
         name: { type: string }
-        parentId: { type: string, nullable: true }
+        parentId: { type: [string, "null"] }
         imageCount: { type: integer }
 
     Page:
@@ -314,6 +342,24 @@ paths:
         "503":
           description: Database unreachable — drain this instance.
 
+  /metrics:
+    get:
+      tags: [System]
+      summary: Prometheus metrics
+      description: |
+        Disabled (404) unless `METRICS_TOKEN` is set. Request latency by route
+        template, open realtime connections, rendition and notification queue
+        depths, and Node process metrics.
+      security:
+        - metricsToken: []
+      responses:
+        "200":
+          description: Prometheus text exposition format.
+          content:
+            text/plain: {}
+        "401": { description: Missing or wrong bearer token. }
+        "404": { description: Metrics are not enabled on this instance. }
+
   /uploads/{filename}:
     get:
       tags: [Media]
@@ -372,9 +418,45 @@ paths:
                 password: { type: string }
               required: [email, password]
       responses:
-        "200": { description: Signed in; `token` cookie set. }
+        "200":
+          description: |
+            Signed in and `token` cookie set, or, when the account uses
+            two-factor authentication, `{ "mfaRequired": true }` with a
+            five-minute `mfa_challenge` cookie to present to
+            `/api/auth/mfa/verify`.
         "401": { description: Invalid credentials. }
-        "429": { $ref: "#/components/responses/RateLimited" }
+        "429": { description: "Rate limited, or the account is locked after repeated failures." }
+
+  /api/auth/mfa/verify:
+    post:
+      tags: [Auth]
+      summary: Complete a sign-in with a two-factor code
+      description: |
+        Consumes the `mfa_challenge` cookie set by a password, OAuth or admin
+        sign-in. Each authenticator code and recovery code is accepted once.
+        Failures count toward the account lockout.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              description: Provide exactly one of `code` or `recoveryCode`.
+              properties:
+                code: { type: string, pattern: "^\\d{6}$" }
+                recoveryCode: { type: string }
+      responses:
+        "200":
+          description: Signed in; the user or admin session cookie is set.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  kind: { type: string, enum: [user, admin] }
+        "401": { description: "Wrong code, or the challenge expired." }
+        "429": { description: Account locked after repeated failures. }
 
   /api/auth/logout:
     post:
@@ -438,7 +520,7 @@ paths:
               required: [token, password]
       responses:
         "200": { description: Password updated. }
-        "400": { description: Token invalid, used or expired. }
+        "400": { description: "Token invalid, used or expired." }
 
   /api/users/me:
     get:
@@ -461,7 +543,7 @@ paths:
               type: object
               properties:
                 name: { type: string }
-                avatarUrl: { type: string, nullable: true }
+                avatarUrl: { type: [string, "null"] }
       responses:
         "200": { description: Updated profile. }
         "400": { $ref: "#/components/responses/ValidationFailed" }
@@ -483,7 +565,7 @@ paths:
                 deleteOwnedProjects: { type: boolean, default: false }
       responses:
         "204": { description: Account deleted. }
-        "400": { description: Confirmation missing, or you solely own projects. }
+        "400": { description: "Confirmation missing, or you solely own projects." }
         "403": { description: Password incorrect. }
 
   /api/users/me/password:
@@ -520,6 +602,101 @@ paths:
               required: [emailNotifications]
       responses:
         "200": { description: Preference saved. }
+
+  /api/users/me/mfa:
+    get:
+      tags: [Users]
+      summary: Your two-factor authentication status
+      responses:
+        "200":
+          description: Status.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  enabled: { type: boolean }
+                  enabledAt: { type: [string, "null"], format: date-time }
+                  recoveryCodesRemaining: { type: integer }
+                  required: { type: boolean }
+
+  /api/users/me/mfa/setup:
+    post:
+      tags: [Users]
+      summary: Start two-factor enrollment
+      description: Returns a new TOTP secret and otpauth URI. Nothing changes until it is confirmed.
+      responses:
+        "200":
+          description: Pending secret.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  secret: { type: string }
+                  otpauthUri: { type: string }
+
+  /api/users/me/mfa/enable:
+    post:
+      tags: [Users]
+      summary: Confirm enrollment with a code from the authenticator app
+      description: Signs out every other session and returns ten single-use recovery codes, shown once.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                code: { type: string, pattern: "^\\d{6}$" }
+              required: [code]
+      responses:
+        "200":
+          description: Two-factor is on.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  recoveryCodes: { type: array, items: { type: string } }
+        "400": { description: The code did not match. }
+
+  /api/users/me/mfa/recovery-codes:
+    post:
+      tags: [Users]
+      summary: Replace your recovery codes
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              description: Provide exactly one of `code` or `recoveryCode`.
+              properties:
+                code: { type: string, pattern: "^\\d{6}$" }
+                recoveryCode: { type: string }
+      responses:
+        "200": { description: New recovery codes; the old ones stop working. }
+        "403": { description: The code is not valid. }
+
+  /api/users/me/mfa/disable:
+    post:
+      tags: [Users]
+      summary: Turn off two-factor authentication
+      description: Refused when MFA_REQUIRED is set, or for administrators while ADMIN_MFA_REQUIRED is on.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                password: { type: string, description: Required for password accounts. }
+                code: { type: string }
+                recoveryCode: { type: string }
+      responses:
+        "200": { description: Two-factor is off; other sessions are signed out. }
+        "403": { description: "Wrong password or code, or policy requires two-factor." }
 
   /api/users/me/export:
     get:
@@ -588,18 +765,24 @@ paths:
         "404": { $ref: "#/components/responses/NotFound" }
     put:
       tags: [Projects]
-      summary: Rename a project (OWNER)
+      summary: Rename a project or change its content controls (OWNER)
       requestBody:
         required: true
         content:
           application/json:
             schema:
               type: object
+              description: Send at least one field.
               properties:
                 name: { type: string }
-              required: [name]
+                allowDownloads:
+                  type: boolean
+                  description: When false, only EDITOR and OWNER may download originals.
+                watermarkViewers:
+                  type: boolean
+                  description: Overlay each viewer's email and the date on viewed media.
       responses:
-        "200": { description: Renamed. }
+        "200": { description: Updated. }
         "403": { $ref: "#/components/responses/Forbidden" }
     delete:
       tags: [Projects]
@@ -627,6 +810,8 @@ paths:
                 type: object
                 properties:
                   role: { $ref: "#/components/schemas/ProjectRole" }
+                  allowDownloads: { type: boolean }
+                  watermarkViewers: { type: boolean }
         "403": { $ref: "#/components/responses/Forbidden" }
 
   /api/projects/{id}/invite:
@@ -662,7 +847,7 @@ paths:
                 properties:
                   invitedExistingUser: { type: boolean }
                   email: { type: string }
-        "400": { description: Already a member, or OWNER was requested. }
+        "400": { description: "Already a member, or OWNER was requested." }
         "403": { $ref: "#/components/responses/Forbidden" }
 
   /api/projects/{projectId}/invitations:
@@ -785,8 +970,8 @@ paths:
               type: object
               properties:
                 role: { $ref: "#/components/schemas/ProjectRole" }
-                expiresInDays: { type: integer, minimum: 1, maximum: 365, nullable: true }
-                maxUses: { type: integer, minimum: 1, maximum: 1000, nullable: true }
+                expiresInDays: { type: [integer, "null"], minimum: 1, maximum: 365 }
+                maxUses: { type: [integer, "null"], minimum: 1, maximum: 1000 }
               required: [role]
       responses:
         "201":
@@ -822,7 +1007,7 @@ paths:
           schema: { type: string }
       responses:
         "200": { description: Joined; returns the project. }
-        "404": { description: Invalid, revoked, expired or used up. }
+        "404": { description: "Invalid, revoked, expired or used up." }
 
   /api/projects/{projectId}/images:
     parameters:
@@ -833,14 +1018,57 @@ paths:
     get:
       tags: [Media]
       summary: Media in a project
+      description: |
+        Without `page` the whole project (or folder) is returned as an array.
+        Pass `page` to receive one sorted, filtered page plus per-type counts
+        for the folder; the web app always pages.
+      parameters:
+        - name: folderId
+          in: query
+          description: A folder id, or `root` for files outside any folder. Omit for every file.
+          schema: { type: string }
+        - name: page
+          in: query
+          schema: { type: integer, minimum: 1 }
+        - name: pageSize
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 200, default: 60 }
+        - name: sort
+          in: query
+          schema: { type: string, enum: [newest, oldest, a-z, z-a], default: newest }
+        - name: q
+          in: query
+          description: Case-insensitive name filter.
+          schema: { type: string, maxLength: 200 }
+        - name: type
+          in: query
+          schema: { type: string, enum: [IMAGE, VIDEO, PDF, MODEL] }
       responses:
         "200":
-          description: Media with latest versions.
+          description: Media with latest versions — an array, or a page when `page` is set.
           content:
             application/json:
               schema:
-                type: array
-                items: { $ref: "#/components/schemas/Image" }
+                oneOf:
+                  - type: array
+                    items: { $ref: "#/components/schemas/Image" }
+                  - type: object
+                    properties:
+                      items:
+                        type: array
+                        items: { $ref: "#/components/schemas/Image" }
+                      total: { type: integer }
+                      page: { type: integer }
+                      pageSize: { type: integer }
+                      totalPages: { type: integer }
+                      counts:
+                        type: object
+                        properties:
+                          total: { type: integer }
+                          images: { type: integer }
+                          videos: { type: integer }
+                          pdfs: { type: integer }
+                          models: { type: integer }
     post:
       tags: [Media]
       summary: Upload media (EDITOR)
@@ -868,8 +1096,14 @@ paths:
                   items: { type: string, format: binary }
                 filesMeta: { type: string }
       responses:
-        "201": { description: Media created. }
-        "400": { description: Unsupported type, oversized, or bad metadata. }
+        "201":
+          description: The media items this request created.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Image" }
+        "400": { description: "Unsupported type, oversized, or bad metadata." }
         "403": { $ref: "#/components/responses/Forbidden" }
 
   /api/images/{id}:
@@ -930,7 +1164,7 @@ paths:
                 duration: { type: string }
       responses:
         "201": { description: Version created. }
-        "400": { description: No file, or unsupported type. }
+        "400": { description: "No file, or unsupported type." }
 
   /api/images/versions/{versionId}:
     parameters:
@@ -1012,16 +1246,40 @@ paths:
               type: object
               properties:
                 content: { type: string, maxLength: 5000 }
-                parentId: { type: string, nullable: true }
+                parentId: { type: [string, "null"] }
                 annotation: { $ref: "#/components/schemas/Annotation" }
-                timestamp: { type: number, nullable: true }
-                timestampEnd: { type: number, nullable: true }
-                page: { type: integer, nullable: true }
+                timestamp: { type: [number, "null"] }
+                timestampEnd: { type: [number, "null"] }
+                page: { type: [integer, "null"] }
                 modelAnchor: { $ref: "#/components/schemas/ModelAnchor" }
               required: [content]
       responses:
         "201": { description: Comment created. }
         "400": { $ref: "#/components/responses/ValidationFailed" }
+
+  /api/images/comments/{commentId}/revisions:
+    parameters:
+      - name: commentId
+        in: path
+        required: true
+        schema: { type: string }
+    get:
+      tags: [Comments]
+      summary: Earlier wording of an edited comment (VIEWER)
+      responses:
+        "200":
+          description: Revisions, newest first.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    id: { type: string }
+                    content: { type: string }
+                    editedById: { type: [string, "null"] }
+                    createdAt: { type: string, format: date-time }
 
   /api/images/comments/{commentId}:
     parameters:
@@ -1108,7 +1366,7 @@ paths:
                 type: object
                 properties:
                   reviewStatus: { $ref: "#/components/schemas/ReviewStatus" }
-                  dueAt: { type: string, format: date-time, nullable: true }
+                  dueAt: { type: [string, "null"], format: date-time }
                   reviews:
                     type: array
                     items: { $ref: "#/components/schemas/Review" }
@@ -1126,7 +1384,7 @@ paths:
               type: object
               properties:
                 decision: { type: string, enum: [APPROVED, CHANGES_REQUESTED] }
-                note: { type: string, maxLength: 2000, nullable: true }
+                note: { type: [string, "null"], maxLength: 2000 }
               required: [decision]
       responses:
         "200":
@@ -1159,7 +1417,7 @@ paths:
             schema:
               type: object
               properties:
-                dueAt: { type: string, format: date-time, nullable: true }
+                dueAt: { type: [string, "null"], format: date-time }
       responses:
         "200": { description: Due date saved. }
 
@@ -1310,7 +1568,7 @@ paths:
         the session cookie and redirects to the web app. An account whose email
         is already registered is linked only when Google reports it verified.
       responses:
-        "302": { description: Redirect to the web app, with a session cookie. }
+        "302": { description: "Redirect to the web app, with a session cookie." }
         "503": { description: Google sign-in is not configured. }
 
   /api/auth/github:
@@ -1332,7 +1590,7 @@ paths:
         Verifies the `state`, then sets the session cookie. Linking to an
         existing account requires a verified GitHub email address.
       responses:
-        "302": { description: Redirect to the web app, with a session cookie. }
+        "302": { description: "Redirect to the web app, with a session cookie." }
         "503": { description: GitHub sign-in is not configured. }
 
   /api/users/profile:
@@ -1419,7 +1677,7 @@ paths:
               required: [name]
               properties:
                 name: { type: string, maxLength: 120 }
-                parentId: { type: string, nullable: true }
+                parentId: { type: [string, "null"] }
       responses:
         "201": { description: Folder created. }
         "400": { description: A folder of that name already exists here. }
@@ -1508,7 +1766,7 @@ paths:
             schema:
               type: object
               properties:
-                parentId: { type: string, nullable: true }
+                parentId: { type: [string, "null"] }
       responses:
         "200": { description: Folder moved. }
         "400": { description: The move would create a cycle. }
@@ -1533,7 +1791,7 @@ paths:
                 imageIds:
                   type: array
                   items: { type: string }
-                folderId: { type: string, nullable: true }
+                folderId: { type: [string, "null"] }
       responses:
         "200": { description: Files moved. }
         "404": { $ref: "#/components/responses/NotFound" }
@@ -1558,7 +1816,7 @@ paths:
             schema:
               type: object
               properties:
-                folderId: { type: string, nullable: true }
+                folderId: { type: [string, "null"] }
       responses:
         "200": { description: File moved. }
         "404": { $ref: "#/components/responses/NotFound" }
@@ -1640,7 +1898,7 @@ paths:
                   items: { type: string, format: binary }
       responses:
         "201": { description: The comment's attachments. }
-        "400": { description: Too many files, or content does not match its type. }
+        "400": { description: "Too many files, or content does not match its type." }
         "403": { description: You are not the author. }
 
   /api/admin/logout:
@@ -1771,11 +2029,62 @@ paths:
       parameters:
         - $ref: "#/components/parameters/page"
         - $ref: "#/components/parameters/pageSize"
-        - name: action
-          in: query
-          schema: { type: string }
-        - name: actorId
-          in: query
-          schema: { type: string }
+        - $ref: "#/components/parameters/auditAction"
+        - $ref: "#/components/parameters/auditActor"
+        - $ref: "#/components/parameters/auditTargetType"
+        - $ref: "#/components/parameters/auditTargetId"
+        - $ref: "#/components/parameters/auditIp"
+        - $ref: "#/components/parameters/auditFrom"
+        - $ref: "#/components/parameters/auditTo"
       responses:
-        "200": { description: Paginated audit entries. }
+        "200":
+          description: |
+            Paginated entries, newest first. Each carries sequence,
+            prevHash and hash (the tamper-evidence chain), plus requestId
+            and userAgent. actor is null once the account was deleted;
+            actorId still identifies it.
+
+  /api/admin/audit-logs/export.csv:
+    get:
+      tags: [Admin]
+      summary: Export the filtered audit trail as CSV
+      description: Every export is itself recorded as admin.audit_exported.
+      security:
+        - adminCookie: []
+      parameters:
+        - $ref: "#/components/parameters/auditAction"
+        - $ref: "#/components/parameters/auditActor"
+        - $ref: "#/components/parameters/auditTargetType"
+        - $ref: "#/components/parameters/auditTargetId"
+        - $ref: "#/components/parameters/auditIp"
+        - $ref: "#/components/parameters/auditFrom"
+        - $ref: "#/components/parameters/auditTo"
+      responses:
+        "200":
+          description: CSV, oldest first, including the hash chain.
+          content:
+            text/csv: {}
+
+  /api/admin/audit-logs/verify:
+    get:
+      tags: [Admin]
+      summary: Recompute the audit hash chain and report tampering
+      security:
+        - adminCookie: []
+      responses:
+        "200":
+          description: Verification result.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  intact: { type: boolean }
+                  checked: { type: integer }
+                  unchainedLegacyEntries: { type: integer }
+                  firstSequence: { type: [integer, "null"] }
+                  lastSequence: { type: [integer, "null"] }
+                  brokenAtSequence: { type: [integer, "null"] }
+                  problem:
+                    type: [string, "null"]
+                    enum: [content_changed, link_broken, entries_missing, null]

@@ -64,3 +64,50 @@ export const verifySessionToken = (
 		return null
 	}
 }
+
+export interface MfaChallengeClaims {
+	id: string
+	purpose: SessionKind
+	ver: number
+	jti: string
+}
+
+const MFA_CHALLENGE_TYPE = "mfa"
+
+export const signMfaChallenge = (
+	subject: { id: string; tokenVersion: number },
+	purpose: SessionKind,
+	lifetimeMs: number
+): string =>
+	jwt.sign(
+		{
+			id: subject.id,
+			typ: MFA_CHALLENGE_TYPE,
+			purpose,
+			ver: subject.tokenVersion,
+			jti: randomUUID(),
+		},
+		jwtSecret(),
+		{ expiresIn: Math.floor(lifetimeMs / 1000) }
+	)
+
+export const verifyMfaChallenge = (
+	token: string | undefined
+): MfaChallengeClaims | null => {
+	if (!token) return null
+	try {
+		const payload = jwt.verify(token, jwtSecret()) as Record<string, unknown>
+		if (payload.typ !== MFA_CHALLENGE_TYPE) return null
+		if (typeof payload.id !== "string" || typeof payload.jti !== "string") return null
+		if (typeof payload.ver !== "number") return null
+		if (payload.purpose !== "user" && payload.purpose !== "admin") return null
+		return {
+			id: payload.id,
+			purpose: payload.purpose,
+			ver: payload.ver,
+			jti: payload.jti,
+		}
+	} catch {
+		return null
+	}
+}

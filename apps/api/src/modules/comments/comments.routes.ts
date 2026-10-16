@@ -40,6 +40,11 @@ router.post(
 	rejectMismatchedUploads,
 	commentsController.attachToComment
 )
+router.get(
+	"/comments/:commentId/revisions",
+	requireProjectRole("VIEWER", projectIdFromCommentParam()),
+	commentsController.listCommentRevisions
+)
 router.put(
 	"/comments/:commentId",
 	onComment,

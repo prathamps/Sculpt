@@ -16,11 +16,16 @@ import path from "path"
 import { storage, uploadsDir } from "../../storage"
 import { storedPathOf } from "./media-access.service"
 import { downloadFileName } from "./download-name"
-import { NotFoundError, ValidationError } from "../../lib/errors"
+import { ForbiddenError, NotFoundError, ValidationError } from "../../lib/errors"
+import {
+	contentPolicyFor,
+	mayDownloadOriginals,
+} from "../projects/content-policy"
 import { respondWithError } from "../../lib/http"
 import { recordAudit, requestIp } from "../audit/audit.service"
 import { assertFolderInProject } from "../folders/folders.service"
 import { ProxyStatus } from "@prisma/client"
+import { ListMediaQuery } from "./media.schema"
 
 const withLatestVersion = (
 	image: NonNullable<Awaited<ReturnType<typeof imageService.getImageById>>>
@@ -182,9 +187,12 @@ export const uploadImage = async (
 			ipAddress: requestIp(req),
 		})
 
-		res
-			.status(201)
-			.json(await imageService.getImagesForProject(projectId, folderId))
+		res.status(201).json(
+			created.map((image) => ({
+				...image,
+				latestVersion: image.versions[0] ?? null,
+			}))
+		)
 	} catch (error) {
 		await Promise.all(storedUrls.map((url) => storage.remove(url)))
 		await Promise.all(
@@ -276,11 +284,22 @@ export const getProjectImages = async (
 ): Promise<void> => {
 	try {
 		const { projectId } = authorizedScope(res)
-		const images = await imageService.getImagesForProject(
-			projectId,
-			folderScopeOf(req)
+		const query = res.locals.query as ListMediaQuery
+		if (query.page === undefined) {
+			res
+				.status(200)
+				.json(await imageService.getImagesForProject(projectId, folderScopeOf(req)))
+			return
+		}
+		res.status(200).json(
+			await imageService.listProjectMedia(projectId, {
+				folderId: folderScopeOf(req),
+				search: query.q || undefined,
+				mediaType: query.type,
+				sort: query.sort,
+				page: { page: query.page, pageSize: query.pageSize },
+			})
 		)
-		res.status(200).json(images)
 	} catch (error) {
 		respondWithError(res, error, "list project media")
 	}
@@ -316,7 +335,10 @@ export const downloadOriginal = async (
 	res: Response
 ): Promise<void> => {
 	try {
-		const { userId } = authorizedScope(res)
+		const { userId, projectId, role } = authorizedScope(res)
+		if (!mayDownloadOriginals(await contentPolicyFor(projectId), role)) {
+			throw new ForbiddenError("Downloads are turned off for this project.")
+		}
 		const version = await imageService.getVersionForDownload(
 			req.params.versionId
 		)
@@ -458,10 +480,18 @@ export const updateImageVersion = async (
 	res: Response
 ): Promise<void> => {
 	try {
+		const { userId, projectId } = authorizedScope(res)
 		const updated = await imageService.updateImageVersion(
 			req.params.versionId,
 			{ versionName: req.body.versionName }
 		)
+		await recordAudit({
+			action: "media.version_renamed",
+			targetType: "imageVersion",
+			targetId: req.params.versionId,
+			actorId: userId,
+			metadata: { projectId, versionName: req.body.versionName },
+		})
 		res.status(200).json(updated)
 	} catch (error) {
 		respondWithError(res, error, "rename image version")

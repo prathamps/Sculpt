@@ -42,18 +42,31 @@ vi.mock("../../realtime/socket", () => ({
 		`imageVersion:${imageVersionId}:internal`,
 }))
 
+vi.mock("../../storage", async () => {
+	const os = await import("os")
+	const path = await import("path")
+	return {
+		uploadsDir: path.join(os.tmpdir(), "sculpt-comments-test"),
+		storage: { store: vi.fn(), remove: vi.fn() },
+	}
+})
+
+vi.mock("../media/media-access.service", () => ({
+	forgetProjectAssets: vi.fn(),
+}))
+
 vi.mock("../notifications/notification.service", () => ({
-	NotificationService: {
-		createNotification: vi.fn(),
-		createProjectNotification: vi.fn(),
-	},
+	createNotification: vi.fn(),
+	createProjectNotification: vi.fn(),
 }))
 
 import { prisma } from "../../lib/prisma"
 import { io } from "../../realtime/socket"
 import { getVersionProjectId } from "../projects/access"
-import { NotificationService } from "../notifications/notification.service"
-import { CommentsService } from "./comments.service"
+import * as notificationService from "../notifications/notification.service"
+import * as commentsService from "./comments.service"
+import { storage } from "../../storage"
+import { forgetProjectAssets } from "../media/media-access.service"
 import {
 	ForbiddenError,
 	NotFoundError,
@@ -62,7 +75,7 @@ import {
 
 const mocked = vi.mocked(prisma, true)
 
-describe("CommentsService.createComment anchors", () => {
+describe("commentsService.createComment anchors", () => {
 	beforeEach(() => {
 		vi.clearAllMocks()
 		mocked.comment.create.mockResolvedValue({
@@ -90,7 +103,7 @@ describe("CommentsService.createComment anchors", () => {
 		page?: number | null
 		modelAnchor?: unknown
 	}) =>
-		CommentsService.createComment({
+		commentsService.createComment({
 			content: "hi",
 			imageVersionId: "v1",
 			userId: "u1",
@@ -275,9 +288,9 @@ describe("CommentsService.createComment anchors", () => {
 	})
 })
 
-describe("CommentsService.createComment mentions", () => {
+describe("commentsService.createComment mentions", () => {
 	const mockedAccess = vi.mocked(getVersionProjectId)
-	const mockedNotifications = vi.mocked(NotificationService, true)
+	const mockedNotifications = vi.mocked(notificationService, true)
 
 	beforeEach(() => {
 		vi.clearAllMocks()
@@ -305,7 +318,7 @@ describe("CommentsService.createComment mentions", () => {
 	})
 
 	const createWithMentions = (mentionedUserIds: string[]) =>
-		CommentsService.createComment({
+		commentsService.createComment({
 			content: "hi @Member",
 			imageVersionId: "v1",
 			userId: "u1",
@@ -370,7 +383,7 @@ describe("CommentsService.createComment mentions", () => {
 			{ userId: "parent-author" },
 		] as never)
 
-		await CommentsService.createComment({
+		await commentsService.createComment({
 			content: "hi",
 			imageVersionId: "v1",
 			userId: "u1",
@@ -386,7 +399,7 @@ describe("CommentsService.createComment mentions", () => {
 	})
 })
 
-describe("CommentsService.createComment parent threading", () => {
+describe("commentsService.createComment parent threading", () => {
 	beforeEach(() => {
 		vi.clearAllMocks()
 		mocked.comment.create.mockResolvedValue({
@@ -404,7 +417,7 @@ describe("CommentsService.createComment parent threading", () => {
 	})
 
 	const createReply = (parentId: string) =>
-		CommentsService.createComment({
+		commentsService.createComment({
 			content: "hi",
 			imageVersionId: "v1",
 			userId: "u1",
@@ -444,11 +457,39 @@ describe("CommentsService.createComment parent threading", () => {
 			})
 		)
 	})
+
+	it("files a reply to a reply under the thread root so it stays visible", async () => {
+		mocked.comment.findUnique.mockResolvedValue({
+			imageVersionId: "v1",
+			parentId: "root",
+			userId: "reply-author",
+		} as never)
+		mocked.comment.create.mockResolvedValue({
+			id: "c9",
+			imageVersionId: "v1",
+			parentId: "root",
+			user: { name: "Ada" },
+		} as never)
+
+		await createReply("a-reply")
+
+		expect(mocked.comment.create).toHaveBeenCalledWith(
+			expect.objectContaining({
+				data: expect.objectContaining({ parentId: "root" }),
+			})
+		)
+		expect(vi.mocked(notificationService).createNotification).toHaveBeenCalledWith(
+			expect.objectContaining({
+				userId: "reply-author",
+				metadata: expect.objectContaining({ type: "comment_reply" }),
+			})
+		)
+	})
 })
 
-describe("CommentsService internal comments", () => {
+describe("comments service internal comments", () => {
 	const mockedAccess = vi.mocked(getVersionProjectId)
-	const mockedNotifications = vi.mocked(NotificationService, true)
+	const mockedNotifications = vi.mocked(notificationService, true)
 
 	beforeEach(() => {
 		vi.clearAllMocks()
@@ -474,7 +515,7 @@ describe("CommentsService internal comments", () => {
 	})
 
 	const post = (internal: boolean, authorRole: "VIEWER" | "MEMBER" | "EDITOR") =>
-		CommentsService.createComment({
+		commentsService.createComment({
 			content: "internal note",
 			imageVersionId: "v1",
 			userId: "u1",
@@ -516,7 +557,7 @@ describe("CommentsService internal comments", () => {
 		mocked.comment.findMany.mockResolvedValue([] as never)
 		mocked.comment.count.mockResolvedValue(0 as never)
 
-		await CommentsService.getCommentsByImageVersionId("v1", "u1", "MEMBER")
+		await commentsService.getCommentsByImageVersionId("v1", "u1", "MEMBER")
 
 		expect(mocked.comment.findMany).toHaveBeenCalledWith(
 			expect.objectContaining({
@@ -529,7 +570,7 @@ describe("CommentsService internal comments", () => {
 		mocked.comment.findMany.mockResolvedValue([] as never)
 		mocked.comment.count.mockResolvedValue(0 as never)
 
-		await CommentsService.getCommentsByImageVersionId("v1", "u1", "EDITOR")
+		await commentsService.getCommentsByImageVersionId("v1", "u1", "EDITOR")
 
 		expect(mocked.comment.findMany).toHaveBeenCalledWith(
 			expect.objectContaining({
@@ -539,7 +580,7 @@ describe("CommentsService internal comments", () => {
 	})
 })
 
-describe("CommentsService.attachToComment", () => {
+describe("commentsService.attachToComment", () => {
 	const file = {
 		url: "uploads/ref.png",
 		fileName: "ref.png",
@@ -562,7 +603,7 @@ describe("CommentsService.attachToComment", () => {
 		mocked.comment.findUnique.mockResolvedValue(null)
 
 		await expect(
-			CommentsService.attachToComment("ghost", "author", [file])
+			commentsService.attachToComment("ghost", "author", [file])
 		).rejects.toBeInstanceOf(NotFoundError)
 	})
 
@@ -570,7 +611,7 @@ describe("CommentsService.attachToComment", () => {
 		mocked.comment.findUnique.mockResolvedValue(existing(0) as never)
 
 		await expect(
-			CommentsService.attachToComment("c1", "someone-else", [file])
+			commentsService.attachToComment("c1", "someone-else", [file])
 		).rejects.toBeInstanceOf(ForbiddenError)
 		expect(mocked.commentAttachment.createMany).not.toHaveBeenCalled()
 	})
@@ -579,7 +620,7 @@ describe("CommentsService.attachToComment", () => {
 		mocked.comment.findUnique.mockResolvedValue(existing(2) as never)
 
 		await expect(
-			CommentsService.attachToComment("c1", "author", [file, file])
+			commentsService.attachToComment("c1", "author", [file, file])
 		).rejects.toBeInstanceOf(ValidationError)
 		expect(mocked.commentAttachment.createMany).not.toHaveBeenCalled()
 	})
@@ -587,7 +628,7 @@ describe("CommentsService.attachToComment", () => {
 	it("stores attachments and announces them to the thread", async () => {
 		mocked.comment.findUnique.mockResolvedValue(existing(0) as never)
 
-		const result = await CommentsService.attachToComment("c1", "author", [file])
+		const result = await commentsService.attachToComment("c1", "author", [file])
 
 		expect(mocked.commentAttachment.createMany).toHaveBeenCalledWith({
 			data: [{ ...file, commentId: "c1" }],
@@ -605,20 +646,20 @@ describe("CommentsService.attachToComment", () => {
 			internal: true,
 		} as never)
 
-		await CommentsService.attachToComment("c1", "author", [file])
+		await commentsService.attachToComment("c1", "author", [file])
 
 		expect(io.to).toHaveBeenCalledWith("imageVersion:v1:internal")
 	})
 })
 
-describe("CommentsService.toggleResolved", () => {
+describe("commentsService.toggleResolved", () => {
 	beforeEach(() => vi.clearAllMocks())
 
 	it("rejects unknown comments", async () => {
 		mocked.comment.findUnique.mockResolvedValue(null)
 
 		await expect(
-			CommentsService.toggleResolved("missing", "user1")
+			commentsService.toggleResolved("missing", "user1")
 		).rejects.toBeInstanceOf(NotFoundError)
 	})
 
@@ -630,7 +671,7 @@ describe("CommentsService.toggleResolved", () => {
 		} as never)
 
 		await expect(
-			CommentsService.toggleResolved("c1", "someone-else")
+			commentsService.toggleResolved("c1", "someone-else")
 		).rejects.toBeInstanceOf(ForbiddenError)
 		expect(mocked.comment.update).not.toHaveBeenCalled()
 	})
@@ -647,7 +688,7 @@ describe("CommentsService.toggleResolved", () => {
 			_count: { likes: 0 },
 		} as never)
 
-		const result = await CommentsService.toggleResolved("c1", "author")
+		const result = await commentsService.toggleResolved("c1", "author")
 
 		expect(result).toEqual({ resolved: true, moderated: false })
 		expect(mocked.comment.update).toHaveBeenCalledWith(
@@ -661,7 +702,7 @@ describe("CommentsService.toggleResolved", () => {
 	})
 })
 
-describe("CommentsService moderation", () => {
+describe("comments service moderation", () => {
 	beforeEach(() => vi.clearAllMocks())
 
 	const othersComment = {
@@ -671,21 +712,42 @@ describe("CommentsService moderation", () => {
 		imageVersionId: "v1",
 		internal: false,
 		attachments: [],
+		replies: [],
 	}
 
 	it("lets a project owner delete someone else's comment", async () => {
 		mocked.comment.findUnique.mockResolvedValue(othersComment as never)
 
-		const result = await CommentsService.deleteComment("c1", "owner", "OWNER")
+		const result = await commentsService.deleteComment("c1", "owner", "OWNER")
 
 		expect(result).toEqual({ moderated: true })
 		expect(mocked.comment.delete).toHaveBeenCalledWith({ where: { id: "c1" } })
 	})
 
+	it("removes attachment files of the comment and of every reply", async () => {
+		mocked.comment.findUnique.mockResolvedValue({
+			...othersComment,
+			attachments: [{ url: "uploads/top.png" }],
+			replies: [
+				{ attachments: [{ url: "uploads/reply.pdf" }] },
+				{ attachments: [] },
+			],
+		} as never)
+
+		await commentsService.deleteComment("c1", "author", "MEMBER")
+
+		expect(forgetProjectAssets).toHaveBeenCalledWith([
+			"uploads/top.png",
+			"uploads/reply.pdf",
+		])
+		expect(storage.remove).toHaveBeenCalledWith("uploads/top.png")
+		expect(storage.remove).toHaveBeenCalledWith("uploads/reply.pdf")
+	})
+
 	it("reports an author deleting their own comment as unmoderated", async () => {
 		mocked.comment.findUnique.mockResolvedValue(othersComment as never)
 
-		const result = await CommentsService.deleteComment("c1", "author", "MEMBER")
+		const result = await commentsService.deleteComment("c1", "author", "MEMBER")
 
 		expect(result).toEqual({ moderated: false })
 	})
@@ -694,7 +756,7 @@ describe("CommentsService moderation", () => {
 		mocked.comment.findUnique.mockResolvedValue(othersComment as never)
 
 		await expect(
-			CommentsService.deleteComment("c1", "someone-else", "EDITOR")
+			commentsService.deleteComment("c1", "someone-else", "EDITOR")
 		).rejects.toBeInstanceOf(ForbiddenError)
 		expect(mocked.comment.delete).not.toHaveBeenCalled()
 	})
@@ -707,7 +769,7 @@ describe("CommentsService moderation", () => {
 			_count: { likes: 0 },
 		} as never)
 
-		const result = await CommentsService.toggleResolved(
+		const result = await commentsService.toggleResolved(
 			"c1",
 			"editor",
 			"EDITOR"
@@ -720,7 +782,7 @@ describe("CommentsService moderation", () => {
 		mocked.comment.findUnique.mockResolvedValue(othersComment as never)
 
 		await expect(
-			CommentsService.toggleResolved("c1", "someone-else", "MEMBER")
+			commentsService.toggleResolved("c1", "someone-else", "MEMBER")
 		).rejects.toBeInstanceOf(ForbiddenError)
 		expect(mocked.comment.update).not.toHaveBeenCalled()
 	})
@@ -729,7 +791,7 @@ describe("CommentsService moderation", () => {
 		mocked.comment.findFirst = vi.fn().mockResolvedValue(null)
 
 		await expect(
-			CommentsService.updateComment("c1", { content: "hi" }, "owner")
+			commentsService.updateComment("c1", { content: "hi" }, "owner")
 		).rejects.toBeInstanceOf(ForbiddenError)
 	})
 })

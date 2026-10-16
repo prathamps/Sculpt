@@ -1,5 +1,7 @@
+import { Request, RequestHandler } from "express"
 import rateLimit, {
 	ClientRateLimitInfo,
+	ipKeyGenerator,
 	MemoryStore,
 	Options,
 	RateLimitRequestHandler,
@@ -7,6 +9,8 @@ import rateLimit, {
 } from "express-rate-limit"
 import { redisClient } from "../lib/redis"
 import { logger } from "../lib/logger"
+import { MFA_CHALLENGE_COOKIE } from "../lib/cookies"
+import { verifyMfaChallenge } from "../lib/tokens"
 
 export class RedisWithMemoryFallbackStore implements Store {
 	private readonly memoryStore = new MemoryStore()
@@ -62,6 +66,16 @@ export class RedisWithMemoryFallbackStore implements Store {
 	}
 }
 
+const READ_ONLY_METHODS = new Set(["GET", "HEAD", "OPTIONS"])
+
+export const isReadOnlyRequest = (req: Request): boolean =>
+	READ_ONLY_METHODS.has(req.method)
+
+export const callerKey = (req: Request): string => {
+	const userId = (req.user as { id?: string } | undefined)?.id
+	return userId ? `user:${userId}` : `ip:${ipKeyGenerator(req.ip ?? "")}`
+}
+
 const sharedStore = (prefix: string): Options["store"] =>
 	new RedisWithMemoryFallbackStore(prefix)
 
@@ -69,7 +83,8 @@ const limiter = (
 	prefix: string,
 	windowMs: number,
 	limit: number,
-	message: string
+	message: string,
+	overrides: Partial<Options> = {}
 ): RateLimitRequestHandler =>
 	rateLimit({
 		windowMs,
@@ -82,17 +97,40 @@ const limiter = (
 			logger.warn("Rate limit exceeded", { path: req.path, ip: req.ip })
 			res.status(options.statusCode).json(options.message)
 		},
+		...overrides,
 	})
 
 const MINUTE = 60000
 
-export const loginRateLimit = (): RateLimitRequestHandler =>
+const SIGN_IN_ATTEMPTS_PER_ACCOUNT = 10
+const SIGN_IN_ATTEMPTS_PER_NETWORK = 300
+
+const accountOf = (req: Request): string => {
+	const email = typeof req.body?.email === "string" ? req.body.email.trim().toLowerCase() : ""
+	if (email) return email
+	const challenged = verifyMfaChallenge(req.cookies?.[MFA_CHALLENGE_COOKIE])?.id
+	if (challenged) return `challenge:${challenged}`
+	return (req.user as { id?: string } | undefined)?.id ?? ""
+}
+
+export const signInAttemptKey = (req: Request): string =>
+	`${ipKeyGenerator(req.ip ?? "")}|${accountOf(req)}`
+
+export const loginRateLimit = (): RequestHandler[] => [
+	limiter(
+		"rl:login-network:",
+		15 * MINUTE,
+		SIGN_IN_ATTEMPTS_PER_NETWORK,
+		"Too many sign-in attempts from your network. Try again in a few minutes."
+	),
 	limiter(
 		"rl:login:",
 		15 * MINUTE,
-		10,
-		"Too many sign-in attempts. Try again in a few minutes."
-	)
+		SIGN_IN_ATTEMPTS_PER_ACCOUNT,
+		"Too many sign-in attempts. Try again in a few minutes.",
+		{ keyGenerator: signInAttemptKey }
+	),
+]
 
 export const registerRateLimit = (): RateLimitRequestHandler =>
 	limiter(
@@ -123,5 +161,6 @@ export const writeRateLimit = (): RateLimitRequestHandler =>
 		"rl:write:",
 		MINUTE,
 		120,
-		"You are sending requests too quickly. Slow down and try again."
+		"You are sending requests too quickly. Slow down and try again.",
+		{ skip: isReadOnlyRequest, keyGenerator: callerKey }
 	)
