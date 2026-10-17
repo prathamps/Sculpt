@@ -79,7 +79,7 @@ export function ProjectSidebar({
 		<>
 			<aside
 				className={cn(
-					"absolute z-20 h-[calc(100vh-3.5rem)] w-72 flex-col border-r border-border/40 bg-card p-4 transition-transform duration-300 ease-in-out md:relative md:translate-x-0",
+					"absolute z-20 h-[calc(100vh-3.5rem)] w-72 flex-col border-r border-border/40 bg-sidebar p-4 transition-transform duration-300 ease-in-out md:relative md:translate-x-0",
 					isSidebarOpen ? "translate-x-0" : "-translate-x-full"
 				)}
 			>
