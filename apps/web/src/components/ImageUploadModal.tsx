@@ -43,7 +43,7 @@ import {
 	rejectedUploadMessage,
 	unconvertibleModelMessage,
 } from "@/lib/upload-formats"
-import { uploadWithProgress } from "@/lib/api"
+import { submitMediaUpload } from "@/lib/resumable-upload"
 import { describeError } from "@/lib/errors"
 import { cn } from "@/lib/utils"
 
@@ -160,11 +160,13 @@ export function ImageUploadModal({
 
 		try {
 			let uploadPath: string
+			let uploadField: string
+			const mediaFiles: File[] = []
 
 			const firstFile = files[0]
 			if (imageId && firstFile) {
 				const fileToUpload = withMimeTypeTheApiCanMap(firstFile)
-				formData.append("image", fileToUpload)
+				mediaFiles.push(fileToUpload)
 				if (fileToUpload.type.startsWith("video/")) {
 					const duration = await getVideoDuration(fileToUpload)
 					if (duration != null) formData.append("duration", String(duration))
@@ -184,6 +186,7 @@ export function ImageUploadModal({
 				}
 
 				uploadPath = `/api/images/${imageId}/versions`
+				uploadField = "image"
 			} else {
 				const filesMeta: {
 					duration: number | null
@@ -192,7 +195,7 @@ export function ImageUploadModal({
 				}[] = []
 				for (const selected of files) {
 					const file = withMimeTypeTheApiCanMap(selected)
-					formData.append("images", file)
+					mediaFiles.push(file)
 					const duration = file.type.startsWith("video/")
 						? await getVideoDuration(file)
 						: null
@@ -219,13 +222,19 @@ export function ImageUploadModal({
 				if (folderId) formData.append("folderId", folderId)
 
 				uploadPath = `/api/projects/${projectId}/images`
+				uploadField = "images"
 			}
 
 			setIsPreparing(false)
 
-			await uploadWithProgress(uploadPath, formData, (progress) =>
-				setUploadProgress(progress.percent)
-			)
+			await submitMediaUpload({
+				path: uploadPath,
+				formData,
+				field: uploadField,
+				files: mediaFiles,
+				target: imageId ? { imageId } : { projectId: projectId as string },
+				onProgress: setUploadProgress,
+			})
 
 			onUploadComplete()
 			onClose()

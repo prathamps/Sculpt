@@ -14,9 +14,13 @@ vi.mock("../../lib/prisma", () => ({
 }))
 
 vi.mock("../audit/audit.service", () => ({ recordAudit: vi.fn() }))
+vi.mock("../oauth/credential-changes", () => ({
+	endDelegatedAccess: vi.fn(async () => ({ connections: 0, personalAccessTokens: 0 })),
+}))
 
 import { prisma } from "../../lib/prisma"
 import { recordAudit } from "../audit/audit.service"
+import { endDelegatedAccess } from "../oauth/credential-changes"
 import { sealSecret } from "../../lib/secret-box"
 import { base32Decode, hotp, totpStepAt } from "../../lib/totp"
 import {
@@ -93,6 +97,7 @@ describe("enrollment", () => {
 		expect(vi.mocked(recordAudit)).toHaveBeenCalledWith(
 			expect.objectContaining({ action: "user.mfa_enabled" })
 		)
+		expect(vi.mocked(endDelegatedAccess)).toHaveBeenCalledWith("u1", "mfa_enabled")
 	})
 
 	it("refuses a wrong confirmation code", async () => {

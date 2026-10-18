@@ -6,6 +6,7 @@ import { prisma } from "../../lib/prisma"
 import { logger } from "../../lib/logger"
 import { metricsRegistry } from "../../lib/metrics"
 import { currentRequestContext } from "../../lib/request-context"
+import { Delegation, delegationOf } from "../../lib/request-auth"
 import { TtlCache } from "../../lib/ttl-cache"
 
 export type AuditAction =
@@ -58,6 +59,8 @@ export type AuditAction =
 	| "comment.deleted_by_owner"
 	| "comment.resolution_changed"
 	| "comment.resolved_by_owner"
+	| "comment.revision_checked"
+	| "comment.revision_check_cleared"
 	| "comment.attachments_added"
 	| "share_link.created"
 	| "share_link.revoked"
@@ -79,6 +82,20 @@ export type AuditAction =
 	| "folder.moved"
 	| "folder.deleted"
 	| "report.exported"
+	| "oauth.client_registered"
+	| "oauth.consent_granted"
+	| "oauth.consent_denied"
+	| "oauth.grant_revoked"
+	| "oauth.refresh_token_reused"
+	| "oauth.authorization_code_reused"
+	| "oauth.client_disabled"
+	| "oauth.client_enabled"
+	| "oauth.client_verified"
+	| "oauth.client_unverified"
+	| "oauth.delegated_access_ended"
+	| "admin.oauth_clients_viewed"
+	| "personal_access_token.created"
+	| "personal_access_token.revoked"
 
 export interface AuditEntry {
 	action: AuditAction
@@ -152,6 +169,16 @@ export const auditEntryHash = (fields: ChainedAuditFields): string =>
 		)
 		.digest("hex")
 
+const isPlainObject = (value: unknown): value is Record<string, unknown> =>
+	!!value && typeof value === "object" && !Array.isArray(value)
+
+export const withDelegation = (metadata: unknown, delegation: Delegation | null): unknown => {
+	if (!delegation) return metadata
+	if (metadata === null || metadata === undefined) return { delegation }
+	if (isPlainObject(metadata)) return { ...metadata, delegation }
+	return metadata
+}
+
 const withRequestContext = (entry: AuditEntry) => {
 	const context = currentRequestContext()
 	return {
@@ -159,7 +186,7 @@ const withRequestContext = (entry: AuditEntry) => {
 		targetType: entry.targetType,
 		targetId: entry.targetId ?? null,
 		actorId: entry.actorId ?? null,
-		metadata: asStoredJson(entry.metadata),
+		metadata: asStoredJson(withDelegation(entry.metadata, delegationOf(context?.auth))),
 		ipAddress: entry.ipAddress ?? context?.ipAddress ?? null,
 		userAgent: entry.userAgent ?? context?.userAgent ?? null,
 		requestId: context?.requestId ?? null,

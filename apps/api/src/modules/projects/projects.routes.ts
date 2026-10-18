@@ -3,6 +3,7 @@ import * as projectController from "./projects.controller"
 import { authenticateJWT } from "../../middleware/auth.middleware"
 import { validateBody } from "../../middleware/validate.middleware"
 import { writeRateLimit } from "../../middleware/rate-limit.middleware"
+import { requireScope } from "../../middleware/scope.middleware"
 import {
 	projectIdFromParam,
 	requireProjectRole,
@@ -32,8 +33,13 @@ const onProjectScope = (minimum: "VIEWER" | "OWNER") =>
 router.use(authenticateJWT)
 router.use(writeRateLimit())
 
-router.post("/", validateBody(createProjectSchema), projectController.createProject)
-router.get("/", projectController.getProjects)
+router.post(
+	"/",
+	requireScope("sculpt:content"),
+	validateBody(createProjectSchema),
+	projectController.createProject
+)
+router.get("/", requireScope("sculpt:read"), projectController.getProjects)
 router.get("/:id/my-role", onProject("VIEWER"), projectController.getMyRole)
 router.get("/:id", onProject("VIEWER"), projectController.getProject)
 router.put(
@@ -68,6 +74,7 @@ router.get(
 )
 router.post(
 	"/:projectId/members/leave",
+	requireScope("sculpt:manage"),
 	onProjectScope("VIEWER"),
 	projectController.leaveProject
 )

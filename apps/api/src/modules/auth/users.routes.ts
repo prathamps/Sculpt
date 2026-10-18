@@ -24,6 +24,15 @@ import {
 	startMfaSetup,
 } from "./mfa.controller"
 import { loginRateLimit } from "../../middleware/rate-limit.middleware"
+import { requireScope, sessionOnly } from "../../middleware/scope.middleware"
+import {
+	createToken,
+	listConnections,
+	listTokens,
+	revokeConnection,
+	revokeToken,
+} from "../oauth/connections.controller"
+import { createPersonalTokenSchema } from "../oauth/oauth.schema"
 
 const notificationPreferencesSchema = z
 	.object({
@@ -49,32 +58,62 @@ router.use(authenticateJWT)
 
 const currentUser = (req: Request, res: Response) => res.json(req.user)
 
-router.get("/profile", currentUser)
-router.get("/me", currentUser)
+router.get("/profile", requireScope("sculpt:read"), currentUser)
+router.get("/me", requireScope("sculpt:read"), currentUser)
 
-router.patch("/me", validateBody(updateProfileSchema), updateProfile)
-router.post("/me/password", validateBody(changePasswordSchema), changePassword)
+router.patch(
+	"/me",
+	requireScope("sculpt:account"),
+	validateBody(updateProfileSchema),
+	updateProfile
+)
+router.post(
+	"/me/password",
+	sessionOnly,
+	validateBody(changePasswordSchema),
+	changePassword
+)
 router.patch(
 	"/me/notification-preferences",
+	requireScope("sculpt:account"),
 	validateBody(notificationPreferencesSchema),
 	updateNotificationPreferences
 )
-router.get("/me/export", exportMyData)
-router.get("/me/mfa", getMfaStatus)
-router.post("/me/mfa/setup", startMfaSetup)
-router.post("/me/mfa/enable", loginRateLimit(), validateBody(enableMfaSchema), enableMfa)
+router.get("/me/export", sessionOnly, exportMyData)
+router.get("/me/mfa", sessionOnly, getMfaStatus)
+router.post("/me/mfa/setup", sessionOnly, startMfaSetup)
+router.post(
+	"/me/mfa/enable",
+	sessionOnly,
+	loginRateLimit(),
+	validateBody(enableMfaSchema),
+	enableMfa
+)
 router.post(
 	"/me/mfa/recovery-codes",
+	sessionOnly,
 	loginRateLimit(),
 	validateBody(secondFactorSchema),
 	regenerateMfaRecoveryCodes
 )
 router.post(
 	"/me/mfa/disable",
+	sessionOnly,
 	loginRateLimit(),
 	validateBody(disableMfaSchema),
 	disableMfaHandler
 )
-router.delete("/me", validateBody(deleteAccountSchema), deleteMyAccount)
+router.delete("/me", sessionOnly, validateBody(deleteAccountSchema), deleteMyAccount)
+
+router.get("/me/connections", sessionOnly, listConnections)
+router.delete("/me/connections/:grantId", sessionOnly, revokeConnection)
+router.get("/me/tokens", sessionOnly, listTokens)
+router.post(
+	"/me/tokens",
+	sessionOnly,
+	validateBody(createPersonalTokenSchema),
+	createToken
+)
+router.delete("/me/tokens/:tokenId", sessionOnly, revokeToken)
 
 export default router

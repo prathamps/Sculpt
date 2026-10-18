@@ -34,8 +34,8 @@ export function VersionMenu({
 		<div className="flex items-center gap-2">
 			<DropdownMenu>
 				<DropdownMenuTrigger asChild>
-					<Button variant="outline" size="sm" className="gap-1">
-						{selectedVersion?.versionName || "Select version"}
+					<Button variant="outline" size="sm" className="max-w-[9rem] shrink-0 gap-1 sm:max-w-none">
+						<span className="truncate">{selectedVersion?.versionName || "Select version"}</span>
 						<ChevronDown className="h-3.5 w-3.5" aria-hidden="true" />
 					</Button>
 				</DropdownMenuTrigger>

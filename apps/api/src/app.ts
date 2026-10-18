@@ -10,13 +10,16 @@ import invitationRoutes from "./modules/projects/invitations.routes"
 import { imageRouter } from "./modules/media/images.routes"
 import notificationRoutes from "./modules/notifications/notifications.routes"
 import exportRoutes from "./modules/export/export.routes"
+import resumableUploadRoutes from "./modules/media/resumable-upload.routes"
 import adminRoutes from "./modules/admin/admin.routes"
 import searchRoutes from "./modules/search/search.routes"
+import { consentRouter, oauthPublicRouter } from "./modules/oauth/oauth.routes"
+import { requireScope } from "./middleware/scope.middleware"
 import { serveMediaFile } from "./modules/media/media-files.controller"
 import { healthCheck } from "./modules/health/health.controller"
 import { serveMetrics } from "./modules/health/metrics.controller"
 import { recordRequestMetrics } from "./lib/metrics"
-import { isAllowedOrigin } from "./lib/cors"
+import { isAllowedOrigin, seeksBearerAccess } from "./lib/cors"
 import { isProduction } from "./lib/config"
 import { logger } from "./lib/logger"
 import { authenticateJWT } from "./middleware/auth.middleware"
@@ -43,7 +46,19 @@ const corsOptions: cors.CorsOptions = {
 		"X-Request-Id",
 		pdfJsRangedFetchHeader,
 	],
-	exposedHeaders: ["X-Request-Id"],
+	exposedHeaders: ["X-Request-Id", "WWW-Authenticate", "X-Sculpt-Scopes"],
+}
+
+const bearerCorsOptions: cors.CorsOptions = {
+	...corsOptions,
+	origin: true,
+	credentials: false,
+}
+
+const corsOptionsFor = (req: express.Request): cors.CorsOptions => {
+	const origin = typeof req.headers.origin === "string" ? req.headers.origin : undefined
+	if (!isAllowedOrigin(origin) && seeksBearerAccess(req)) return bearerCorsOptions
+	return corsOptions
 }
 
 const trustProxyOnlyWithKnownHopCount = (app: express.Express): void => {
@@ -89,15 +104,22 @@ export const createApp = (): express.Express => {
 	app.use(bindRequestContext)
 	app.use(warnWhenForwardedHeadersAreIgnored())
 	app.use(recordRequestMetrics)
-
-	app.use(cors(corsOptions))
-	app.use(rejectCrossSiteMutations)
 	app.use(applySecurityHeaders)
+
+	app.use(oauthPublicRouter)
+
+	app.use(cors((req, callback) => callback(null, corsOptionsFor(req as express.Request))))
+	app.use(rejectCrossSiteMutations)
 	app.use(express.json({ limit: JSON_BODY_LIMIT }))
 	app.use(cookieParser())
 	app.use(passport.initialize())
 
-	app.get("/uploads/:filename", authenticateJWT, serveMediaFile)
+	app.get(
+		"/uploads/:filename",
+		authenticateJWT,
+		requireScope("sculpt:read"),
+		serveMediaFile
+	)
 
 	app.get("/health", healthCheck)
 	app.get("/metrics", serveMetrics)
@@ -111,7 +133,9 @@ export const createApp = (): express.Express => {
 	app.use("/api/notifications", notificationRoutes)
 	app.use("/api/admin", adminRoutes)
 	app.use("/api/export", exportRoutes)
+	app.use("/api/uploads", resumableUploadRoutes)
 	app.use("/api/search", searchRoutes)
+	app.use("/api/oauth", consentRouter)
 
 	app.use(
 		(

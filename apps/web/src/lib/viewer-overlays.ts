@@ -1,7 +1,7 @@
 import type { ModelPin } from "@/components/ModelAnnotationCanvas"
 import type { ScrubberMarker, ScrubberPeer } from "@/components/Scrubber"
 import type { PresencePeer } from "@/hooks/usePresence"
-import { Annotation, Comment, ModelAnchor } from "@/types"
+import { Annotation, Comment, ModelAnchor, RevisionCheckItem } from "@/types"
 
 export const annotationsOf = (comment: Comment): Annotation[] =>
 	Array.isArray(comment.annotation)
@@ -145,3 +145,37 @@ export const modelPinsFor = (
 			anchor: comment.modelAnchor as ModelAnchor,
 			selected: comment.id === selectedCommentId,
 		}))
+
+const annotationsOfItem = (item: RevisionCheckItem): Annotation[] =>
+	Array.isArray(item.annotation) ? item.annotation : item.annotation ? [item.annotation] : []
+
+export const carriedAnnotationsFor = (
+	item: RevisionCheckItem | null,
+	view: { isVideo: boolean; isPdf: boolean; currentPdfPage: number }
+): Annotation[] => {
+	if (!item) return []
+	if (view.isPdf && (item.page ?? 1) !== view.currentPdfPage) return []
+	return annotationsOfItem(item).map((annotation) => ({
+		...annotation,
+		isHighlighted: true,
+		...(view.isVideo
+			? {
+					t: item.timestamp ?? annotation.t,
+					tEnd: item.timestampEnd ?? annotation.tEnd,
+					pinned: true,
+				}
+			: { t: undefined, tEnd: undefined }),
+	}))
+}
+
+export const carriedModelPinFor = (item: RevisionCheckItem | null): ModelPin | null =>
+	item?.modelAnchor
+		? {
+				commentId: `carried:${item.commentId}`,
+				number: item.fromVersion.versionNumber,
+				badge: `V${item.fromVersion.versionNumber}`,
+				label: `${item.author.name || item.author.email} on ${item.fromVersion.versionName}`,
+				anchor: item.modelAnchor,
+				selected: true,
+			}
+		: null

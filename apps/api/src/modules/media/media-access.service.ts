@@ -34,9 +34,11 @@ export const versionAssets = (version: {
 	url: string
 	thumbnailUrl: string | null
 	proxyUrl: string | null
+	proxyLowUrl?: string | null
 }): AssetToRecord[] => [
 	{ url: version.url, kind: "ORIGINAL", imageVersionId: version.id },
 	{ url: version.proxyUrl, kind: "PROXY", imageVersionId: version.id },
+	{ url: version.proxyLowUrl ?? null, kind: "PROXY", imageVersionId: version.id },
 	{ url: version.thumbnailUrl, kind: "THUMBNAIL", imageVersionId: version.id },
 ]
 

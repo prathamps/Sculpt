@@ -1,11 +1,13 @@
 import { AsyncLocalStorage } from "async_hooks"
 import { randomUUID } from "crypto"
 import { RequestHandler } from "express"
+import { RequestAuth } from "./request-auth"
 
 export interface RequestContext {
 	requestId: string
 	ipAddress: string | null
 	userAgent: string | null
+	auth?: RequestAuth
 }
 
 const MAX_USER_AGENT_LENGTH = 512
@@ -28,6 +30,11 @@ export const userAgentFrom = (header: unknown): string | null =>
 
 export const runWithRequestContext = <T>(context: RequestContext, run: () => T): T =>
 	contexts.run(context, run)
+
+export const attachAuthToRequestContext = (auth: RequestAuth): void => {
+	const context = contexts.getStore()
+	if (context) context.auth = auth
+}
 
 export const bindRequestContext: RequestHandler = (req, res, next) => {
 	const requestId = requestIdFrom(req.headers["x-request-id"])

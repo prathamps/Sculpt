@@ -7,7 +7,12 @@ vi.mock("../../lib/prisma", () => ({
 	},
 }))
 
+vi.mock("../oauth/credential-changes", () => ({
+	endDelegatedAccess: vi.fn(async () => ({ connections: 0, personalAccessTokens: 0 })),
+}))
+
 import { prisma } from "../../lib/prisma"
+import { endDelegatedAccess } from "../oauth/credential-changes"
 import {
 	clearSessionCache,
 	revokeAllSessionsForUser,
@@ -48,6 +53,7 @@ describe("userForSession", () => {
 		mocked.user.findUnique.mockResolvedValue({ id: "u1", tokenVersion: 1 } as never)
 
 		expect(await userForSession(claims)).toBeNull()
+		expect(vi.mocked(endDelegatedAccess)).toHaveBeenCalledWith("u1", "signed_out_everywhere")
 	})
 
 	it("never caches a session whose token version is stale", async () => {

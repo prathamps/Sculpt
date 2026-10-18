@@ -8,7 +8,9 @@ export const respondWithError = (
 	action: string
 ): void => {
 	if (error instanceof AppError) {
-		res.status(error.statusCode).json({ message: error.message })
+		res
+			.status(error.statusCode)
+			.json(error.code ? { code: error.code, message: error.message } : { message: error.message })
 		return
 	}
 	logger.error(`${action} failed`, error)

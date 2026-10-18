@@ -16,6 +16,7 @@ import {
 	api,
 } from "@/lib/api"
 import { ignoreFailure } from "@/lib/errors"
+import { safeDestination } from "@/lib/sign-in-destination"
 import { toast } from "sonner"
 
 interface User {
@@ -44,10 +45,7 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined)
 
 const TWO_FACTOR_SETTINGS_PATH = "/account"
 
-export const safeDestination = (destination?: string | null): string =>
-	destination && destination.startsWith("/") && !destination.startsWith("//")
-		? destination
-		: "/dashboard"
+export { safeDestination }
 
 export const AuthProvider = ({ children }: { children: ReactNode }) => {
 	const [user, setUser] = useState<User | null>(null)

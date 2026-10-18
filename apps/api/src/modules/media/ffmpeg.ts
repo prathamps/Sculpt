@@ -1,6 +1,7 @@
 import { spawn } from "child_process"
 import ffmpegBinary from "ffmpeg-static"
 import { path as ffprobeBinary } from "ffprobe-static"
+import { timecodeBase, timecodeToFrames } from "../../lib/timecode"
 
 const MAX_REPORTED_ERROR_LINES = 6
 
@@ -109,9 +110,80 @@ export const parseFrameRate = (raw: string): number | null => {
 		: null
 }
 
-export const probeFrameRate = async (
+export interface VideoDetails {
+	frameRate: number | null
+	frameRateExpression: string | null
+	width: number | null
+	height: number | null
+	startTimecode: string | null
+}
+
+interface ProbedStream {
+	codec_type?: string
+	avg_frame_rate?: string
+	width?: number
+	height?: number
+	tags?: { timecode?: string }
+}
+
+interface ProbeOutput {
+	streams?: ProbedStream[]
+	format?: { tags?: { timecode?: string } }
+}
+
+const SMPTE_TIMECODE = /^\d{2}:[0-5]\d:[0-5]\d[:;]\d{2}$/
+
+export const parseTimecode = (raw: string | undefined): string | null => {
+	const candidate = raw?.trim() ?? ""
+	return SMPTE_TIMECODE.test(candidate) ? candidate : null
+}
+
+const positiveDimension = (value: number | undefined): number | null =>
+	typeof value === "number" && Number.isFinite(value) && value > 0
+		? value
+		: null
+
+const NO_VIDEO_DETAILS: VideoDetails = {
+	frameRate: null,
+	frameRateExpression: null,
+	width: null,
+	height: null,
+	startTimecode: null,
+}
+
+export const parseVideoDetails = (rawJson: string): VideoDetails => {
+	let probe: ProbeOutput
+	try {
+		probe = JSON.parse(rawJson) as ProbeOutput
+	} catch {
+		return NO_VIDEO_DETAILS
+	}
+	const streams = probe.streams ?? []
+	const video = streams.find((stream) => stream.codec_type === "video")
+	const frameRate = video?.avg_frame_rate
+		? parseFrameRate(video.avg_frame_rate)
+		: null
+	const startTimecode =
+		parseTimecode(probe.format?.tags?.timecode) ??
+		streams
+			.map((stream) => parseTimecode(stream.tags?.timecode))
+			.find((timecode) => timecode !== null) ??
+		null
+
+	const fitsFrameRate =
+		startTimecode !== null && timecodeToFrames(startTimecode, timecodeBase(frameRate)) !== null
+	return {
+		frameRate,
+		frameRateExpression: frameRate ? video!.avg_frame_rate!.trim() : null,
+		width: positiveDimension(video?.width),
+		height: positiveDimension(video?.height),
+		startTimecode: fitsFrameRate ? startTimecode : null,
+	}
+}
+
+export const probeVideoDetails = async (
 	filePath: string
-): Promise<number | null> => {
+): Promise<VideoDetails> => {
 	try {
 		const output = await run(
 			ffprobeBinary,
@@ -119,25 +191,73 @@ export const probeFrameRate = async (
 				"-v",
 				"error",
 				...localFilesOnly,
-				"-select_streams",
-				"v:0",
 				"-show_entries",
-				"stream=avg_frame_rate",
+				"stream=codec_type,avg_frame_rate,width,height:stream_tags=timecode:format_tags=timecode",
 				"-of",
-				"csv=p=0",
+				"json",
 				filePath,
 			],
 			PROBE_TIMEOUT_MS
 		)
-		return parseFrameRate(output)
+		return parseVideoDetails(output)
 	} catch {
-		return null
+		return NO_VIDEO_DETAILS
 	}
 }
 
-export const transcodeToWebProxy = async (
-	sourcePath: string,
+export interface WebRendition {
 	outputPath: string
+	maxWidth: number
+	maxHeight: number
+	crf: number
+	audioBitrate: string
+}
+
+export const FULL_RENDITION = { maxWidth: 1920, maxHeight: 1080, crf: 23, audioBitrate: "128k" }
+export const LOW_RENDITION = { maxWidth: 960, maxHeight: 540, crf: 26, audioBitrate: "96k" }
+
+export const exceedsRendition = (
+	details: Pick<VideoDetails, "width" | "height">,
+	rendition: Pick<WebRendition, "maxWidth" | "maxHeight">
+): boolean =>
+	details.width !== null &&
+	details.height !== null &&
+	(details.width > rendition.maxWidth || details.height > rendition.maxHeight)
+
+const KEYFRAME_EVERY_SECOND = "expr:gte(t,n_forced*1)"
+
+export const renditionArgs = (
+	rendition: WebRendition,
+	frameRateExpression: string | null
+): string[] => [
+	"-vf",
+	`scale=w='min(iw,${rendition.maxWidth})':h='min(ih,${rendition.maxHeight})':force_original_aspect_ratio=decrease:force_divisible_by=2`,
+	"-c:v",
+	"libx264",
+	"-preset",
+	"veryfast",
+	"-crf",
+	String(rendition.crf),
+	"-pix_fmt",
+	"yuv420p",
+	"-fps_mode",
+	"cfr",
+	...(frameRateExpression ? ["-r", frameRateExpression] : []),
+	"-force_key_frames",
+	KEYFRAME_EVERY_SECOND,
+	"-c:a",
+	"aac",
+	"-b:a",
+	rendition.audioBitrate,
+	"-movflags",
+	"+faststart",
+	rendition.outputPath,
+]
+
+export const transcodeToWebProxies = async (
+	sourcePath: string,
+	renditions: WebRendition[],
+	frameRateExpression: string | null
 ): Promise<void> => {
 	await run(
 		ffmpegBinary,
@@ -147,23 +267,9 @@ export const transcodeToWebProxy = async (
 			...localFilesOnly,
 			"-i",
 			sourcePath,
-			"-vf",
-			"scale=w=1920:h=1080:force_original_aspect_ratio=decrease:force_divisible_by=2",
-			"-c:v",
-			"libx264",
-			"-preset",
-			"veryfast",
-			"-crf",
-			"23",
-			"-pix_fmt",
-			"yuv420p",
-			"-c:a",
-			"aac",
-			"-b:a",
-			"128k",
-			"-movflags",
-			"+faststart",
-			outputPath,
+			...renditions.flatMap((rendition) =>
+				renditionArgs(rendition, frameRateExpression)
+			),
 		],
 		transcodeTimeoutMs()
 	)

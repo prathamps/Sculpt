@@ -3,6 +3,7 @@ import { prisma } from "../../lib/prisma"
 import { PageRequest, skipTake } from "../../lib/pagination"
 import { ValidationError } from "../../lib/errors"
 import { forgetCachedSessions } from "../auth/session.service"
+import { endDelegatedAccess } from "../oauth/credential-changes"
 
 const TREND_DAYS = 30
 
@@ -38,7 +39,7 @@ export const getAllUsers = async (page: PageRequest, search?: string) => {
 	return { users, total }
 }
 
-export const updateUserRole = async (userId: string, role: UserRole) => {
+export const updateUserRole = async (userId: string, role: UserRole, actorId?: string) => {
 	const target = await prisma.user.findUnique({
 		where: { id: userId },
 		select: { role: true },
@@ -58,6 +59,7 @@ export const updateUserRole = async (userId: string, role: UserRole) => {
 		select: { id: true, email: true, name: true, role: true },
 	})
 	forgetCachedSessions(userId)
+	await endDelegatedAccess(userId, "platform_role_changed", actorId ?? userId)
 	return { ...updated, previousRole: target?.role ?? null }
 }
 

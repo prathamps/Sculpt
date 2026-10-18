@@ -644,6 +644,39 @@ export const toggleLike = async (
 	return { liked, count }
 }
 
+export const announceCommentUpdated = async (commentId: string): Promise<void> => {
+	const comment = await prisma.comment.findUnique({
+		where: { id: commentId },
+		include: { user: COMMENT_AUTHOR_SELECT, ...LIKE_SUMMARY },
+	})
+	if (!comment) return
+	io.to(commentRoom(comment.imageVersionId, comment.internal)).emit("comment-updated", {
+		...withLikeCount(comment),
+		imageVersionId: comment.imageVersionId,
+	})
+}
+
+export const setCommentResolved = async (
+	commentId: string,
+	resolved: boolean
+): Promise<{ resolved: boolean }> => {
+	const updated = await prisma.comment.update({
+		where: { id: commentId },
+		data: { resolved },
+		include: { user: COMMENT_AUTHOR_SELECT, ...LIKE_SUMMARY },
+	})
+
+	io.to(commentRoom(updated.imageVersionId, updated.internal)).emit(
+		"comment-updated",
+		{
+			...withLikeCount(updated),
+			imageVersionId: updated.imageVersionId,
+		}
+	)
+
+	return { resolved: updated.resolved }
+}
+
 export const toggleResolved = async (
 	commentId: string,
 	userId: string,
@@ -670,20 +703,7 @@ export const toggleResolved = async (
 		)
 	}
 
-	const updated = await prisma.comment.update({
-		where: { id: commentId },
-		data: { resolved: !comment.resolved },
-		include: { user: COMMENT_AUTHOR_SELECT, ...LIKE_SUMMARY },
-	})
-
-	io.to(commentRoom(comment.imageVersionId, comment.internal)).emit(
-		"comment-updated",
-		{
-			...withLikeCount(updated),
-			imageVersionId: comment.imageVersionId,
-		}
-	)
-
+	const updated = await setCommentResolved(commentId, !comment.resolved)
 	return { resolved: updated.resolved, moderated }
 }
 

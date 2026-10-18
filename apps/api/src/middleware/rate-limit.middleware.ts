@@ -156,6 +156,59 @@ export const shareLinkRateLimit = (): RateLimitRequestHandler =>
 		"Too many share link attempts. Try again in a few minutes."
 	)
 
+const presentedClientIdOf = (req: Request): string => {
+	const header = req.headers.authorization
+	if (typeof header === "string" && /^Basic\s+/i.test(header)) {
+		const decoded = Buffer.from(header.replace(/^Basic\s+/i, ""), "base64").toString("utf8")
+		return decoded.split(":")[0] ?? ""
+	}
+	return typeof req.body?.client_id === "string" ? req.body.client_id : ""
+}
+
+export const oauthClientKey = (req: Request): string =>
+	`${ipKeyGenerator(req.ip ?? "")}|${presentedClientIdOf(req).slice(0, 200)}`
+
+export const oauthRegistrationRateLimit = (): RateLimitRequestHandler =>
+	limiter(
+		"rl:oauth-register:",
+		60 * MINUTE,
+		30,
+		"Too many app registrations from this address. Try again later."
+	)
+
+export const oauthAuthorizeRateLimit = (): RateLimitRequestHandler =>
+	limiter(
+		"rl:oauth-authorize:",
+		MINUTE,
+		120,
+		"Too many authorization attempts. Try again in a minute."
+	)
+
+export const oauthTokenRateLimit = (
+	isTrustedCaller: (req: Request) => boolean
+): RateLimitRequestHandler =>
+	limiter(
+		"rl:oauth-token:",
+		MINUTE,
+		300,
+		"Too many token requests. Try again in a minute.",
+		{
+			keyGenerator: oauthClientKey,
+			skip: isTrustedCaller,
+		}
+	)
+
+const UPLOAD_CHUNKS_PER_MINUTE = 1500
+
+export const uploadChunkRateLimit = (): RateLimitRequestHandler =>
+	limiter(
+		"rl:upload-chunk:",
+		MINUTE,
+		UPLOAD_CHUNKS_PER_MINUTE,
+		"Too many upload chunks at once. The upload will resume shortly.",
+		{ keyGenerator: callerKey }
+	)
+
 export const writeRateLimit = (): RateLimitRequestHandler =>
 	limiter(
 		"rl:write:",

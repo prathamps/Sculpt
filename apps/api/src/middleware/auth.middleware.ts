@@ -20,6 +20,14 @@ import {
 	mustEnrollBeforeContinuing,
 } from "./mfa-enrollment"
 import { adminMfaRequired, hasMfa } from "../modules/auth/mfa.service"
+import { RequestAuth, SESSION_AUTH } from "../lib/request-auth"
+import { attachAuthToRequestContext } from "../lib/request-context"
+import {
+	authenticateBearerToken,
+	bearerChallenge,
+	bearerTokenOf,
+	hasAuthorizationHeader,
+} from "../modules/oauth/bearer"
 
 const recordAdminDenial = (req: Request, userId: string) =>
 	recordAuditOnce(`${userId}:admin`, {
@@ -43,11 +51,60 @@ const slideSessionCookie = (req: Request, res: Response): void => {
 	setSessionCookie(res, SESSION_COOKIE, token, sessionLifetimeMs("user"))
 }
 
+export const GRANTED_SCOPES_HEADER = "X-Sculpt-Scopes"
+
+const rejectUnenrolled = (req: Request, res: Response, user: AuthenticatedUser): boolean => {
+	if (!mustEnrollBeforeContinuing(req, user)) return false
+	res.status(403).json({
+		code: MFA_ENROLLMENT_REQUIRED,
+		message: "Turn on two-factor authentication to keep using Sculpt.",
+	})
+	return true
+}
+
+const establishIdentity = (req: Request, user: AuthenticatedUser, auth: RequestAuth): void => {
+	req.user = user
+	req.auth = auth
+	attachAuthToRequestContext(auth)
+}
+
+const rejectInvalidBearer = (res: Response): void => {
+	res.setHeader(
+		"WWW-Authenticate",
+		bearerChallenge({
+			error: "invalid_token",
+			description: "The access token is missing, expired, revoked or not meant for this API.",
+		})
+	)
+	res.status(401).json({ code: "invalid_token", message: "Unauthorized" })
+}
+
+const authenticateWithBearer = async (
+	req: Request,
+	res: Response,
+	next: NextFunction
+): Promise<void> => {
+	const token = bearerTokenOf(req)
+	const identity = token ? await authenticateBearerToken(token) : null
+	if (!identity) {
+		rejectInvalidBearer(res)
+		return
+	}
+	establishIdentity(req, identity.user, identity.auth)
+	res.setHeader(GRANTED_SCOPES_HEADER, [...(identity.auth.scopes ?? [])].join(" "))
+	if (rejectUnenrolled(req, res, identity.user)) return
+	next()
+}
+
 export const authenticateJWT = (
 	req: Request,
 	res: Response,
 	next: NextFunction
 ) => {
+	if (hasAuthorizationHeader(req)) {
+		authenticateWithBearer(req, res, next).catch(next)
+		return
+	}
 	passport.authenticate(
 		"jwt",
 		{ session: false },
@@ -58,14 +115,9 @@ export const authenticateJWT = (
 			if (!user) {
 				return res.status(401).json({ message: "Unauthorized" })
 			}
-			req.user = user as AuthenticatedUser
+			establishIdentity(req, user as AuthenticatedUser, SESSION_AUTH)
 			slideSessionCookie(req, res)
-			if (mustEnrollBeforeContinuing(req, user as AuthenticatedUser)) {
-				return res.status(403).json({
-					code: MFA_ENROLLMENT_REQUIRED,
-					message: "Turn on two-factor authentication to keep using Sculpt.",
-				})
-			}
+			if (rejectUnenrolled(req, res, user as AuthenticatedUser)) return
 			next()
 		}
 	)(req, res, next)
@@ -76,6 +128,12 @@ export const authenticateAdmin = async (
 	res: Response,
 	next: NextFunction
 ) => {
+	if (hasAuthorizationHeader(req)) {
+		return res.status(401).json({
+			message: "The admin console accepts only a signed-in admin session.",
+		})
+	}
+
 	const claims = await authenticateSessionToken(
 		req.cookies?.[ADMIN_SESSION_COOKIE],
 		"admin"

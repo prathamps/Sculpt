@@ -37,6 +37,26 @@ jobs:
       - name: Test
         run: npm test
 
+  mcp:
+    name: MCP · typecheck + build + test
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/mcp
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: apps/mcp/package-lock.json
+      - name: Install dependencies
+        run: npm ci
+      - name: Type-check & build
+        run: npm run build
+      - name: Test
+        run: npm test
+
   web:
     name: Web · lint + typecheck + test + build
     runs-on: ubuntu-latest
@@ -75,7 +95,7 @@ jobs:
         run: |
           if grep -rnE '^[[:space:]]*(//|/\*)|[[:space:]]//[[:space:]]|\{/\*' \
             --include='*.ts' --include='*.tsx' \
-            apps/api/src apps/web/src apps/api/prisma/schema.prisma \
+            apps/api/src apps/web/src apps/mcp/src apps/api/prisma/schema.prisma \
             | grep -v '://' ; then
             echo "::error::Comments are not allowed — move the information into names, structure or test names (see CLAUDE.md)."
             exit 1
@@ -93,7 +113,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        app: [apps/api, apps/web]
+        app: [apps/api, apps/web, apps/mcp]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -178,8 +198,25 @@ jobs:
           npm ci
           npm run smoke
 
+      - name: Install, build and start the MCP server
+        working-directory: apps/mcp
+        run: |
+          npm ci
+          npm run build
+          nohup node dist/index.js > "$RUNNER_TEMP/mcp.log" 2>&1 &
+          npx --yes wait-on@7 http-get://localhost:3002/health --timeout 60000
+
+      - name: Run the OAuth and MCP smoke suite
+        working-directory: apps/mcp
+        run: npm run smoke
+
+      - name: Run the OAuth security checks
+        working-directory: e2e
+        run: npm run oauth
+
       - name: Server logs on failure
         if: failure()
         run: |
           echo "--- api ---"; cat "$RUNNER_TEMP/api.log" || true
           echo "--- web ---"; cat "$RUNNER_TEMP/web.log" || true
+          echo "--- mcp ---"; cat "$RUNNER_TEMP/mcp.log" || true

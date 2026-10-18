@@ -3,8 +3,9 @@
 import { useEffect } from "react"
 import { useRouter } from "next/navigation"
 import { Loader2 } from "lucide-react"
-import { useAuth } from "@/context/AuthContext"
+import { safeDestination, useAuth } from "@/context/AuthContext"
 import { authToasts } from "@/lib/auth-toasts"
+import { takeRememberedDestination } from "@/lib/sign-in-destination"
 
 const SESSION_HYDRATION_FALLBACK_MS = 2500
 
@@ -14,9 +15,10 @@ export default function OAuthCallbackPage() {
 
 	useEffect(() => {
 		authToasts.showLoginSuccess()
-		refreshProfileAndRedirectToDashboard()
+		const destination = safeDestination(takeRememberedDestination())
+		refreshProfileAndRedirectToDashboard(destination)
 		const fallbackIfSessionHydrationStalls = setTimeout(() => {
-			router.replace("/dashboard")
+			router.replace(destination)
 		}, SESSION_HYDRATION_FALLBACK_MS)
 		return () => clearTimeout(fallbackIfSessionHydrationStalls)
 	}, [refreshProfileAndRedirectToDashboard, router])

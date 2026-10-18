@@ -5,10 +5,14 @@ import { ProxyStatus } from "@prisma/client"
 import { prisma } from "../../lib/prisma"
 import { storage } from "../../storage"
 import {
+	FULL_RENDITION,
+	LOW_RENDITION,
+	WebRendition,
 	capturePosterFrame,
+	exceedsRendition,
 	probeDuration,
-	probeFrameRate,
-	transcodeToWebProxy,
+	probeVideoDetails,
+	transcodeToWebProxies,
 } from "./ffmpeg"
 import {
 	RenditionJob,
@@ -58,30 +62,67 @@ const buildPoster = async (job: VideoProxyJob): Promise<string | null> => {
 	}
 }
 
-const buildProxy = async (job: VideoProxyJob): Promise<void> => {
-	await fs.mkdir(processingDir, { recursive: true })
-	const proxyPath = path.join(processingDir, `proxy-${job.versionId}.mp4`)
-	const [duration, frameRate] = await Promise.all([
-		probeDuration(job.sourcePath),
-		probeFrameRate(job.sourcePath),
-	])
-	await transcodeToWebProxy(job.sourcePath, proxyPath)
-
-	const proxyUrl = await storage.store({
-		path: proxyPath,
-		originalName: `proxy-${job.versionId}.mp4`,
+const storeRendition = (rendition: WebRendition) =>
+	storage.store({
+		path: rendition.outputPath,
+		originalName: path.basename(rendition.outputPath),
 		mimeType: "video/mp4",
 	})
-	const thumbnailUrl = job.needsPoster ? await buildPoster(job) : null
+
+const discardLocalRenditions = (renditions: WebRendition[]) =>
+	Promise.all(
+		renditions.map((rendition) =>
+			fs.unlink(rendition.outputPath).catch(() => undefined)
+		)
+	)
+
+const buildProxy = async (job: VideoProxyJob): Promise<void> => {
+	await fs.mkdir(processingDir, { recursive: true })
+	const [duration, details] = await Promise.all([
+		probeDuration(job.sourcePath),
+		probeVideoDetails(job.sourcePath),
+	])
+	const full: WebRendition = {
+		...FULL_RENDITION,
+		outputPath: path.join(processingDir, `proxy-${job.versionId}.mp4`),
+	}
+	const low: WebRendition | null = exceedsRendition(details, LOW_RENDITION)
+		? {
+				...LOW_RENDITION,
+				outputPath: path.join(processingDir, `proxy-low-${job.versionId}.mp4`),
+			}
+		: null
+	const renditions = low ? [full, low] : [full]
 
 	try {
+		await transcodeToWebProxies(
+			job.sourcePath,
+			renditions,
+			details.frameRateExpression
+		)
+	} catch (error) {
+		await discardLocalRenditions(renditions)
+		throw error
+	}
+
+	const storedUrls: string[] = []
+	try {
+		const proxyUrl = await storeRendition(full)
+		storedUrls.push(proxyUrl)
+		const proxyLowUrl = low ? await storeRendition(low) : null
+		if (proxyLowUrl) storedUrls.push(proxyLowUrl)
+		const thumbnailUrl = job.needsPoster ? await buildPoster(job) : null
+		if (thumbnailUrl) storedUrls.push(thumbnailUrl)
+
 		const version = await prisma.imageVersion.update({
 			where: { id: job.versionId },
 			data: {
 				proxyUrl,
+				proxyLowUrl,
 				proxyStatus: ProxyStatus.READY,
 				...(duration !== null ? { duration } : {}),
-				...(frameRate !== null ? { frameRate } : {}),
+				...(details.frameRate !== null ? { frameRate: details.frameRate } : {}),
+				...(details.startTimecode ? { startTimecode: details.startTimecode } : {}),
 				...(thumbnailUrl ? { thumbnailUrl } : {}),
 			},
 			include: { image: { select: { projectId: true } } },
@@ -90,14 +131,15 @@ const buildProxy = async (job: VideoProxyJob): Promise<void> => {
 		await recordProjectAssets(
 			[
 				{ url: proxyUrl, kind: "PROXY", imageVersionId: version.id },
+				{ url: proxyLowUrl, kind: "PROXY", imageVersionId: version.id },
 				{ url: thumbnailUrl, kind: "THUMBNAIL", imageVersionId: version.id },
 			],
 			version.image.projectId
 		)
 		emitVersionUpdated(version)
 	} catch (error) {
-		await storage.remove(proxyUrl)
-		if (thumbnailUrl) await storage.remove(thumbnailUrl)
+		await Promise.all(storedUrls.map((url) => storage.remove(url)))
+		await discardLocalRenditions(renditions)
 		throw error
 	}
 }

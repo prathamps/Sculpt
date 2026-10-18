@@ -15,9 +15,15 @@ vi.mock("../audit/audit.service", () => ({
 	recordAudit: vi.fn(),
 }))
 
+vi.mock("../oauth/credential-changes", () => ({
+	endDelegatedAccess: vi.fn(async () => ({ connections: 0, personalAccessTokens: 0 })),
+}))
+
 import { prisma } from "../../lib/prisma"
 import { recordAudit } from "../audit/audit.service"
-import { findOrCreateOAuthUser } from "./auth.service"
+import bcrypt from "bcrypt"
+import { endDelegatedAccess } from "../oauth/credential-changes"
+import { changeUserPassword, findOrCreateOAuthUser } from "./auth.service"
 
 const mocked = vi.mocked(prisma, true)
 
@@ -109,5 +115,35 @@ describe("findOrCreateOAuthUser", () => {
 		const user = await findOrCreateOAuthUser(googleIdentity)
 
 		expect(user).toEqual({ id: "new" })
+	})
+})
+
+describe("changeUserPassword", () => {
+	beforeEach(() => vi.clearAllMocks())
+
+	it("ends every app connection and personal access token after the password changes", async () => {
+		mocked.user.findUnique.mockResolvedValue({
+			id: "u1",
+			password: await bcrypt.hash("old-password", 4),
+		} as never)
+
+		await changeUserPassword("u1", "old-password", "new-password-123")
+
+		expect(mocked.user.update).toHaveBeenCalledWith(
+			expect.objectContaining({
+				data: expect.objectContaining({ tokenVersion: { increment: 1 } }),
+			})
+		)
+		expect(vi.mocked(endDelegatedAccess)).toHaveBeenCalledWith("u1", "password_changed")
+	})
+
+	it("leaves delegated access alone when the current password is wrong", async () => {
+		mocked.user.findUnique.mockResolvedValue({
+			id: "u1",
+			password: await bcrypt.hash("old-password", 4),
+		} as never)
+
+		await expect(changeUserPassword("u1", "guess", "new-password-123")).rejects.toThrow()
+		expect(vi.mocked(endDelegatedAccess)).not.toHaveBeenCalled()
 	})
 })

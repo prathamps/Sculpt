@@ -1,5 +1,7 @@
 import { prisma } from "../../lib/prisma"
 import { TtlCache } from "../../lib/ttl-cache"
+import { forgetDelegatedUser } from "../oauth/bearer"
+import { endDelegatedAccess } from "../oauth/credential-changes"
 import {
 	IssuedToken,
 	SessionClaims,
@@ -72,6 +74,7 @@ const verifiedSessions = new TtlCache<SessionUser>(VERIFIED_SESSION_CACHE_TTL_MS
 
 export const forgetCachedSessions = (userId: string): void => {
 	verifiedSessions.deleteWhere((user) => user.id === userId)
+	forgetDelegatedUser(userId)
 }
 
 export const clearSessionCache = (): void => verifiedSessions.clear()
@@ -124,6 +127,7 @@ export const revokeAllSessionsForUser = async (
 		data: { tokenVersion: { increment: 1 } },
 	})
 	forgetCachedSessions(userId)
+	await endDelegatedAccess(userId, "signed_out_everywhere")
 }
 
 export const pruneExpiredRevocations = async (): Promise<number> => {

@@ -1,7 +1,7 @@
 "use client"
 
 import { useState } from "react"
-import { Download, FileText, FileJson, Printer, Loader2 } from "lucide-react"
+import { Download, FileText, FileJson, Printer, Loader2, Clapperboard } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import {
 	DropdownMenu,
@@ -73,6 +73,7 @@ export function ExportMenu({
 }: ExportMenuProps) {
 	const [busy, setBusy] = useState(false)
 	const isImage = (selectedVersion?.mediaType ?? "IMAGE") === "IMAGE"
+	const isVideo = selectedVersion?.mediaType === "VIDEO"
 
 	const downloadOriginal = () => {
 		if (!selectedVersion) return
@@ -142,6 +143,33 @@ export function ExportMenu({
 		}
 	}
 
+	const downloadMarkers = async (format: "edl" | "xml") => {
+		if (!selectedVersion) return
+		setBusy(true)
+		try {
+			const res = await fetch(
+				`${API_URL}/api/export/version/${selectedVersion.id}/markers.${format}`,
+				{ credentials: "include" }
+			)
+			if (await handleGateResponse(res)) return
+			if (!res.ok) {
+				toast.error("Could not export the markers.")
+				return
+			}
+			const blob = await res.blob()
+			const url = URL.createObjectURL(blob)
+			const a = document.createElement("a")
+			a.href = url
+			a.download = `${image.name || "video"}-${selectedVersion.versionName}-markers.${format}`
+			a.click()
+			URL.revokeObjectURL(url)
+		} catch {
+			toast.error("Could not export the markers.")
+		} finally {
+			setBusy(false)
+		}
+	}
+
 	const printReport = async () => {
 		setBusy(true)
 		try {
@@ -174,13 +202,19 @@ export function ExportMenu({
 	return (
 		<DropdownMenu>
 			<DropdownMenuTrigger asChild>
-				<Button size="sm" variant="outline" className="h-8 gap-1.5 text-xs" disabled={busy}>
+				<Button
+					size="sm"
+					variant="outline"
+					className="h-8 shrink-0 gap-1.5 text-xs"
+					disabled={busy}
+					aria-label="Export"
+				>
 					{busy ? (
 						<Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true" />
 					) : (
 						<Download className="h-3.5 w-3.5" aria-hidden="true" />
 					)}
-					Export
+					<span className="hidden sm:inline">Export</span>
 				</Button>
 			</DropdownMenuTrigger>
 			<DropdownMenuContent align="end" className="w-56">
@@ -220,6 +254,20 @@ export function ExportMenu({
 					<Printer className="mr-2 h-3.5 w-3.5" aria-hidden="true" />
 					Print report (PDF)
 				</DropdownMenuItem>
+				{isVideo && (
+					<>
+						<DropdownMenuSeparator />
+						<DropdownMenuLabel className="text-xs">Timeline markers</DropdownMenuLabel>
+						<DropdownMenuItem className="text-xs" onClick={() => downloadMarkers("edl")}>
+							<Clapperboard className="mr-2 h-3.5 w-3.5" aria-hidden="true" />
+							DaVinci Resolve (EDL)
+						</DropdownMenuItem>
+						<DropdownMenuItem className="text-xs" onClick={() => downloadMarkers("xml")}>
+							<Clapperboard className="mr-2 h-3.5 w-3.5" aria-hidden="true" />
+							Premiere Pro / FCP 7 (XML)
+						</DropdownMenuItem>
+					</>
+				)}
 			</DropdownMenuContent>
 		</DropdownMenu>
 	)
@@ -237,6 +285,7 @@ interface ReportComment {
 	content?: string
 	resolved?: boolean
 	timestamp?: number | null
+	timecode?: string | null
 	annotationCount?: number
 }
 interface ReportVersion {
@@ -265,7 +314,7 @@ function buildPrintableHtml(report: ImageReport): string {
 					<td>${escapeHtml(c.author)}</td>
 					<td>${escapeHtml(c.content)}</td>
 					<td>${c.resolved ? "Resolved" : "Open"}</td>
-					<td>${c.timestamp != null ? Number(c.timestamp).toFixed(1) + "s" : "—"}</td>
+					<td>${c.timecode ? escapeHtml(c.timecode) : c.timestamp != null ? Number(c.timestamp).toFixed(1) + "s" : "—"}</td>
 					<td>${c.annotationCount || 0}</td>
 				</tr>`
 			)

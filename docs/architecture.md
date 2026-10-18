@@ -1,6 +1,6 @@
 # Architecture
 
-Sculpt is a two-app monorepo: an Express API (`apps/api`) and a Next.js frontend (`apps/web`). The API owns all business logic and data; the frontend is a client of the REST API and the Socket.IO server.
+Sculpt is a monorepo: an Express API (`apps/api`), a Next.js frontend (`apps/web`) and an MCP server for AI assistants (`apps/mcp`). The API owns all business logic and data; the frontend and the MCP server are both clients of its REST API.
 
 ## Backend
 
@@ -19,6 +19,7 @@ apps/api/src/
 │   ├── export/          # JSON/CSV report generation
 │   ├── admin/           # admin auth, user/project management, stats
 │   ├── health/          # dependency-aware health probe
+│   ├── oauth/           # OAuth 2.1 authorization server, bearer auth, personal access tokens
 │   └── audit/           # audit log write + query service
 ├── storage/             # StoragePort + LocalStorage / S3Storage adapters
 ├── realtime/            # Socket.IO server (rooms, presence hooks)
@@ -64,6 +65,19 @@ user's `tokenVersion`, bumped on password change so every other session dies;
 row, pruned hourly). `lib/config.ts` refuses to boot in production without a
 strong `JWT_SECRET`.
 
+### Delegated access
+
+People, AI assistants and scripts reach the same routes. `authenticateJWT`
+accepts either the session cookie or an `Authorization: Bearer` token (an OAuth
+access token whose audience is the API, or a personal access token) and records
+how the caller authenticated on `req.auth` and in the request context. Scopes
+mirror role tiers, and `requireProjectRole(minimum)` demands the matching scope
+from token callers automatically; routes outside a project declare
+`requireScope`, and security-critical ones are `sessionOnly`. A test fails if
+any token-reachable route declares neither. Audit entries written during a
+delegated request carry the app and grant that acted. The full design, including
+the MCP server and token exchange, is in [ai-integration.md](ai-integration.md).
+
 ### Ports & adapters (where they pay off)
 
 Interfaces exist only at seams where implementations genuinely swap:
@@ -85,7 +99,51 @@ so list queries stay a single indexed read; a single `CHANGES_REQUESTED`
 outweighs any number of approvals. Decisions are audited, announced on the
 version's socket room, and notified to the rest of the project.
 
+### Revision check
+
+`modules/reviews/revision-check.service.ts` answers "which earlier feedback
+should this version address?" with every open top-level comment on a lower
+version number of the same file, plus anything already checked on this version.
+A verdict is one `RevisionCheck` row per comment per version. `FIXED` resolves
+the original comment (only its author or an EDITOR may), and remembers that it
+did, so undoing the verdict — or a later `NOT_FIXED` on the same version —
+reopens it; a resolution made some other way is never undone. `NOT_FIXED` leaves
+the comment open, so it reappears on the next version with a note of where it
+was last flagged. Verdicts are audited and announced on the version's socket
+room. In the viewer, focusing an item reuses the comment's own anchor (seek,
+page or camera flight) and overlays its drawing on the new version.
+
+### Visual version diff
+
+Compare view offers modes per media type. Images get swipe, onion skin and a
+CSS `difference` blend; `lib/image-diff.ts` also diffs both images on a
+canvas scaled to at most 768 px, groups changed 16 px cells into regions with a
+flood fill, and outlines them. Models get a deviation heatmap
+(`components/ModelDiffView.tsx`, `lib/model-diff.ts`): both GLBs are merged
+into world-space geometry, a BVH (three-mesh-bvh) is built over the earlier
+version, and every vertex of the later one is measured against its surface in
+time-sliced chunks so large models stay responsive. Distances below an
+adjustable tolerance (0.5% of the comparison's diagonal by default) stay
+neutral; larger ones ramp to red. Both models are compared in their own
+coordinates, so revisions exported from the same scene line up exactly.
+
+Side-by-side panes share a small sync channel (`lib/camera-link.ts`): model
+viewers publish camera moves, video players publish play, pause, seek and rate
+events, and each pane applies the others' events without re-broadcasting them.
+
 ### Video proxy pipeline
+
+Two renditions are made from one ffmpeg run: a full one capped at 1080p and,
+when the source is larger than 540p, a lighter 540p one stored in
+`proxyLowUrl`. Both are encoded at a constant frame rate equal to the
+source's average rate and carry a keyframe every second, so the player's frame
+stepping (which seeks to the middle of the target frame) lands on real frames
+and scrubbing seeks quickly. Neither rendition is ever upscaled. ffprobe also
+reads the camera's start timecode from the container or a QuickTime timecode
+track into `startTimecode`; the player, comment chips, CSV report and marker
+exports offset their SMPTE timecode by it. The player chooses the 540p
+rendition automatically on narrow screens, Data Saver and slow connections;
+viewers can override that per browser.
 
 Uploaded videos are transcoded in the background to a web-friendly H.264/AAC MP4
 capped at 1080p (`modules/media/video-pipeline.ts`, ffmpeg via `ffmpeg-static`).
@@ -108,9 +166,27 @@ Owned jobs are heartbeated every minute; a sweep fails pending jobs whose owner
 has been silent for ten minutes and removes that owner's scratch space, so a
 replica that dies never leaves media stuck in "processing".
 
+### Resumable uploads
+
+Files of 32 MB or more are sent through `/api/uploads` instead of a single
+multipart request (`lib/resumable-upload.ts` in the web app). A session is
+opened against the target project (role-checked like the ordinary upload),
+chunks of up to 8 MB are written at an explicit byte offset, and a chunk sent at
+the wrong offset is refused with 409 and the offset to resume from, so a client
+that lost track simply continues. The browser retries with backoff, waits while
+the device is offline, and remembers the session per file so a reload resumes
+rather than restarts. When the last byte arrives the content is checked against
+the declared type; the ordinary upload route then names the finished session in
+`uploadIds`, and `attachResumableUploads` moves the file into staging as if
+multer had written it, so authorization, signature checks, transcoding and
+cleanup are shared with every other upload. Sessions live as files under
+`uploads/.staging/resumable` and are reaped after a day without activity.
+
 ### 3D model ingest
 
 3D formats are normalised in the **browser**, not on the server: `lib/model-capture.ts` loads the upload with the matching three.js loader (FBX, OBJ, STL, PLY, DAE, 3MF, 3DS, USDZ, AMF, WRL), renders a transparent-PNG thumbnail from an offscreen WebGL canvas, and re-exports the scene as GLB with `GLTFExporter`. The original file is stored as the version's `url` and the GLB lands in `proxyUrl` — the same columns the video pipeline uses — so the viewer, pins and compare view only ever deal with GLB. three.js and every loader are dynamically imported so they stay out of the main bundle and never execute during server rendering. Formats requiring a CAD kernel (STEP, IGES) or a proprietary SDK (SBSAR) are not supported.
+
+The viewer (`components/ModelAnnotationCanvas.tsx`) normalises every model to the same size around the origin, then frames it for the canvas's aspect ratio. Its toolbar offers fitted camera views, clay, wireframe and normals shading, studio lighting from three's procedural `RoomEnvironment` (no HDRI download, so it works offline), a ground grid, a turntable, a section plane (renderer clipping along X, Y or Z), point-to-point measurement reported in the model's own units, model statistics from `lib/model-inspection.ts`, animation playback (models are cloned with `SkeletonUtils` so skinned meshes keep their bones), and PNG export for people allowed to download. In compare view the two viewers share a `CameraLink`, so orbiting one moves the other.
 
 Compressed glTF is handled in both the viewer and the thumbnail pass via `lib/gltf-decoders.ts`: **Draco** geometry, **KTX2/Basis** textures and **EXT_meshopt_compression**. The decoders ship inside the `three` package and are copied to `public/three/` by `npm run copy-decoders` (wired to `predev`/`prebuild`), so a self-hosted instance never fetches them from a CDN and works fully offline. `public/three/` is generated, not committed.
 

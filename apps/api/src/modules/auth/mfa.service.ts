@@ -7,6 +7,7 @@ import { openSecret, sealSecret } from "../../lib/secret-box"
 import { base32Encode, generateTotpSecret, matchingTotpStep, otpauthUri } from "../../lib/totp"
 import { recordAudit } from "../audit/audit.service"
 import { forgetCachedSessions } from "./session.service"
+import { endDelegatedAccess } from "../oauth/credential-changes"
 
 const MFA_ISSUER = "Sculpt"
 const RECOVERY_CODE_COUNT = 10
@@ -123,6 +124,7 @@ export const completeEnrollment = async (
 		},
 	})
 	forgetCachedSessions(userId)
+	await endDelegatedAccess(userId, "mfa_enabled")
 	const codes = await issueRecoveryCodes(userId)
 	await recordAudit({ action: "user.mfa_enabled", targetType: "user", targetId: userId, actorId: userId })
 	return codes
@@ -167,7 +169,7 @@ export const verifySecondFactor = async (
 	return null
 }
 
-const requireSecondFactor = async (userId: string, factor: SecondFactor): Promise<void> => {
+export const requireSecondFactor = async (userId: string, factor: SecondFactor): Promise<void> => {
 	if (!(await verifySecondFactor(userId, factor))) {
 		await recordAudit({
 			action: "user.mfa_challenge_failed",
@@ -222,5 +224,6 @@ export const disableMfa = async (
 		prisma.mfaRecoveryCode.deleteMany({ where: { userId } }),
 	])
 	forgetCachedSessions(userId)
+	await endDelegatedAccess(userId, "mfa_disabled")
 	await recordAudit({ action: "user.mfa_disabled", targetType: "user", targetId: userId, actorId: userId })
 }

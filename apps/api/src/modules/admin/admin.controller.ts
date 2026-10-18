@@ -147,7 +147,11 @@ export const changeUserRole = async (req: Request, res: Response) => {
 			return res.status(400).json({ message: "Invalid role" })
 		}
 
-		const { previousRole, ...updatedUser } = await updateUserRole(userId, role)
+		const { previousRole, ...updatedUser } = await updateUserRole(
+			userId,
+			role,
+			(req.user as AuthenticatedUser)?.id
+		)
 		await recordAudit({
 			action: "user.role_changed",
 			targetType: "user",

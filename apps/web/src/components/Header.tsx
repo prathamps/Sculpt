@@ -10,7 +10,7 @@ import {
 	DropdownMenuSeparator,
 } from "@/components/ui/dropdown-menu"
 import { useAuth } from "@/context/AuthContext"
-import { Menu, LogOut, User, ShieldAlert } from "lucide-react"
+import { Menu, LogOut, User, ShieldAlert, Bot } from "lucide-react"
 import { ModeToggle } from "@/components/ui/theme-toggle";
 import { NotificationDropdown } from "./NotificationDropdown"
 import { UserAvatar } from "@/components/UserAvatar"
@@ -51,15 +51,17 @@ export function Header({ onMenuClick }: HeaderProps) {
 					<DropdownMenuTrigger asChild>
 						<button
 							className="flex items-center gap-2 rounded-full border border-border/50 bg-background px-2 py-1.5 text-sm hover:bg-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-							aria-label="Account menu"
 						>
-							<UserAvatar
-								className="h-6 w-6"
-								fallbackClassName="text-[10px]"
-								name={user?.name}
-								email={user?.email}
-								avatarUrl={user?.avatarUrl}
-							/>
+							<span aria-hidden="true">
+								<UserAvatar
+									className="h-6 w-6"
+									fallbackClassName="text-[10px]"
+									name={user?.name}
+									email={user?.email}
+									avatarUrl={user?.avatarUrl}
+								/>
+							</span>
+							<span className="sr-only">Account menu for </span>
 							<span className="hidden text-sm sm:inline-block">
 								{user?.name || user?.email || "User"}
 							</span>
@@ -85,6 +87,14 @@ export function Header({ onMenuClick }: HeaderProps) {
 								<span className="flex items-center">
 									<User className="mr-2 h-4 w-4" aria-hidden="true" />
 									Account Settings
+								</span>
+							</Link>
+						</DropdownMenuItem>
+						<DropdownMenuItem asChild>
+							<Link href="/account/integrations">
+								<span className="flex items-center">
+									<Bot className="mr-2 h-4 w-4" aria-hidden="true" />
+									AI &amp; integrations
 								</span>
 							</Link>
 						</DropdownMenuItem>

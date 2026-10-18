@@ -21,6 +21,18 @@
 		reverse_proxy api:3001
 	}
 
+	@oauth path /oauth/authorize /oauth/token /oauth/register /oauth/revoke /oauth/introspect /oauth/jwks.json /.well-known/oauth-authorization-server
+	handle @oauth {
+		reverse_proxy api:3001
+	}
+
+	@mcp path /mcp /.well-known/oauth-protected-resource /.well-known/oauth-protected-resource/*
+	handle @mcp {
+		reverse_proxy mcp:3002 {
+			flush_interval -1
+		}
+	}
+
 	handle {
 		reverse_proxy web:3000
 	}

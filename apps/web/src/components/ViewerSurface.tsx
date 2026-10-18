@@ -110,6 +110,9 @@ export function ViewerSurface({
 		return (
 			<VideoAnnotationCanvas
 				videoUrl={mediaUrl(playableVideoUrl)}
+				lowVideoUrl={
+					selectedVersion.proxyLowUrl ? mediaUrl(selectedVersion.proxyLowUrl) : null
+				}
 				tool={tool}
 				color={color}
 				canDraw={canComment}
@@ -123,7 +126,8 @@ export function ViewerSurface({
 				onPlayStateChange={onVideoPlayStateChange}
 				seekRequest={seekRequest}
 				initialDuration={selectedVersion.duration}
-				frameRate={selectedVersion.frameRate ?? undefined}
+				frameRate={selectedVersion.frameRate}
+				startTimecode={selectedVersion.startTimecode}
 				annotations={canvasAnnotations}
 			/>
 		)
@@ -150,6 +154,8 @@ export function ViewerSurface({
 				flyTo={modelFlyTo}
 				onPlacePin={onPlacePin}
 				onSelectComment={onSelectCommentById}
+				canExport={canExportFrames}
+				fileName={selectedVersion.versionName}
 			/>
 		)
 	}

@@ -8,7 +8,8 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { Loader2, LogOut } from "lucide-react"
+import Link from "next/link"
+import { Bot, ChevronRight, Loader2, LogOut } from "lucide-react"
 import { toast } from "sonner"
 import { UserAvatar } from "@/components/UserAvatar"
 import { AccountDataSection } from "@/components/AccountDataSection"
@@ -230,6 +231,22 @@ export default function AccountPage() {
 					</Card>
 
 					<TwoFactorSettings />
+
+					<Link
+						href="/account/integrations"
+						className="flex items-center justify-between gap-4 rounded-xl border border-border bg-card p-6 transition-colors hover:bg-secondary/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+					>
+						<span className="flex items-start gap-3">
+							<Bot className="mt-0.5 h-5 w-5 text-primary" aria-hidden="true" />
+							<span>
+								<span className="block font-medium">AI &amp; integrations</span>
+								<span className="block text-sm text-muted-foreground">
+									Connect Claude, ChatGPT, Cursor and other assistants, and manage access tokens.
+								</span>
+							</span>
+						</span>
+						<ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" />
+					</Link>
 
 					<AccountDataSection />
 

@@ -24,6 +24,23 @@ const previewHostSuffixes = (): string[] =>
 const matchesSuffix = (host: string, suffix: string): boolean =>
 	host === suffix || host.endsWith(`.${suffix}`)
 
+interface CorsRequest {
+	method?: string
+	headers: Record<string, string | string[] | undefined>
+}
+
+const requestedHeadersOf = (req: CorsRequest): string[] =>
+	String(req.headers["access-control-request-headers"] ?? "")
+		.toLowerCase()
+		.split(",")
+		.map((header) => header.trim())
+
+export const seeksBearerAccess = (req: CorsRequest): boolean => {
+	const authorization = req.headers.authorization
+	if (typeof authorization === "string" && authorization.length > 0) return true
+	return req.method === "OPTIONS" && requestedHeadersOf(req).includes("authorization")
+}
+
 export const isAllowedOrigin = (origin: string | undefined): boolean => {
 	if (!origin) return true
 	const host = hostnameOf(origin)

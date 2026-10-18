@@ -22,8 +22,8 @@ import {
 import { prepareModelUpload } from "@/lib/model-capture"
 import { isModelFile } from "@/lib/model-formats"
 import { FILE_INPUT_ACCEPT } from "@/lib/upload-formats"
-
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001"
+import { submitMediaUpload } from "@/lib/resumable-upload"
+import { describeError } from "@/lib/errors"
 
 interface UploadVersionDialogProps {
 	imageId: string
@@ -41,15 +41,16 @@ export function UploadVersionDialog({
 	const [uploadFile, setUploadFile] = useState<File | null>(null)
 	const [versionName, setVersionName] = useState("")
 	const [isUploading, setIsUploading] = useState(false)
+	const [uploadPercent, setUploadPercent] = useState(0)
 
 	const handleUpload = async () => {
 		if (!uploadFile || !imageId) return
 
 		setIsUploading(true)
+		setUploadPercent(0)
 		try {
 			const fileToUpload = withMimeTypeTheApiCanMap(uploadFile)
 			const formData = new FormData()
-			formData.append("image", fileToUpload)
 			if (versionName) {
 				formData.append("versionName", versionName)
 			}
@@ -71,24 +72,20 @@ export function UploadVersionDialog({
 				formData.append("modelProxy", prepared.glb, "converted.glb")
 			}
 
-			const res = await fetch(`${API_URL}/api/images/${imageId}/versions`, {
-				method: "POST",
-				credentials: "include",
-				body: formData,
+			const updated = await submitMediaUpload<Image>({
+				path: `/api/images/${imageId}/versions`,
+				formData,
+				field: "image",
+				files: [fileToUpload],
+				target: { imageId },
+				onProgress: setUploadPercent,
 			})
-
-			if (res.ok) {
-				onUploaded(await res.json())
-				onOpenChange(false)
-				setUploadFile(null)
-				setVersionName("")
-			} else {
-				const data = await res.json().catch(() => null)
-				toast.error(data?.message || "Failed to upload the new version.")
-			}
+			onUploaded(updated)
+			onOpenChange(false)
+			setUploadFile(null)
+			setVersionName("")
 		} catch (error) {
-			console.error("Failed to upload new version:", error)
-			toast.error("Failed to upload the new version.")
+			toast.error(describeError(error, "Failed to upload the new version."))
 		} finally {
 			setIsUploading(false)
 		}
@@ -132,7 +129,7 @@ export function UploadVersionDialog({
 							{isUploading ? (
 								<>
 									<Loader2 className="mr-2 h-4 w-4 animate-spin" aria-hidden="true" />
-									Uploading...
+									{uploadPercent > 0 ? `Uploading ${uploadPercent}%` : "Uploading..."}
 								</>
 							) : (
 								"Upload"

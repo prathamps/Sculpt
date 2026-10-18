@@ -45,11 +45,22 @@ enum ReviewDecision {
   CHANGES_REQUESTED
 }
 
+enum RevisionCheckStatus {
+  FIXED
+  NOT_FIXED
+}
+
 enum MediaAssetKind {
   ORIGINAL
   PROXY
   THUMBNAIL
   ATTACHMENT
+}
+
+enum OAuthClientKind {
+  DYNAMIC
+  METADATA_DOCUMENT
+  FIRST_PARTY
 }
 
 model User {
@@ -78,9 +89,12 @@ model User {
   notifications Notification[]
   comments      Comment[]
   reviews       Review[]
+  revisionChecks RevisionCheck[]
   commentLikes  CommentLike[]
   commentMentions CommentMention[]
   passwordResetTokens PasswordResetToken[]
+  oauthGrants   OAuthGrant[]
+  personalAccessTokens PersonalAccessToken[]
   createdAt     DateTime        @default(now())
   updatedAt     DateTime        @updatedAt
 }
@@ -224,8 +238,10 @@ model ImageVersion {
   mediaType   MediaType @default(IMAGE)
   duration    Float?
   frameRate   Float?
+  startTimecode String?
   thumbnailUrl String?
   proxyUrl    String?
+  proxyLowUrl String?
   proxyStatus ProxyStatus?
   proxyOwner  String?
   reviewStatus ReviewStatus @default(PENDING)
@@ -234,6 +250,7 @@ model ImageVersion {
   image       Image     @relation(fields: [imageId], references: [id], onDelete: Cascade)
   comments    Comment[]
   reviews     Review[]
+  revisionChecks RevisionCheck[]
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
 
@@ -279,6 +296,7 @@ model Comment {
   mentions       CommentMention[]
   attachments    CommentAttachment[]
   revisions      CommentRevision[]
+  revisionChecks RevisionCheck[]
   editedAt       DateTime?
   createdAt      DateTime         @default(now())
   updatedAt      DateTime         @updatedAt
@@ -287,6 +305,23 @@ model Comment {
   @@index([parentId])
   @@index([userId])
   @@index([content(ops: raw("gin_trgm_ops"))], type: Gin)
+}
+
+model RevisionCheck {
+  id             String              @id @default(cuid())
+  commentId      String
+  comment        Comment             @relation(fields: [commentId], references: [id], onDelete: Cascade)
+  imageVersionId String
+  imageVersion   ImageVersion        @relation(fields: [imageVersionId], references: [id], onDelete: Cascade)
+  userId         String?
+  user           User?               @relation(fields: [userId], references: [id], onDelete: SetNull)
+  status         RevisionCheckStatus
+  resolvedComment Boolean            @default(false)
+  createdAt      DateTime            @default(now())
+  updatedAt      DateTime            @updatedAt
+
+  @@unique([commentId, imageVersionId])
+  @@index([imageVersionId])
 }
 
 model CommentRevision {
@@ -380,4 +415,114 @@ model ProjectInvitation {
   @@unique([projectId, email])
   @@index([email])
   @@index([expiresAt])
+}
+
+model OAuthClient {
+  id                      String          @id
+  kind                    OAuthClientKind
+  name                    String
+  secretHash              String?
+  redirectUris            String[]
+  grantTypes              String[]
+  tokenEndpointAuthMethod String
+  scope                   String?
+  clientUri               String?
+  logoUri                 String?
+  softwareId              String?
+  softwareVersion         String?
+  metadataExpiresAt       DateTime?
+  verifiedAt              DateTime?
+  disabledAt              DateTime?
+  lastUsedAt              DateTime?
+  grants                  OAuthGrant[]
+  createdAt               DateTime        @default(now())
+  updatedAt               DateTime        @updatedAt
+
+  @@index([kind, createdAt])
+}
+
+model OAuthGrant {
+  id                 String                   @id @default(cuid())
+  userId             String
+  user               User                     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  clientId           String
+  client             OAuthClient              @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  scopes             String[]
+  requestedScopes    String[]                 @default([])
+  resource           String
+  tokenVersion       Int
+  lastUsedAt         DateTime?
+  revokedAt          DateTime?
+  authorizationCodes OAuthAuthorizationCode[]
+  refreshTokens      OAuthRefreshToken[]
+  createdAt          DateTime                 @default(now())
+  updatedAt          DateTime                 @updatedAt
+
+  @@index([userId, revokedAt])
+  @@index([clientId])
+}
+
+model OAuthAuthorizationCode {
+  codeHash      String     @id
+  grantId       String
+  grant         OAuthGrant @relation(fields: [grantId], references: [id], onDelete: Cascade)
+  redirectUri   String
+  codeChallenge String
+  scopes        String[]
+  resource      String
+  expiresAt     DateTime
+  usedAt        DateTime?
+  createdAt     DateTime   @default(now())
+
+  @@index([grantId])
+  @@index([expiresAt])
+}
+
+model OAuthConsumedRequest {
+  id        String   @id
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  @@index([expiresAt])
+}
+
+model OAuthRefreshToken {
+  tokenHash String     @id
+  grantId   String
+  grant     OAuthGrant @relation(fields: [grantId], references: [id], onDelete: Cascade)
+  scopes    String[]
+  resource  String
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime   @default(now())
+
+  @@index([grantId])
+  @@index([expiresAt])
+}
+
+model PersonalAccessToken {
+  id         String    @id @default(cuid())
+  userId     String
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name       String
+  tokenHash  String    @unique
+  lastFour   String
+  scopes     String[]
+  expiresAt  DateTime?
+  lastUsedAt DateTime?
+  revokedAt  DateTime?
+  createdAt  DateTime  @default(now())
+
+  @@index([userId, createdAt])
+}
+
+model OAuthSigningKey {
+  kid        String    @id
+  algorithm  String
+  publicJwk  Json
+  privateKey String
+  retiredAt  DateTime?
+  createdAt  DateTime  @default(now())
+
+  @@index([retiredAt, createdAt])
 }

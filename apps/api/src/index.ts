@@ -10,20 +10,31 @@ import { attachRealtime, io } from "./realtime/socket"
 import { startRenditionMaintenance } from "./modules/media/rendition-recovery"
 import { startSessionMaintenance } from "./modules/auth/session.maintenance"
 import { startStagingReaper } from "./middleware/upload.middleware"
+import { startResumableUploadReaper } from "./modules/media/resumable-upload.service"
 import { notificationQueueDrained } from "./modules/notifications/notification.service"
 import { startNotificationRetention } from "./modules/notifications/notification.maintenance"
 import { startAuditRetention } from "./modules/audit/audit.maintenance"
 import { startInvitationMaintenance } from "./modules/projects/invitation.maintenance"
+import { startOAuthMaintenance } from "./modules/oauth/oauth.maintenance"
+import { mcpResource, mcpServiceSecretProblem } from "./modules/oauth/oauth.config"
 import "./lib/redis"
 
 try {
 	assertStartupConfiguration()
+	const mcpSecretProblem = mcpServiceSecretProblem()
+	if (mcpSecretProblem) throw new Error(mcpSecretProblem)
 } catch (error) {
 	logger.error("Refusing to start with an unsafe configuration", error)
 	process.exit(1)
 }
 
 startupWarnings().forEach((warning) => logger.warn(warning))
+
+if (!mcpResource()) {
+	logger.info(
+		"MCP_RESOURCE_URL is not set, so AI assistants cannot connect through the MCP service. Personal access tokens still work against the REST API."
+	)
+}
 
 const port = Number(process.env.PORT) || 3001
 
@@ -61,7 +72,9 @@ const start = async (): Promise<void> => {
 	startNotificationRetention()
 	startAuditRetention()
 	startInvitationMaintenance()
+	startOAuthMaintenance()
 	startStagingReaper()
+	startResumableUploadReaper()
 
 	process.on("SIGTERM", () => shutdownGracefully(server, "SIGTERM"))
 	process.on("SIGINT", () => shutdownGracefully(server, "SIGINT"))

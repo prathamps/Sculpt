@@ -1,4 +1,6 @@
 export class AppError extends Error {
+	readonly code?: string
+
 	constructor(message: string, public readonly statusCode: number) {
 		super(message)
 		this.name = new.target.name

@@ -15,7 +15,12 @@ vi.mock("../../lib/prisma", () => ({
 	},
 }))
 
+vi.mock("../oauth/credential-changes", () => ({
+	endDelegatedAccess: vi.fn(async () => ({ connections: 0, personalAccessTokens: 0 })),
+}))
+
 import { prisma } from "../../lib/prisma"
+import { endDelegatedAccess } from "../oauth/credential-changes"
 import { ValidationError } from "../../lib/errors"
 import { getAllUsers, updateUserRole } from "./admin.service"
 
@@ -60,12 +65,17 @@ describe("updateUserRole", () => {
 		mocked.user.findUnique.mockResolvedValue({ role: "USER" })
 		mocked.user.update.mockResolvedValue({ id: "u1", role: "ADMIN" })
 
-		await updateUserRole("u1", "ADMIN")
+		await updateUserRole("u1", "ADMIN", "admin-1")
 
 		expect(mocked.user.update).toHaveBeenCalledWith(
 			expect.objectContaining({
 				data: { role: "ADMIN", tokenVersion: { increment: 1 } },
 			})
+		)
+		expect(vi.mocked(endDelegatedAccess)).toHaveBeenCalledWith(
+			"u1",
+			"platform_role_changed",
+			"admin-1"
 		)
 	})
 

@@ -35,9 +35,9 @@ interface VersionOptions {
 }
 
 const assetUrlsOf = (
-	version: Pick<ImageVersion, "url" | "thumbnailUrl" | "proxyUrl">
+	version: Pick<ImageVersion, "url" | "thumbnailUrl" | "proxyUrl" | "proxyLowUrl">
 ): string[] =>
-	[version.url, version.thumbnailUrl, version.proxyUrl].filter(
+	[version.url, version.thumbnailUrl, version.proxyUrl, version.proxyLowUrl].filter(
 		(url): url is string => !!url
 	)
 

@@ -13,6 +13,7 @@ import { Label } from "@/components/ui/label"
 import { OAuthButtons } from "@/components/OAuthButtons"
 import { TwoFactorChallengeForm } from "@/components/TwoFactorChallengeForm"
 import { toast } from "sonner"
+import { withDestination } from "@/lib/sign-in-destination"
 
 function LoginPageInner() {
 	const [email, setEmail] = useState("")
@@ -181,7 +182,10 @@ function LoginPageInner() {
 					</div>
 					<div className="mt-6 text-center text-sm">
 						Don&apos;t have an account?{" "}
-						<Link href="/register" className="text-primary hover:underline">
+						<Link
+							href={withDestination("/register", nextDestination)}
+							className="text-primary hover:underline"
+						>
 							Sign up
 						</Link>
 					</div>

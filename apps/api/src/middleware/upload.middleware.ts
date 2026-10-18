@@ -95,16 +95,18 @@ export const needsBrowserSafeImageRendition = (mimetype: string): boolean =>
 const extensionFromDeclaredMime = (mimetype: string): string =>
 	SUPPORTED_MIME_EXTENSIONS[mimetype]
 
+const stagedFileName = (fieldName: string, mimetype: string): string =>
+	`${fieldName}-${Date.now()}-${randomBytes(16).toString("hex")}${extensionFromDeclaredMime(mimetype)}`
+
+export const stagedUploadPath = (fieldName: string, mimetype: string): string =>
+	path.join(stagingDir, stagedFileName(fieldName, mimetype))
+
 const staging = multer.diskStorage({
 	destination: (_req, _file, cb) => {
 		cb(null, stagingDir)
 	},
 	filename: (_req, file, cb) => {
-		const uniqueSuffix = `${Date.now()}-${randomBytes(16).toString("hex")}`
-		cb(
-			null,
-			file.fieldname + "-" + uniqueSuffix + extensionFromDeclaredMime(file.mimetype)
-		)
+		cb(null, stagedFileName(file.fieldname, file.mimetype))
 	},
 })
 

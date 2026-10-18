@@ -141,6 +141,37 @@ export const sendPasswordResetEmail = async (data: {
 	})
 }
 
+export const sendAccessTokenCreatedEmail = async (data: {
+	to: string
+	name?: string | null
+	tokenName: string
+	scopes: readonly string[]
+	expiresAt: Date
+}): Promise<void> => {
+	const greeting = data.name ? `Hi ${escapeHtml(data.name)},` : "Hi,"
+	const manageUrl = `${FRONTEND_URL}/account/integrations`
+	const expiry = data.expiresAt.toUTCString()
+
+	const html = layout(
+		`<p style="color:#444;">${greeting}</p>
+		<p style="font-size: 15px; line-height: 1.5;">A personal access token named <strong>${escapeHtml(data.tokenName)}</strong> was created for your Sculpt account. It can act as you with these permissions: ${escapeHtml(data.scopes.join(", "))}. It expires ${escapeHtml(expiry)}.</p>
+		${actionButton(manageUrl, "Review your tokens")}
+		<p style="font-size: 13px; color:#666;">If you didn&#39;t create it, revoke it now and change your password.</p>`,
+		"You receive this email whenever a new access token is created for your account."
+	)
+
+	await sendEmail({
+		to: data.to,
+		subject: "A new access token was created for your Sculpt account",
+		html,
+		text: `${data.name ? `Hi ${data.name},` : "Hi,"}
+
+A personal access token named "${data.tokenName}" was created for your Sculpt account with these permissions: ${data.scopes.join(", ")}. It expires ${expiry}.
+
+If you did not create it, revoke it now and change your password: ${manageUrl}`,
+	})
+}
+
 export const sendProjectInvitationEmail = async (data: {
 	to: string
 	inviterName: string | null

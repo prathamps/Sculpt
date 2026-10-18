@@ -6,7 +6,15 @@ import { ImageVersion } from "@/types"
 
 export type VersionProcessingUpdate = Pick<
 	ImageVersion,
-	"id" | "imageId" | "proxyUrl" | "proxyStatus" | "duration" | "thumbnailUrl"
+	| "id"
+	| "imageId"
+	| "proxyUrl"
+	| "proxyLowUrl"
+	| "proxyStatus"
+	| "duration"
+	| "frameRate"
+	| "startTimecode"
+	| "thumbnailUrl"
 >
 
 export function useVersionProcessingUpdates(

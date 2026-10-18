@@ -685,6 +685,8 @@ describe("commentsService.toggleResolved", () => {
 		mocked.comment.update.mockResolvedValue({
 			id: "c1",
 			resolved: true,
+			imageVersionId: "v1",
+			internal: false,
 			_count: { likes: 0 },
 		} as never)
 

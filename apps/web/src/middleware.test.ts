@@ -15,6 +15,26 @@ const request = (pathname: string, cookies: Record<string, string> = {}) => {
 const locationOf = (pathname: string, cookies?: Record<string, string>) =>
 	middleware(request(pathname, cookies)).headers.get("location")
 
+describe("connecting an AI assistant", () => {
+	it("sends a signed-out person from a pending consent to login and back again", () => {
+		const location = locationOf("/consent?request=abc")
+		expect(location).toContain("/login")
+		expect(location).toContain(`next=${encodeURIComponent("/consent?request=abc")}`)
+	})
+
+	it("shows consent errors without asking anyone to sign in", () => {
+		expect(locationOf("/consent?error=unknown_client")).toBeNull()
+	})
+
+	it("lets a signed-in person see the consent screen", () => {
+		expect(locationOf("/consent?request=abc", { token: "session" })).toBeNull()
+	})
+
+	it("guards the integrations settings", () => {
+		expect(locationOf("/account/integrations")).toContain("/login")
+	})
+})
+
 describe("route protection", () => {
 	it("sends a signed-out visitor from a project to login with a return path", () => {
 		const location = locationOf("/project/p1")

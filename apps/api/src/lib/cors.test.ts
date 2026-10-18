@@ -1,5 +1,30 @@
 import { describe, expect, it, beforeEach, afterEach } from "vitest"
-import { isAllowedOrigin } from "./cors"
+import { isAllowedOrigin, seeksBearerAccess } from "./cors"
+
+describe("seeksBearerAccess", () => {
+	it("recognises a request that carries an Authorization header", () => {
+		expect(seeksBearerAccess({ method: "GET", headers: { authorization: "Bearer abc" } })).toBe(true)
+	})
+
+	it("recognises a preflight that asks to send an Authorization header", () => {
+		expect(
+			seeksBearerAccess({
+				method: "OPTIONS",
+				headers: { "access-control-request-headers": "content-type, Authorization" },
+			})
+		).toBe(true)
+	})
+
+	it("does not treat cookie-only requests as bearer requests", () => {
+		expect(seeksBearerAccess({ method: "POST", headers: { cookie: "token=abc" } })).toBe(false)
+		expect(
+			seeksBearerAccess({
+				method: "OPTIONS",
+				headers: { "access-control-request-headers": "content-type" },
+			})
+		).toBe(false)
+	})
+})
 
 describe("isAllowedOrigin", () => {
 	const originalFrontend = process.env.FRONTEND_URL
