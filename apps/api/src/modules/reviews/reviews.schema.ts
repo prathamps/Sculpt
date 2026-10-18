@@ -14,3 +14,7 @@ export const recordDecisionSchema = z.object({
 export const setDueDateSchema = z.object({
 	dueAt: z.coerce.date().nullish(),
 })
+
+export const revisionCheckSchema = z.object({
+	status: z.enum(["FIXED", "NOT_FIXED"]),
+})

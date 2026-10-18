@@ -45,3 +45,17 @@ export const listMediaQuerySchema = z.object({
 })
 
 export type ListMediaQuery = z.infer<typeof listMediaQuerySchema>
+
+export const startResumableUploadSchema = z
+	.object({
+		projectId: z.string().min(1).max(64).optional(),
+		imageId: z.string().min(1).max(64).optional(),
+		fileName: z.string().trim().min(1, "The file needs a name").max(1024),
+		mimeType: z.string().trim().min(1).max(128),
+		size: z.number().int().positive(),
+	})
+	.refine((body) => !!body.projectId !== !!body.imageId, {
+		message: "Give either projectId or imageId",
+	})
+
+export type StartResumableUploadBody = z.infer<typeof startResumableUploadSchema>

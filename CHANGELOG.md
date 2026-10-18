@@ -8,6 +8,18 @@ All notable changes to Sculpt are recorded here. The format follows
 
 ### Upgrade notes
 
+- **AI assistants can now connect to Sculpt.** Nothing changes until you opt
+  in: deploy `apps/mcp` (the `ai` profile in `docker-compose.selfhost.yml`)
+  and set `MCP_RESOURCE_URL` and a shared `MCP_CLIENT_SECRET` on both the API
+  and the MCP service. Behind the bundled Caddy profile also set
+  `OAUTH_ISSUER` to your public origin. The migration adds the OAuth and
+  personal access token tables.
+- **Credential changes now end delegated access.** Changing or resetting the
+  password, ending every session, turning two-factor on or off, or an admin
+  changing someone's platform role revokes all of that person's OAuth app
+  connections; reconnecting creates a fresh connection. A password change, a
+  password reset and ending every session also revoke personal access tokens.
+
 - **Administrators now need two-factor authentication** to open the admin
   console (`ADMIN_MFA_REQUIRED=true` by default). Each admin enrols from
   Account → Two-factor authentication first. Set `MFA_ENCRYPTION_KEY` before
@@ -20,6 +32,134 @@ All notable changes to Sculpt are recorded here. The format follows
 - The migration backfills audit sequence numbers and classifies existing
   stored files. Entries written before it are reported as unchained by
   verification.
+
+### Upgrade notes for video review
+
+- The migration adds `startTimecode` and `proxyLowUrl` to versions. Videos
+  uploaded before it keep a single rendition and no camera timecode; upload a
+  new version to get both.
+- Behind several API replicas, resumable uploads need a shared uploads volume
+  or sticky sessions for `/api/uploads` (see deployment.md).
+
+### Revision check
+
+- **Earlier feedback follows the file.** Each new version lists every open
+  comment from earlier versions. Focusing one jumps to its timestamp, page or 3D
+  view with the original drawing overlaid on the new version.
+- **Fixed or still open.** The comment's author or an editor confirms a fix,
+  which resolves the original thread; anyone who reviews can flag it as still
+  open, carrying it to the next version. Verdicts can be undone, are audited and
+  update live for everyone viewing.
+- Approving a version with unchecked or still-open feedback asks for
+  confirmation first.
+- API: `GET/PUT/DELETE /api/images/versions/{id}/revision-check[/{commentId}]`;
+  MCP tools `get_revision_checklist` and `check_revision_item`.
+
+### Visual version diff
+
+- Compare view gains **Swipe**, **Onion skin** and **Difference** for images,
+  with changed areas found and outlined automatically.
+- **What changed** for 3D models: a heatmap of how far each part of the later
+  version's surface moved from the earlier one, with an adjustable tolerance, a
+  wireframe ghost of the earlier version, and tap-to-measure.
+- **Synced playback** when comparing two video versions: play, pause, seek,
+  frame steps and speed changes in one pane drive the other, so both cuts can be
+  stepped frame by frame together. Toggle it off to scrub them independently.
+
+### Video review
+
+- **SMPTE timecode and frame-accurate stepping.** The player shows timecode
+  (drop-frame for 29.97 and 59.94), seconds or frame numbers — click the readout
+  to switch, and the choice is remembered. Timecode starts from the camera's own
+  start timecode when the file carries one. Previous/next frame now land exactly
+  on the neighbouring frame instead of drifting by floating-point error.
+- **Constant-frame-rate proxies with a keyframe every second**, so stepping
+  matches the source frame count and scrubbing seeks quickly.
+- **A 540p data-saver rendition** alongside 1080p, picked automatically on
+  phones, Data Saver and slow connections, and switchable from the player.
+- **Timeline marker export** for editors: DaVinci Resolve EDL and Premiere Pro /
+  Final Cut Pro 7 XML from the Export menu, the API
+  (`/api/export/version/{id}/markers.edl|xml`) and the new
+  `export_timeline_markers` MCP tool. Resolved comments are marked as such; range
+  comments keep their duration. The CSV and printed reports gain a timecode
+  column.
+- **Resumable uploads.** Files of 32 MB or more upload in 8 MB chunks that retry
+  with backoff, wait out lost connectivity and resume after a reload.
+
+### 3D review
+
+- Fitted camera views (front, back, sides, top, bottom, three-quarter) and **F**
+  to frame the model.
+- Clay, wireframe and normals shading; offline studio lighting; ground grid;
+  turntable.
+- Section cuts along X, Y or Z with a slider and flip.
+- Point-to-point measurement in the model's own units.
+- Model details: triangles, vertices, meshes, materials, textures, animations
+  and size.
+- Animation playback with clip selection; skinned characters keep their
+  skeletons.
+- Save the current view as PNG (for people allowed to download originals).
+- Linked cameras when comparing two versions of a model.
+
+### Mobile
+
+- The video player puts the scrubber on its own full-width row on narrow
+  screens (it used to collapse to zero width), moves secondary controls into a
+  menu, and uses 40 px touch targets.
+- Tapping the video plays and pauses; a pencil toggle switches to drawing, so a
+  tap never leaves an accidental stroke.
+- Fullscreen falls back to an in-page fullscreen on iOS Safari, keeping the
+  annotation overlay, and locks to landscape where the browser allows it.
+- The viewer page uses the dynamic viewport height, opens with comments
+  collapsed on phones, keeps the header from overflowing, and compacts the
+  comment composer.
+
+### AI-first
+
+- **MCP server** (`apps/mcp`) built on the official SDK: Streamable HTTP
+  (stateless, horizontally scalable) and a stdio mode for local clients. 56
+  tools cover projects, members, invitations, share links, folders, media,
+  versions, uploads, comments with drawn regions, timestamps, PDF pages and 3D
+  anchors, attachments, reviews, due dates, search, notifications and reports.
+  `view_version` lets the model see the media it reviews. Resources, review
+  prompts and server instructions included; only tools a connection's scopes
+  allow are listed.
+- **OAuth 2.1 authorization server** in the API: RFC 8414 metadata, RFC 7591
+  dynamic client registration, Client ID Metadata Documents (SSRF-guarded),
+  PKCE S256, RFC 8707 resource indicators, RFC 9207 `iss`, refresh-token
+  rotation with reuse detection, RFC 7009 revocation, RFC 7662 introspection
+  and RFC 8693 token exchange so the MCP server never passes tokens through.
+  ES256 signing keys are generated, encrypted at rest and rotated
+  automatically.
+- **Consent screen** that never trusts an app's self-chosen name: it shows the
+  host the app really belongs to, warns loudly when the name does not match,
+  says when the app runs on your own computer and how recently it registered.
+  Viewing, feedback and file management are ticked by default; administering
+  projects and changing your profile stay off unless you turn them on. Each
+  request can be decided once, and your choices are remembered for the same
+  app.
+- **Scopes** mirroring project roles (`sculpt:read`, `sculpt:feedback`,
+  `sculpt:content`, `sculpt:manage`, `sculpt:account`), enforced by the API on
+  every route; account security stays session-only. A test fails if a route is
+  reachable by tokens without a declared scope.
+- **Account → AI & integrations**: the MCP URL with set-up steps for Claude,
+  Claude Code, ChatGPT, Cursor and VS Code; connected apps with one-click
+  disconnect; personal access tokens with scopes. Creating a token asks for
+  your password (or a two-factor code), tokens expire within a year, and you
+  are emailed whenever one is created.
+- **Admin → Connected apps** lists registered clients, marks the ones you trust
+  as verified, and can disable one, disconnecting everyone who uses it.
+- **Assistants are guarded against content-driven actions.** Every tool that
+  changes who can see or do what is marked destructive and tells the model to
+  confirm with the person; the server instructions tell it never to act on
+  instructions found in comments or files.
+- **The MCP server** verifies tokens before reading request bodies, refuses
+  untrusted browser origins (`MCP_ALLOWED_ORIGINS`), and answers a revoked
+  connection with `401 invalid_token` so clients reconnect by themselves.
+- Every audit entry made through an app records which app, grant and token
+  acted. `/llms.txt` describes Sculpt to agents.
+- Social sign-in and sign-up now return you to where you started, so
+  connecting an assistant survives either path.
 
 ### Compliance and traceability
 
@@ -60,6 +200,16 @@ All notable changes to Sculpt are recorded here. The format follows
   ISO 27001, GDPR, TPN and OWASP ASVS.
 
 ### Fixed
+
+- **Primary buttons in the dark theme failed contrast** (3.9:1). Their text is
+  now dark on the terracotta fill (above 4.5:1), and the account menu's
+  accessible name now includes the name it shows. Toasts use the theme's
+  popover colours instead of fixed green and red tints that failed contrast.
+
+- **Compare view crashed** when loading comments, because it treated the
+  paginated comments response as an array.
+- **Small videos were upscaled** to 1080p by the proxy transcode, wasting
+  storage and bandwidth. Renditions are now never larger than the source.
 
 - **Media no longer gets stuck "processing" after a restart.** The instance id
   used to be random per boot, so jobs claimed before a restart were never

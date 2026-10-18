@@ -25,24 +25,25 @@ export function TopHeader({
 	const isSmallScreen = useMediaQuery("(max-width: 768px)")
 
 	return (
-		<header className="sticky top-0 z-20 flex h-14 shrink-0 items-center justify-between border-b border-border/40 bg-background/80 px-4 backdrop-blur-sm">
-			<div className="flex items-center gap-3">
+		<header className="sticky top-0 z-20 flex h-14 shrink-0 items-center justify-between gap-2 border-b border-border/40 bg-background/80 px-2 backdrop-blur-sm sm:px-4">
+			<div className="flex min-w-0 flex-1 items-center gap-2 sm:gap-3">
 				<Link
 					href={`/project/${projectId}`}
-					className="flex items-center gap-1.5 text-muted-foreground transition-colors hover:text-foreground"
+					className="flex shrink-0 items-center gap-1.5 rounded p-1 text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+					aria-label="Back to project"
 				>
 					<ChevronLeft className="h-4 w-4" aria-hidden="true" />
-					<span className="text-sm">Back</span>
+					<span className="hidden text-sm sm:inline">Back</span>
 				</Link>
-				<div className="mx-1 h-4 w-px bg-border/60" />
-				<div className="flex items-center">
-					<h1 className="text-sm font-medium truncate max-w-[120px] md:max-w-none">
-						{imageName}
-					</h1>
+				<div className="mx-1 hidden h-4 w-px shrink-0 bg-border/60 sm:block" />
+				<h1 className="min-w-[4rem] max-w-[40vw] truncate text-sm font-medium md:max-w-xs lg:max-w-md">
+					{imageName}
+				</h1>
+				<div className="flex min-w-0 items-center gap-2 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+					{children}
 				</div>
-				{children}
 			</div>
-			<div className="flex items-center gap-2">
+			<div className="flex shrink-0 items-center gap-2">
 				<Button
 					size={isSmallScreen ? "icon" : "sm"}
 					variant="outline"

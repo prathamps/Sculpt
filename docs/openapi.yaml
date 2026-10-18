@@ -11,6 +11,29 @@ info:
     separate `admin_token` cookie obtained from `POST /api/admin/login`; the two
     are not interchangeable.
 
+    **Delegated access (AI agents, scripts).** Every route a person can use is
+    also reachable with `Authorization: Bearer <token>`, where the token is
+    either an OAuth 2.1 access token whose audience is this API, or a personal
+    access token (`sculpt_pat_…`) created under Account → AI & integrations.
+    AI assistants normally connect through the Sculpt MCP server instead, which
+    exchanges its own tokens for API tokens (RFC 8693). Tokens carry scopes that
+    mirror the project role tiers; the API intersects them with the caller's
+    role, so a token can never do more than its owner:
+
+    | Scope | Role tier | Covers |
+    | --- | --- | --- |
+    | `sculpt:read` | VIEWER | projects, media, comments, reviews, members, notifications, search, reports |
+    | `sculpt:feedback` | MEMBER | comments, replies, likes, resolving, attachments, review decisions, clearing notifications |
+    | `sculpt:content` | EDITOR | creating projects, uploads, versions, renaming, moving and deleting media and folders, due dates |
+    | `sculpt:manage` | OWNER | project settings, members, roles, invitations, share links, joining or leaving, deleting projects |
+    | `sculpt:account` | — | display name and notification preferences |
+
+    A token missing a scope gets `403` with `{"code": "insufficient_scope",
+    "requiredScope": "…"}` and a `WWW-Authenticate` challenge naming the scope.
+    Password, two-factor, account deletion, data export, token management,
+    consent and the admin console are **session-only**: tokens are refused there
+    whatever their scopes.
+
     **Authorization** is per project. Roles rank
     `VIEWER < MEMBER < EDITOR < OWNER`:
 
@@ -47,6 +70,8 @@ tags:
   - name: Notifications
   - name: Export
   - name: Admin
+  - name: OAuth
+  - name: Integrations
   - name: System
 
 components:
@@ -62,6 +87,23 @@ components:
     metricsToken:
       type: http
       scheme: bearer
+    bearerToken:
+      type: http
+      scheme: bearer
+      description: An OAuth access token for this API or a personal access token (sculpt_pat_…).
+    oauth2:
+      type: oauth2
+      flows:
+        authorizationCode:
+          authorizationUrl: /oauth/authorize
+          tokenUrl: /oauth/token
+          refreshUrl: /oauth/token
+          scopes:
+            sculpt:read: View projects, media, comments, reviews, members and notifications
+            sculpt:feedback: Comment, react, resolve and record review decisions
+            sculpt:content: Create projects and manage media, versions and folders
+            sculpt:manage: Administer projects, members and sharing
+            sculpt:account: Update display name and notification preferences
 
   parameters:
     page:
@@ -147,15 +189,67 @@ components:
         duration: { type: [number, "null"] }
         frameRate:
           type: [number, "null"]
-          description: Probed with ffprobe; drives frame-accurate stepping.
+          description: Probed with ffprobe; drives frame-accurate stepping. Video proxies are encoded at exactly this constant rate.
+        startTimecode:
+          type: [string, "null"]
+          description: SMPTE timecode of the first frame as the camera recorded it (`HH:MM:SS:FF`, with `;` before the frames for drop-frame).
         thumbnailUrl: { type: [string, "null"] }
         proxyUrl:
           type: [string, "null"]
-          description: Browser-viewable derivative. Consumers prefer this over `url`.
+          description: Browser-viewable derivative. Consumers prefer this over `url`. Video proxies are H.264 up to 1080p with a keyframe every second.
+        proxyLowUrl:
+          type: [string, "null"]
+          description: A lighter 540p video rendition for phones and slow connections, present when the source is larger than 540p.
         proxyStatus: { $ref: "#/components/schemas/ProxyStatus" }
         reviewStatus: { $ref: "#/components/schemas/ReviewStatus" }
         dueAt: { type: [string, "null"], format: date-time }
         createdAt: { type: string, format: date-time }
+
+    RevisionCheckItem:
+      type: object
+      properties:
+        commentId: { type: string }
+        content: { type: string }
+        author: { type: object }
+        createdAt: { type: string, format: date-time }
+        internal: { type: boolean }
+        resolved: { type: boolean }
+        fromVersion:
+          type: object
+          properties:
+            id: { type: string }
+            versionName: { type: string }
+            versionNumber: { type: integer }
+        timestamp: { type: [number, "null"] }
+        timestampEnd: { type: [number, "null"] }
+        page: { type: [integer, "null"] }
+        modelAnchor: { type: [object, "null"] }
+        annotation: {}
+        check:
+          type: [object, "null"]
+          properties:
+            status: { type: string, enum: [FIXED, NOT_FIXED] }
+            checkedBy: { type: object }
+            checkedAt: { type: string, format: date-time }
+        stillOpenOn:
+          type: [object, "null"]
+          properties:
+            versionNumber: { type: integer }
+            versionName: { type: string }
+
+    ResumableUpload:
+      type: object
+      properties:
+        id: { type: string }
+        fileName: { type: string }
+        mimeType: { type: string }
+        size: { type: integer }
+        offset:
+          type: integer
+          description: Bytes received so far; the next chunk starts here.
+        chunkSize:
+          type: integer
+          description: Largest chunk the server accepts.
 
     Image:
       type: object
@@ -318,6 +412,7 @@ components:
 
 security:
   - sessionCookie: []
+  - bearerToken: []
 
 paths:
   /health:
@@ -1078,6 +1173,9 @@ paths:
         `hasModelProxy`. 3D models are converted to GLB in the browser and
         uploaded as `modelProxies`. Videos and pro image formats are normalised
         server-side afterwards, so a version may return `proxyStatus: PENDING`.
+        Large files can be sent first through `/api/uploads` and named here in
+        `uploadIds`; they are appended after any multipart `images`, and
+        `filesMeta` covers both in that order.
       requestBody:
         required: true
         content:
@@ -1095,6 +1193,9 @@ paths:
                   type: array
                   items: { type: string, format: binary }
                 filesMeta: { type: string }
+                uploadIds:
+                  type: string
+                  description: JSON array of finished resumable upload ids from `/api/uploads`.
       responses:
         "201":
           description: The media items this request created.
@@ -1162,6 +1263,9 @@ paths:
                 modelProxy: { type: string, format: binary }
                 versionName: { type: string }
                 duration: { type: string }
+                uploadIds:
+                  type: string
+                  description: A JSON array holding one finished resumable upload id, sent instead of `image`.
       responses:
         "201": { description: Version created. }
         "400": { description: "No file, or unsupported type." }
@@ -1544,6 +1648,235 @@ paths:
       responses:
         "200": { description: Report attachment. }
         "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /api/export/version/{versionId}/markers.edl:
+    get:
+      tags: [Export]
+      summary: Export a video version's comments as timeline markers (EDL)
+      description: |
+        A CMX-style EDL in the form DaVinci Resolve imports with Timeline >
+        Import > Timeline Markers from EDL. One marker per timestamped
+        top-level comment, blue when open and green when resolved, with range
+        comments carrying their duration. Markers are placed from
+        `timelineStart`, else the camera's start timecode, else 01:00:00:00.
+        Internal comments are included only for EDITOR and OWNER.
+      parameters:
+        - name: versionId
+          in: path
+          required: true
+          schema: { type: string }
+        - name: timelineStart
+          in: query
+          description: Timecode of the first frame on the editor's timeline, as `HH:MM:SS:FF`.
+          schema: { type: string }
+      responses:
+        "200": { description: EDL attachment. }
+        "400": { description: "Not a video version, or a malformed timelineStart." }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /api/export/version/{versionId}/markers.xml:
+    get:
+      tags: [Export]
+      summary: Export a video version's comments as sequence markers (FCP7 XML)
+      description: |
+        Final Cut Pro 7 XML (`xmeml` version 5) holding one sequence with a
+        marker per timestamped comment, for Premiere Pro, DaVinci Resolve and
+        Final Cut Pro 7. Same placement and visibility rules as the EDL.
+      parameters:
+        - name: versionId
+          in: path
+          required: true
+          schema: { type: string }
+        - name: timelineStart
+          in: query
+          schema: { type: string }
+      responses:
+        "200": { description: XML attachment. }
+        "400": { description: "Not a video version, or a malformed timelineStart." }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /api/images/versions/{versionId}/revision-check:
+    get:
+      tags: [Reviews]
+      summary: Revision check for a version
+      description: |
+        Every open top-level comment from earlier versions of the same file,
+        plus anything already checked on this version, oldest version first.
+        Each item carries the original anchor (timestamp, page or 3D pin and
+        drawing) so a reviewer can jump to the same spot on the new version,
+        this version's verdict if any, and the last earlier version where it
+        was flagged as still not fixed. Internal comments appear only for
+        EDITOR and OWNER.
+      parameters:
+        - name: versionId
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Checklist and counts.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  versionId: { type: string }
+                  items:
+                    type: array
+                    items: { $ref: "#/components/schemas/RevisionCheckItem" }
+                  summary:
+                    type: object
+                    properties:
+                      total: { type: integer }
+                      fixed: { type: integer }
+                      notFixed: { type: integer }
+                      unchecked: { type: integer }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /api/images/versions/{versionId}/revision-check/{commentId}:
+    parameters:
+      - name: versionId
+        in: path
+        required: true
+        schema: { type: string }
+      - name: commentId
+        in: path
+        required: true
+        schema: { type: string }
+    put:
+      tags: [Reviews]
+      summary: Record whether earlier feedback is fixed in this version (MEMBER)
+      description: |
+        `FIXED` resolves the original comment and may only be recorded by the
+        person who gave the feedback or an EDITOR. `NOT_FIXED` can come from
+        any MEMBER; it carries the feedback forward to the next version and
+        reopens it if this version's earlier check had resolved it. Audited.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [status]
+              properties:
+                status: { type: string, enum: [FIXED, NOT_FIXED] }
+      responses:
+        "200":
+          description: Verdict stored.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: string, enum: [FIXED, NOT_FIXED] }
+                  resolved: { type: boolean }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { description: The comment is not open feedback from an earlier version of this file. }
+    delete:
+      tags: [Reviews]
+      summary: Undo a revision check
+      description: Allowed for whoever recorded it or an EDITOR. Undoing a fix confirmation reopens the comment it resolved.
+      responses:
+        "204": { description: Removed. }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /api/uploads:
+    post:
+      tags: [Media]
+      summary: Start a resumable upload (EDITOR)
+      description: |
+        Opens an upload session for one large file so it can be sent in
+        chunks and survive dropped connections. Give the target `projectId`,
+        or `imageId` when the file will become a new version. Send the bytes
+        with `PATCH /api/uploads/{uploadId}`, then name the finished upload in
+        `uploadIds` on the ordinary upload route. The ordinary route's type
+        and size limits apply, the content is checked against the declared
+        type when the last chunk arrives, and sessions idle for a day are
+        discarded. Each person may hold 20 unfinished uploads.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [fileName, mimeType, size]
+              properties:
+                projectId: { type: string }
+                imageId: { type: string }
+                fileName: { type: string, maxLength: 1024 }
+                mimeType: { type: string }
+                size: { type: integer, minimum: 1 }
+      responses:
+        "201":
+          description: Session opened.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ResumableUpload" }
+        "400": { description: "Unsupported type, too large, or not exactly one of projectId and imageId." }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "429": { description: Too many unfinished uploads. }
+
+  /api/uploads/{uploadId}:
+    parameters:
+      - name: uploadId
+        in: path
+        required: true
+        schema: { type: string, pattern: "^[a-f0-9]{32}$" }
+    get:
+      tags: [Media]
+      summary: How much of a resumable upload has arrived
+      description: Read `offset` to resume after a dropped connection or a reload.
+      responses:
+        "200":
+          description: Session state.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ResumableUpload" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    patch:
+      tags: [Media]
+      summary: Append a chunk to a resumable upload
+      description: |
+        The body is the raw bytes, at most `chunkSize` long, starting at
+        `offset`. A request whose offset is not where the upload stands is
+        refused with 409 and the offset to resume from.
+      parameters:
+        - name: offset
+          in: query
+          required: true
+          schema: { type: integer, minimum: 0 }
+      requestBody:
+        required: true
+        content:
+          application/octet-stream:
+            schema: { type: string, format: binary }
+      responses:
+        "200":
+          description: Chunk stored.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ResumableUpload" }
+        "400": { description: "Chunk too large, past the declared size, or content that does not match its type." }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409":
+          description: Wrong offset.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message: { type: string }
+                  offset: { type: integer }
+    delete:
+      tags: [Media]
+      summary: Cancel a resumable upload
+      responses:
+        "204": { description: Discarded. }
         "404": { $ref: "#/components/responses/NotFound" }
 
   /api/auth/google:
@@ -2088,3 +2421,404 @@ paths:
                   problem:
                     type: [string, "null"]
                     enum: [content_changed, link_broken, entries_missing, null]
+
+  /.well-known/oauth-authorization-server:
+    get:
+      tags: [OAuth]
+      summary: Authorization server metadata (RFC 8414)
+      security: []
+      responses:
+        "200":
+          description: Endpoints, supported grants, scopes and PKCE methods. CORS-open.
+          content:
+            application/json:
+              schema: { type: object }
+
+  /.well-known/oauth-protected-resource:
+    get:
+      tags: [OAuth]
+      summary: Protected resource metadata for this API (RFC 9728)
+      security: []
+      responses:
+        "200":
+          description: The API's resource identifier, its authorization server and supported scopes.
+          content:
+            application/json:
+              schema: { type: object }
+
+  /oauth/jwks.json:
+    get:
+      tags: [OAuth]
+      summary: Public keys that verify Sculpt access tokens
+      description: ES256 keys. Retired keys stay published until every token they signed has expired.
+      security: []
+      responses:
+        "200":
+          description: JSON Web Key Set.
+          content:
+            application/json:
+              schema: { type: object }
+
+  /oauth/authorize:
+    get:
+      tags: [OAuth]
+      summary: Start an authorization code flow
+      description: |
+        Validates the client, redirect URI, PKCE challenge (S256 required), scopes
+        and resource indicator, then redirects the browser to Sculpt's consent page.
+        Errors about the client or redirect URI stop at Sculpt; every other error is
+        returned to the redirect URI with `error`, `state` and `iss`.
+      security: []
+      parameters:
+        - { name: response_type, in: query, required: true, schema: { type: string, enum: [code] } }
+        - { name: client_id, in: query, required: true, schema: { type: string } }
+        - { name: redirect_uri, in: query, schema: { type: string } }
+        - { name: code_challenge, in: query, required: true, schema: { type: string } }
+        - { name: code_challenge_method, in: query, required: true, schema: { type: string, enum: [S256] } }
+        - { name: scope, in: query, schema: { type: string } }
+        - { name: state, in: query, schema: { type: string } }
+        - { name: resource, in: query, schema: { type: string } }
+      responses:
+        "302": { description: Redirect to the consent page, or back to the client with an error. }
+
+  /oauth/register:
+    post:
+      tags: [OAuth]
+      summary: Dynamic client registration (RFC 7591)
+      description: Public clients by default. Turned off with OAUTH_DYNAMIC_REGISTRATION=false.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                redirect_uris: { type: array, items: { type: string } }
+                client_name: { type: string }
+                client_uri: { type: string }
+                logo_uri: { type: string }
+                grant_types: { type: array, items: { type: string, enum: [authorization_code, refresh_token] } }
+                token_endpoint_auth_method: { type: string, enum: [none, client_secret_basic, client_secret_post] }
+                scope: { type: string }
+              required: [redirect_uris]
+      responses:
+        "201":
+          description: The registered client, including client_secret for confidential clients.
+          content:
+            application/json:
+              schema: { type: object }
+        "400": { description: "invalid_redirect_uri or invalid_client_metadata." }
+        "403": { description: Registration is turned off. }
+        "429": { $ref: "#/components/responses/RateLimited" }
+
+  /oauth/token:
+    post:
+      tags: [OAuth]
+      summary: Issue tokens
+      description: |
+        `authorization_code` (PKCE verifier required), `refresh_token` (rotated on every
+        use; presenting a spent one revokes the whole grant) and
+        `urn:ietf:params:oauth:grant-type:token-exchange` (RFC 8693, reserved for the
+        Sculpt MCP service, which trades a token minted for it for a five-minute API token).
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              properties:
+                grant_type: { type: string }
+                code: { type: string }
+                code_verifier: { type: string }
+                redirect_uri: { type: string }
+                refresh_token: { type: string }
+                client_id: { type: string }
+                client_secret: { type: string }
+                scope: { type: string }
+                resource: { type: string }
+                subject_token: { type: string }
+                subject_token_type: { type: string }
+              required: [grant_type]
+      responses:
+        "200":
+          description: Tokens.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  access_token: { type: string }
+                  token_type: { type: string, enum: [Bearer] }
+                  expires_in: { type: integer }
+                  scope: { type: string }
+                  refresh_token: { type: string }
+                  issued_token_type: { type: string }
+        "400": { description: "OAuth error (invalid_grant, invalid_scope, invalid_target, …)." }
+        "401": { description: invalid_client. }
+
+  /oauth/revoke:
+    post:
+      tags: [OAuth]
+      summary: Revoke a token (RFC 7009)
+      description: Revoking any token of a grant revokes the whole grant. Always 200 for unknown tokens.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              properties:
+                token: { type: string }
+                token_type_hint: { type: string }
+                client_id: { type: string }
+              required: [token]
+      responses:
+        "200": { description: Revoked, or nothing to revoke. }
+
+  /oauth/introspect:
+    post:
+      tags: [OAuth]
+      summary: Introspect a token (RFC 7662)
+      description: Only the first-party MCP service may introspect.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              properties:
+                token: { type: string }
+              required: [token]
+      responses:
+        "200":
+          description: Token state.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  active: { type: boolean }
+                  scope: { type: string }
+                  sub: { type: string }
+                  client_id: { type: string }
+                  exp: { type: integer }
+
+  /api/oauth/integration:
+    get:
+      tags: [Integrations]
+      summary: How AI assistants connect to this Sculpt
+      security: []
+      responses:
+        "200":
+          description: MCP server URL (null when not configured), authorization server and scope descriptions.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  mcpServerUrl: { type: [string, "null"] }
+                  authorizationServer: { type: string }
+                  scopes:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        scope: { type: string }
+                        title: { type: string }
+                        description: { type: string }
+
+  /api/oauth/consent/details:
+    post:
+      tags: [Integrations]
+      summary: Describe a pending authorization for the consent page
+      description: Session-only.
+      security:
+        - sessionCookie: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                request: { type: string, description: The signed handle from /oauth/authorize. }
+              required: [request]
+      responses:
+        "200":
+          description: >-
+            The client and who it really belongs to (identity: verified, identityHost, redirectHost,
+            runsLocally, nameMatchesHost, registeredAt), the resource, requested scopes,
+            recommendedScopes (ticked by default), previouslyGranted, and rememberedScopes with
+            autoApprove when the person already decided this request for this app.
+          content:
+            application/json:
+              schema: { type: object }
+        "400":
+          description: Invalid, expired or already decided request.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
+  /api/oauth/consent:
+    post:
+      tags: [Integrations]
+      summary: Approve or deny a pending authorization
+      description: >-
+        Session-only. Approving may narrow the requested scopes, never widen them. Each request
+        can be decided once; a second decision is refused with 400.
+      security:
+        - sessionCookie: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                request: { type: string }
+                approved: { type: boolean }
+                scopes: { type: array, items: { type: string } }
+              required: [request, approved]
+      responses:
+        "200":
+          description: Where to send the browser next (the client's redirect URI with a code or an error).
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  redirectTo: { type: string }
+
+  /api/users/me/connections:
+    get:
+      tags: [Integrations]
+      summary: Apps you have connected to your account
+      description: Session-only.
+      security:
+        - sessionCookie: []
+      responses:
+        "200":
+          description: Active grants with client identity, scopes and last use.
+          content:
+            application/json:
+              schema: { type: array, items: { type: object } }
+
+  /api/users/me/connections/{grantId}:
+    delete:
+      tags: [Integrations]
+      summary: Disconnect an app
+      description: Session-only. Takes effect immediately for every token of the grant.
+      security:
+        - sessionCookie: []
+      parameters:
+        - { name: grantId, in: path, required: true, schema: { type: string } }
+      responses:
+        "204": { description: Disconnected. }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /api/users/me/tokens:
+    get:
+      tags: [Integrations]
+      summary: Your personal access tokens
+      description: Session-only. Secrets are never returned after creation.
+      security:
+        - sessionCookie: []
+      responses:
+        "200":
+          description: Tokens.
+          content:
+            application/json:
+              schema: { type: array, items: { type: object } }
+    post:
+      tags: [Integrations]
+      summary: Create a personal access token
+      description: >-
+        Session-only. Confirm identity with `password`; accounts without a password send a
+        two-factor `code` or `recoveryCode` instead, and accounts with neither must have signed in
+        within the last 15 minutes (otherwise 403 with code `reauthentication_required`). Tokens
+        always expire. The token is shown once, in this response, and the person is emailed.
+      security:
+        - sessionCookie: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name: { type: string }
+                scopes: { type: array, items: { type: string } }
+                expiresInDays: { type: integer, minimum: 1, maximum: 365, default: 90 }
+                password: { type: string }
+                code: { type: string, pattern: "^[0-9]{6}$" }
+                recoveryCode: { type: string }
+              required: [name, scopes]
+      responses:
+        "201":
+          description: The new token, including its secret.
+          content:
+            application/json:
+              schema: { type: object }
+        "400": { $ref: "#/components/responses/ValidationFailed" }
+        "403":
+          description: Wrong password or code, or a recent sign-in is required.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
+  /api/users/me/tokens/{tokenId}:
+    delete:
+      tags: [Integrations]
+      summary: Revoke a personal access token
+      description: Session-only.
+      security:
+        - sessionCookie: []
+      parameters:
+        - { name: tokenId, in: path, required: true, schema: { type: string } }
+      responses:
+        "204": { description: Revoked. }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /api/admin/oauth-clients:
+    get:
+      tags: [Admin]
+      summary: Registered OAuth clients
+      security:
+        - adminCookie: []
+      parameters:
+        - $ref: "#/components/parameters/page"
+        - $ref: "#/components/parameters/pageSize"
+      responses:
+        "200":
+          description: Paginated clients with active grant counts.
+          content:
+            application/json:
+              schema: { type: object }
+
+  /api/admin/oauth-clients/{clientId}:
+    patch:
+      tags: [Admin]
+      summary: Verify, disable or re-enable an OAuth client
+      description: >-
+        Verified clients are shown as verified on the consent screen. Disabling revokes every
+        grant the client holds. Send at least one of the fields.
+      security:
+        - adminCookie: []
+      parameters:
+        - { name: clientId, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                disabled: { type: boolean }
+                verified: { type: boolean }
+      responses:
+        "200": { description: Updated. }
+        "404": { $ref: "#/components/responses/NotFound" }

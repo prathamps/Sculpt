@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react"
 import { Github } from "lucide-react"
 import { Button } from "@/components/ui/button"
+import { rememberDestination, requestedDestination } from "@/lib/sign-in-destination"
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001"
 
@@ -46,6 +47,7 @@ export function OAuthButtons() {
 	if (!anyEnabled) return null
 
 	const go = (provider: "google" | "github") => {
+		rememberDestination(requestedDestination(window.location.search))
 		window.location.href = `${API_URL}/api/auth/${provider}`
 	}
 

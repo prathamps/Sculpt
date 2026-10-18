@@ -56,8 +56,10 @@ export interface ImageVersion {
 	mediaType?: MediaType
 	duration?: number | null
 	frameRate?: number | null
+	startTimecode?: string | null
 	thumbnailUrl?: string | null
 	proxyUrl?: string | null
+	proxyLowUrl?: string | null
 	proxyStatus?: ProxyStatus | null
 	reviewStatus?: ReviewStatus
 	dueAt?: string | null
@@ -144,4 +146,41 @@ export interface Project {
 	imageCount: number
 	members: ProjectMember[]
 	createdAt: string
+}
+
+export type RevisionCheckStatus = "FIXED" | "NOT_FIXED"
+
+export interface RevisionCheckPerson {
+	id: string
+	name: string | null
+	email: string
+	avatarUrl?: string | null
+}
+
+export interface RevisionCheckItem {
+	commentId: string
+	content: string
+	author: RevisionCheckPerson
+	createdAt: string
+	internal: boolean
+	resolved: boolean
+	fromVersion: { id: string; versionName: string; versionNumber: number }
+	timestamp: number | null
+	timestampEnd: number | null
+	page: number | null
+	modelAnchor: ModelAnchor | null
+	annotation: Annotation | Annotation[] | null
+	check: {
+		status: RevisionCheckStatus
+		checkedBy: RevisionCheckPerson | null
+		checkedAt: string
+	} | null
+	stillOpenOn: { versionNumber: number; versionName: string } | null
+}
+
+export interface RevisionChecklist {
+	versionId: string
+	items: RevisionCheckItem[]
+	summary: { total: number; fixed: number; notFixed: number; unchecked: number }
+	truncated?: boolean
 }

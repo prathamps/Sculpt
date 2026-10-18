@@ -23,6 +23,19 @@
 # Behind the tls profile, comment out the published api and web ports below
 # so the only way in is through Caddy on 443.
 #
+# To let AI assistants (Claude, ChatGPT, Cursor, VS Code…) work in Sculpt,
+# add the `ai` profile and a shared secret for the MCP service. With TLS:
+#
+#   MCP_CLIENT_SECRET=$(openssl rand -base64 48) \
+#   OAUTH_ISSUER=https://sculpt.example.com \
+#   MCP_RESOURCE_URL=https://sculpt.example.com/mcp \
+#   ...the tls variables above... \
+#   docker compose -f docker-compose.selfhost.yml --profile tls --profile ai up -d --build
+#
+# Without TLS the defaults serve MCP on http://localhost:3002/mcp; set only
+# MCP_CLIENT_SECRET and add --profile ai. People then connect their assistant
+# from Account → AI & integrations.
+#
 # For OAuth, SMTP or S3 storage, add the variables from apps/api/.env.example
 # to the api service environment.
 
@@ -85,6 +98,10 @@ services:
       SHARE_LINK_DEFAULT_EXPIRY_DAYS: ${SHARE_LINK_DEFAULT_EXPIRY_DAYS:-7}
       SHARE_LINK_MAX_DAYS: ${SHARE_LINK_MAX_DAYS:-}
       ALLOW_INSECURE_HTTP: ${ALLOW_INSECURE_HTTP:-false}
+      OAUTH_ISSUER: ${OAUTH_ISSUER:-}
+      MCP_RESOURCE_URL: ${MCP_RESOURCE_URL:-${MCP_CLIENT_SECRET:+http://localhost:3002/mcp}}
+      MCP_CLIENT_SECRET: ${MCP_CLIENT_SECRET:-}
+      OAUTH_DYNAMIC_REGISTRATION: ${OAUTH_DYNAMIC_REGISTRATION:-true}
       NODE_ENV: production
     volumes:
       - sculpt_uploads:/app/uploads
@@ -114,6 +131,26 @@ services:
       - api
     ports:
       - "${WEB_PORT:-3000}:3000"
+
+  mcp:
+    build: ./apps/mcp
+    profiles: ["ai"]
+    restart: unless-stopped
+    depends_on:
+      api:
+        condition: service_healthy
+    environment:
+      SCULPT_API_URL: http://api:3001
+      OAUTH_ISSUER: ${OAUTH_ISSUER:-${API_URL:-http://localhost:3001}}
+      MCP_RESOURCE_URL: ${MCP_RESOURCE_URL:-http://localhost:3002/mcp}
+      MCP_CLIENT_SECRET: ${MCP_CLIENT_SECRET:-}
+      FRONTEND_URL: ${FRONTEND_URL:-http://localhost:3000}
+      MCP_ALLOWED_ORIGINS: ${MCP_ALLOWED_ORIGINS:-}
+      TRUST_PROXY: ${TRUST_PROXY:-}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      NODE_ENV: production
+    ports:
+      - "${MCP_PORT:-3002}:3002"
 
   caddy:
     image: caddy:2-alpine

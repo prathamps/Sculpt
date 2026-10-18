@@ -4,6 +4,7 @@ import { prisma } from "../../lib/prisma"
 import { ForbiddenError, ValidationError } from "../../lib/errors"
 import { recordAudit } from "../audit/audit.service"
 import { forgetCachedSessions } from "./session.service"
+import { endDelegatedAccess } from "../oauth/credential-changes"
 
 export type SafeUser = Omit<User, "password">
 
@@ -157,4 +158,5 @@ export const changeUserPassword = async (
 		data: { password: hashed, tokenVersion: { increment: 1 } },
 	})
 	forgetCachedSessions(userId)
+	await endDelegatedAccess(userId, "password_changed")
 }

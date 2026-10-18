@@ -321,6 +321,111 @@ if (readyVersion?.proxyUrl) {
 			.waitForSelector(`video[src*="${proxyBasename}"]`, { timeout: 30000 })
 			.then(() => true, () => false)
 	)
+	const frameBefore = await page.evaluate(() => document.querySelector("video")?.currentTime ?? -1)
+	await page.keyboard.press(".")
+	await page.waitForTimeout(500)
+	const frameAfter = await page.evaluate(() => document.querySelector("video")?.currentTime ?? -1)
+	const frameDuration = 1 / (readyVersion.frameRate || 30)
+	check(
+		"next-frame steps exactly one frame",
+		Math.abs(frameAfter - frameBefore - frameDuration) < frameDuration,
+		`before=${frameBefore} after=${frameAfter}`
+	)
+}
+
+if (readyVersion) {
+	await apiJson(`/api/images/versions/${readyVersion.id}/comments`, {
+		content: "smoke marker",
+		timestamp: 0.5,
+	})
+	const edlRes = await api(`/api/export/version/${readyVersion.id}/markers.edl?timelineStart=01:00:00:00`)
+	const edl = edlRes.ok ? await edlRes.text() : ""
+	check(
+		"comments export as DaVinci Resolve timeline markers",
+		edl.startsWith("TITLE:") && edl.includes("smoke marker |C:ResolveColorBlue"),
+		`status=${edlRes.status}`
+	)
+	const xmlRes = await api(`/api/export/version/${readyVersion.id}/markers.xml`)
+	check(
+		"comments export as Premiere Pro sequence markers",
+		xmlRes.ok && (await xmlRes.text()).includes("<marker>"),
+		`status=${xmlRes.status}`
+	)
+}
+
+const resumableBytes = readFileSync(join(here, "fixtures/sample-video.mp4"))
+const resumableStart = await apiJson("/api/uploads", {
+	projectId: project.id,
+	fileName: "resumable.mp4",
+	mimeType: "video/mp4",
+	size: resumableBytes.length,
+})
+const resumable = resumableStart.ok ? await resumableStart.json() : null
+check("start a resumable upload", resumableStart.status === 201 && resumable?.offset === 0)
+let resumableOffset = 0
+const RESUMABLE_TEST_CHUNK = 16 * 1024
+while (resumable && resumableOffset < resumableBytes.length) {
+	const res = await api(`/api/uploads/${resumable.id}?offset=${resumableOffset}`, {
+		method: "PATCH",
+		headers: { "content-type": "application/octet-stream" },
+		body: resumableBytes.subarray(resumableOffset, resumableOffset + RESUMABLE_TEST_CHUNK),
+	})
+	if (!res.ok) break
+	resumableOffset = (await res.json()).offset
+}
+check("resumable upload receives every chunk", resumableOffset === resumableBytes.length)
+if (resumable) {
+	const replay = await api(`/api/uploads/${resumable.id}?offset=0`, {
+		method: "PATCH",
+		headers: { "content-type": "application/octet-stream" },
+		body: resumableBytes.subarray(0, 16),
+	})
+	check("a replayed chunk is refused with 409", replay.status === 409)
+	const attachForm = new FormData()
+	attachForm.append("uploadIds", JSON.stringify([resumable.id]))
+	const attachRes = await api(`/api/projects/${project.id}/images`, {
+		method: "POST",
+		body: attachForm,
+	})
+	const attached = attachRes.ok ? await attachRes.json() : []
+	check(
+		"a finished resumable upload becomes a media item",
+		attachRes.status === 201 && attached[0]?.latestVersion?.mediaType === "VIDEO",
+		`status=${attachRes.status}`
+	)
+}
+
+const imageForRevision = byName("sample-image.png")
+const revisionForm = new FormData()
+revisionForm.append("image", new Blob([PNG_1PX], { type: "image/png" }), "sample-image-v2.png")
+revisionForm.append("versionName", "Smoke v2")
+const revisionUpload = await api(`/api/images/${imageForRevision.id}/versions`, {
+	method: "POST",
+	body: revisionForm,
+})
+const revisedImage = revisionUpload.ok ? await revisionUpload.json() : null
+const revisedVersionId = revisedImage?.versions?.[0]?.id
+const checklistRes = revisedVersionId
+	? await api(`/api/images/versions/${revisedVersionId}/revision-check`)
+	: null
+const checklist = checklistRes?.ok ? await checklistRes.json() : null
+const carried = checklist?.items?.find((item) => item.content === "smoke comment on image")
+check(
+	"open feedback from version 1 carries into the revision check of version 2",
+	!!carried && carried.fromVersion?.versionNumber === 1,
+	JSON.stringify(checklist?.summary)
+)
+if (carried) {
+	const fixRes = await api(
+		`/api/images/versions/${revisedVersionId}/revision-check/${carried.commentId}`,
+		{
+			method: "PUT",
+			headers: { "content-type": "application/json" },
+			body: JSON.stringify({ status: "FIXED" }),
+		}
+	)
+	const fix = fixRes.ok ? await fixRes.json() : null
+	check("confirming a fix resolves the original comment", fix?.resolved === true, `status=${fixRes.status}`)
 }
 
 const stlPath = join(tmpdir(), `sculpt-e2e-${stamp}.stl`)

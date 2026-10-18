@@ -60,9 +60,11 @@ export const emitVersionUpdated = (version: ImageVersion): void => {
 		id: version.id,
 		imageId: version.imageId,
 		proxyUrl: version.proxyUrl,
+		proxyLowUrl: version.proxyLowUrl,
 		proxyStatus: version.proxyStatus,
 		duration: version.duration,
 		frameRate: version.frameRate,
+		startTimecode: version.startTimecode,
 		thumbnailUrl: version.thumbnailUrl,
 	})
 }

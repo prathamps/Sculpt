@@ -19,6 +19,7 @@ interface ReviewPanelProps {
 	canDecide: boolean
 	currentUser: User | null
 	onStatusChange?: (status: ReviewStatus) => void
+	openCarriedCount?: number
 }
 
 interface ReviewSummary {
@@ -74,7 +75,9 @@ export function ReviewPanel({
 	canDecide,
 	currentUser,
 	onStatusChange,
+	openCarriedCount = 0,
 }: ReviewPanelProps) {
+	const [isConfirmingApproval, setIsConfirmingApproval] = useState(false)
 	const [summary, setSummary] = useState<ReviewSummary | null>(null)
 	const [isLoading, setIsLoading] = useState(true)
 	const [note, setNote] = useState("")
@@ -103,6 +106,15 @@ export function ReviewPanel({
 	const myReview = summary?.reviews.find(
 		(review) => !!review.user && review.user.id === currentUser?.id
 	)
+
+	const requestApproval = () => {
+		if (openCarriedCount > 0 && !isConfirmingApproval) {
+			setIsConfirmingApproval(true)
+			return
+		}
+		setIsConfirmingApproval(false)
+		void decide("APPROVED")
+	}
 
 	const decide = async (decision: ReviewDecisionValue) => {
 		setPendingDecision(decision)
@@ -214,14 +226,22 @@ export function ReviewPanel({
 						rows={2}
 						className="resize-none text-sm"
 					/>
+					{isConfirmingApproval && openCarriedCount > 0 && (
+						<p role="alert" className="rounded-md border border-destructive/20 bg-destructive/10 px-2 py-1.5 text-xs text-destructive">
+							{openCarriedCount === 1
+								? "1 piece of feedback from an earlier version is not confirmed fixed."
+								: `${openCarriedCount} pieces of feedback from earlier versions are not confirmed fixed.`}{" "}
+							Check them in Revision check below, or approve anyway.
+						</p>
+					)}
 					<div className="flex flex-wrap gap-2">
 						<Button
 							size="sm"
-							onClick={() => decide("APPROVED")}
+							onClick={requestApproval}
 							disabled={pendingDecision !== null}
 						>
 							<CheckCircle2 className="mr-1.5 h-4 w-4" aria-hidden="true" />
-							Approve
+							{isConfirmingApproval ? "Approve anyway" : "Approve"}
 						</Button>
 						<Button
 							size="sm"

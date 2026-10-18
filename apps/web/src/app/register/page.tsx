@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import { useRouter } from "next/navigation"
 import Link from "next/link"
 import Image from "next/image"
@@ -10,13 +10,19 @@ import { authToasts, errorUtils } from "@/lib/auth-toasts"
 import { ArrowLeft, Loader2 } from "lucide-react"
 import { Label } from "@/components/ui/label"
 import { OAuthButtons } from "@/components/OAuthButtons"
+import { requestedDestination, withDestination } from "@/lib/sign-in-destination"
 
 export default function RegisterPage() {
 	const [name, setName] = useState("")
 	const [email, setEmail] = useState("")
 	const [password, setPassword] = useState("")
 	const [isLoading, setIsLoading] = useState(false)
+	const [signInHref, setSignInHref] = useState("/login")
 	const router = useRouter()
+
+	useEffect(() => {
+		setSignInHref(withDestination("/login", requestedDestination(window.location.search)))
+	}, [])
 
 	const handleSubmit = async (e: React.FormEvent) => {
 		e.preventDefault()
@@ -32,7 +38,7 @@ export default function RegisterPage() {
 
 			if (res.ok) {
 				authToasts.showSignupSuccess()
-				router.push("/login")
+				router.push(withDestination("/login", requestedDestination(window.location.search)))
 			} else {
 				let errorData
 				try {
@@ -149,7 +155,7 @@ export default function RegisterPage() {
 					</div>
 					<div className="mt-6 text-center text-sm">
 						Already have an account?{" "}
-						<Link href="/login" className="text-primary hover:underline">
+						<Link href={signInHref} className="text-primary hover:underline">
 							Sign in
 						</Link>
 					</div>

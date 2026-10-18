@@ -31,10 +31,11 @@ vi.mock("../../realtime/socket", () => ({
 	io: { to: vi.fn(() => ({ emit: emitMock })) },
 }))
 
-vi.mock("./ffmpeg", () => ({
+vi.mock("./ffmpeg", async (importOriginal) => ({
+	...(await importOriginal<typeof import("./ffmpeg")>()),
 	probeDuration: vi.fn(),
-	probeFrameRate: vi.fn(),
-	transcodeToWebProxy: vi.fn(),
+	probeVideoDetails: vi.fn(),
+	transcodeToWebProxies: vi.fn(),
 	capturePosterFrame: vi.fn(),
 }))
 
@@ -42,9 +43,10 @@ import { prisma } from "../../lib/prisma"
 import { storage } from "../../storage"
 import {
 	capturePosterFrame,
+	WebRendition,
 	probeDuration,
-	probeFrameRate,
-	transcodeToWebProxy,
+	probeVideoDetails,
+	transcodeToWebProxies,
 } from "./ffmpeg"
 import {
 	enqueueVideoProxy,
@@ -56,12 +58,29 @@ import { INSTANCE_ID } from "./rendition-queue"
 const mockedPrisma = vi.mocked(prisma, true)
 const mockedStorage = vi.mocked(storage, true)
 const mockedProbe = vi.mocked(probeDuration)
-const mockedFrameRate = vi.mocked(probeFrameRate)
-const mockedTranscode = vi.mocked(transcodeToWebProxy)
+const mockedDetails = vi.mocked(probeVideoDetails)
+const mockedTranscode = vi.mocked(transcodeToWebProxies)
 const mockedPoster = vi.mocked(capturePosterFrame)
 
 const writeOutput = async (_source: string, output: string): Promise<void> => {
 	await fs.writeFile(output, "media-bytes")
+}
+
+const writeRenditions = async (
+	_source: string,
+	renditions: WebRendition[]
+): Promise<void> => {
+	await Promise.all(
+		renditions.map((rendition) => fs.writeFile(rendition.outputPath, "media-bytes"))
+	)
+}
+
+const SMALL_SOURCE = {
+	frameRate: 24,
+	frameRateExpression: "24/1",
+	width: 640,
+	height: 360,
+	startTimecode: null,
 }
 
 const makeSourceFile = async (): Promise<string> => {
@@ -75,8 +94,8 @@ const makeSourceFile = async (): Promise<string> => {
 beforeEach(() => {
 	vi.clearAllMocks()
 	mockedProbe.mockResolvedValue(4.2)
-	mockedFrameRate.mockResolvedValue(24)
-	mockedTranscode.mockImplementation(writeOutput)
+	mockedDetails.mockResolvedValue(SMALL_SOURCE)
+	mockedTranscode.mockImplementation(writeRenditions)
 	mockedPoster.mockImplementation(writeOutput)
 	mockedPrisma.imageVersion.update.mockResolvedValue({
 		id: "v1",
@@ -172,6 +191,58 @@ describe("enqueueVideoProxy", () => {
 		await vi.waitFor(() =>
 			expect(mockedStorage.remove).toHaveBeenCalledWith("uploads/orphan.mp4")
 		)
+	})
+})
+
+describe("renditions", () => {
+	it("adds a lighter rendition and keeps the camera timecode for sources above 540p", async () => {
+		mockedDetails.mockResolvedValue({
+			frameRate: 23.976,
+			frameRateExpression: "24000/1001",
+			width: 3840,
+			height: 2160,
+			startTimecode: "01:00:00:00",
+		})
+		mockedStorage.store
+			.mockResolvedValueOnce("uploads/proxy.mp4")
+			.mockResolvedValueOnce("uploads/proxy-low.mp4")
+		const sourcePath = await stageVideoForProcessing(await makeSourceFile())
+
+		enqueueVideoProxy({ versionId: "v4k", sourcePath, needsPoster: false })
+
+		await vi.waitFor(() =>
+			expect(mockedPrisma.imageVersion.update).toHaveBeenCalledWith(
+				expect.objectContaining({
+					where: { id: "v4k" },
+					data: expect.objectContaining({
+						proxyUrl: "uploads/proxy.mp4",
+						proxyLowUrl: "uploads/proxy-low.mp4",
+						frameRate: 23.976,
+						startTimecode: "01:00:00:00",
+					}),
+				})
+			)
+		)
+		const [, renditions, frameRateExpression] = mockedTranscode.mock.calls[0]
+		expect(renditions.map((rendition) => rendition.maxHeight)).toEqual([1080, 540])
+		expect(frameRateExpression).toBe("24000/1001")
+	})
+
+	it("transcodes a single rendition when the source is already small", async () => {
+		mockedStorage.store.mockResolvedValueOnce("uploads/proxy.mp4")
+		const sourcePath = await stageVideoForProcessing(await makeSourceFile())
+
+		enqueueVideoProxy({ versionId: "vsd", sourcePath, needsPoster: false })
+
+		await vi.waitFor(() =>
+			expect(mockedPrisma.imageVersion.update).toHaveBeenCalledWith(
+				expect.objectContaining({
+					where: { id: "vsd" },
+					data: expect.objectContaining({ proxyLowUrl: null }),
+				})
+			)
+		)
+		expect(mockedTranscode.mock.calls[0][1]).toHaveLength(1)
 	})
 })
 

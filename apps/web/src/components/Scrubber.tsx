@@ -28,6 +28,8 @@ interface ScrubberProps {
 	peers?: ScrubberPeer[]
 	composingRange?: { start: number; end: number } | null
 	frameStep?: number
+	onStepFrame?: (direction: 1 | -1) => void
+	formatTime?: (seconds: number) => string
 	onSeek: (t: number) => void
 	onSelectComment?: (commentId: string) => void
 }
@@ -44,6 +46,8 @@ export function Scrubber({
 	peers = [],
 	composingRange = null,
 	frameStep = 1 / 30,
+	onStepFrame,
+	formatTime = formatVideoTime,
 	onSeek,
 	onSelectComment,
 }: ScrubberProps) {
@@ -75,6 +79,12 @@ export function Scrubber({
 
 	const handleKeyDown = (e: React.KeyboardEvent) => {
 		if (!duration) return
+		if (onStepFrame && e.shiftKey && (e.key === "ArrowLeft" || e.key === "ArrowRight")) {
+			e.preventDefault()
+			e.stopPropagation()
+			onStepFrame(e.key === "ArrowLeft" ? -1 : 1)
+			return
+		}
 		let next: number | null = null
 		switch (e.key) {
 			case "ArrowLeft":
@@ -144,10 +154,8 @@ export function Scrubber({
 							: 0
 						const top = (laneLayout.count - 1 - lane) * LANE_HEIGHT
 						const timeLabel = isRange
-							? `${formatVideoTime(marker.t)} to ${formatVideoTime(
-									marker.tEnd as number
-							  )}`
-							: formatVideoTime(marker.t)
+							? `${formatTime(marker.t)} to ${formatTime(marker.tEnd as number)}`
+							: formatTime(marker.t)
 						return (
 							<button
 								key={marker.commentId}
@@ -197,15 +205,13 @@ export function Scrubber({
 					aria-valuemin={0}
 					aria-valuemax={Math.round(duration)}
 					aria-valuenow={Math.round(currentTime)}
-					aria-valuetext={`${formatVideoTime(currentTime)} of ${formatVideoTime(
-						duration
-					)}`}
+					aria-valuetext={`${formatTime(currentTime)} of ${formatTime(duration)}`}
 					onPointerDown={handlePointerDown}
 					onPointerMove={handlePointerMove}
 					onPointerUp={handlePointerUp}
 					onPointerCancel={handlePointerUp}
 					onKeyDown={handleKeyDown}
-					className="group relative flex h-5 w-full cursor-pointer touch-none items-center rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+					className="group relative flex h-5 w-full cursor-pointer touch-none items-center rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring pointer-coarse:h-9"
 				>
 					<div className="relative h-1 w-full overflow-hidden rounded-full bg-muted">
 						{buffered.map((range, i) => (
@@ -241,7 +247,7 @@ export function Scrubber({
 					)}
 					<div
 						aria-hidden="true"
-						className="pointer-events-none absolute z-10 h-3 w-3 -translate-x-1/2 rounded-full border-2 border-background bg-primary shadow"
+						className="pointer-events-none absolute z-10 h-3 w-3 -translate-x-1/2 rounded-full border-2 border-background bg-primary shadow pointer-coarse:h-4 pointer-coarse:w-4"
 						style={{ left: `${timeToPercent(currentTime, duration)}%` }}
 					/>
 				</div>
@@ -250,10 +256,8 @@ export function Scrubber({
 						key={peer.socketId}
 						type="button"
 						onClick={() => onSeek(peer.time)}
-						title={`${peer.name} is at ${formatVideoTime(peer.time)}`}
-						aria-label={`${peer.name} is at ${formatVideoTime(
-							peer.time
-						)} — jump there`}
+						title={`${peer.name} is at ${formatTime(peer.time)}`}
+						aria-label={`${peer.name} is at ${formatTime(peer.time)} — jump there`}
 						className="absolute -top-1.5 z-20 flex h-4 w-4 -translate-x-1/2 items-center justify-center rounded-full border border-background bg-foreground/80 text-[8px] font-semibold leading-none text-background shadow-sm transition-transform hover:scale-110 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
 						style={{ left: `${timeToPercent(peer.time, duration)}%` }}
 					>

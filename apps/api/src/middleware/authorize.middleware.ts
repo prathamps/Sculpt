@@ -9,6 +9,9 @@ import {
 	roleMeets,
 } from "../modules/projects/access"
 import { recordAuditOnce } from "../modules/audit/audit.service"
+import { authAllowsScope } from "../lib/request-auth"
+import { scopeForMinimumRole } from "../modules/oauth/scopes"
+import { declareScope, rejectForMissingScope } from "./scope.middleware"
 
 export type ProjectIdResolver = (
 	req: Request
@@ -75,11 +78,17 @@ export const authorizedScope = (res: Response): AuthorizedScope => {
 export const requireProjectRole = (
 	minimum: ProjectRole,
 	resolveProjectId: ProjectIdResolver
-): RequestHandler =>
-	async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+): RequestHandler => {
+	const requiredScope = scopeForMinimumRole(minimum)
+	return declareScope(async (req: Request, res: Response, next: NextFunction): Promise<void> => {
 		const userId = (req.user as AuthenticatedUser | undefined)?.id
 		if (!userId) {
 			res.status(401).json({ message: "Unauthorized" })
+			return
+		}
+
+		if (!authAllowsScope(req.auth, requiredScope)) {
+			rejectForMissingScope(res, requiredScope)
 			return
 		}
 
@@ -103,4 +112,5 @@ export const requireProjectRole = (
 
 		res.locals[SCOPE_KEY] = { userId, projectId, role }
 		next()
-	}
+	}, requiredScope)
+}

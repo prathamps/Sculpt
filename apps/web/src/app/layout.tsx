@@ -23,6 +23,12 @@ try {
 }
 `
 
+const TOAST_COLORS = {
+	"--normal-bg": "var(--popover)",
+	"--normal-text": "var(--popover-foreground)",
+	"--normal-border": "var(--border)",
+} as React.CSSProperties
+
 export default function RootLayout({
 	children,
 }: {
@@ -41,7 +47,8 @@ export default function RootLayout({
 							<Toaster
 								position="bottom-right"
 								theme="system"
-								richColors
+								style={TOAST_COLORS}
+								toastOptions={{ classNames: { description: "text-muted-foreground!" } }}
 								closeButton={false}
 								duration={4000}
 								visibleToasts={5}

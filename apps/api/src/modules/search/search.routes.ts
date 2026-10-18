@@ -2,6 +2,7 @@ import { Router } from "express"
 import { z } from "zod"
 import { search } from "./search.controller"
 import { authenticateJWT } from "../../middleware/auth.middleware"
+import { requireScope } from "../../middleware/scope.middleware"
 import { validateQuery } from "../../middleware/validate.middleware"
 import { SEARCH_RESULT_LIMIT } from "./search.service"
 
@@ -17,6 +18,6 @@ const searchQuerySchema = z.object({
 const router = Router()
 
 router.use(authenticateJWT)
-router.get("/", validateQuery(searchQuerySchema), search)
+router.get("/", requireScope("sculpt:read"), validateQuery(searchQuerySchema), search)
 
 export default router

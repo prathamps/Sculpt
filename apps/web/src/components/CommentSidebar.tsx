@@ -79,7 +79,9 @@ export function CommentSidebar({
 				<h3 className="text-sm font-medium">Comments</h3>
 				{isLoading && <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />}
 			</div>
-			{reviewPanel}
+			{reviewPanel && (
+				<div className="max-h-[55%] shrink-0 overflow-y-auto">{reviewPanel}</div>
+			)}
 			<div className="flex flex-wrap items-center gap-2 border-b border-border/40 p-3">
 				<div className="relative min-w-[8rem] flex-1">
 					<Search className="absolute left-2 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" aria-hidden="true" />

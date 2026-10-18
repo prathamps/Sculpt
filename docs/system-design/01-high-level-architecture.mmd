@@ -1,0 +1,14 @@
+graph TD
+    User[User]
+    WebApp{Sculpt Web App <br/> (Next.js)}
+    API{Sculpt API <br/> (Express.js)}
+    Database[(PostgreSQL Database)]
+    Cache[(Redis <br/> for Caching/Sessions)]
+    SocketServer[Socket.io Server]
+
+    User --> WebApp
+    WebApp --> API
+    API --> Database
+    API --> Cache
+    API --> SocketServer
+    WebApp --> SocketServer

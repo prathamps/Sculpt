@@ -22,6 +22,8 @@ const comment = (
 	content: "Looks good",
 	resolved: false,
 	timestamp: null,
+	timestampEnd: null,
+	timecode: null,
 	annotationCount: 0,
 	createdAt: new Date("2026-07-17T10:00:00.000Z"),
 	replies: [],
@@ -44,7 +46,7 @@ describe("buildImageReportCsv", () => {
 	it("produces only the header for a report without comments", () => {
 		const csv = buildImageReportCsv(baseReport([version([])]))
 		expect(csv).toBe(
-			"version,mediaType,author,email,content,resolved,timestamp,annotations,replies,createdAt"
+			"version,mediaType,author,email,content,resolved,timestamp,timecode,annotations,replies,createdAt"
 		)
 	})
 
@@ -63,7 +65,7 @@ describe("buildImageReportCsv", () => {
 		const rows = csv.split("\n")
 		expect(rows).toHaveLength(2)
 		expect(rows[1]).toBe(
-			"Version 1,IMAGE,Ada,ada@example.com,Looks good,open,,0,1,2026-07-17T10:00:00.000Z"
+			"Version 1,IMAGE,Ada,ada@example.com,Looks good,open,,,0,1,2026-07-17T10:00:00.000Z"
 		)
 	})
 
@@ -85,6 +87,13 @@ describe("buildImageReportCsv", () => {
 		const row = csv.split("\n")[1]
 		expect(row).toContain(",resolved,")
 		expect(row).toContain("12.35")
+	})
+
+	it("adds the SMPTE timecode an editor can find in their timeline", () => {
+		const csv = buildImageReportCsv(
+			baseReport([version([comment({ timestamp: 1.5, timecode: "10:00:01:12" })])])
+		)
+		expect(csv.split("\n")[1]).toContain(",1.50,10:00:01:12,")
 	})
 
 	it("defuses a spreadsheet formula hidden in comment content", () => {

@@ -3,6 +3,8 @@
 import { useEffect, useState, useCallback, useMemo, Suspense } from "react"
 import { useAuth } from "@/context/AuthContext"
 import { ProjectMembersProvider } from "@/context/ProjectMembersContext"
+import { VideoTimingProvider } from "@/context/VideoTimingContext"
+import { videoTimingFor } from "@/lib/timecode"
 import { useParams } from "next/navigation"
 import type { ModelFlyToRequest } from "@/components/ModelAnnotationCanvas"
 import { ViewerSurface } from "@/components/ViewerSurface"
@@ -23,6 +25,7 @@ import {
 	ImageVersion,
 	Comment,
 	ModelAnchor,
+	RevisionCheckItem,
 } from "@/types"
 import { roleAtLeast } from "@/lib/utils"
 import { api } from "@/lib/api"
@@ -31,6 +34,8 @@ import { extensionOf } from "@/lib/model-formats"
 import { isNativelyPlayableVideo } from "@/lib/upload-formats"
 import {
 	canvasAnnotationsFor,
+	carriedAnnotationsFor,
+	carriedModelPinFor,
 	modelPinsFor,
 	scrubberPeersFor,
 	timelineMarkersFor,
@@ -43,9 +48,13 @@ import { usePresence } from "@/hooks/usePresence"
 import { useMediaQuery } from "@/hooks/useMediaQuery"
 import { useCompareMode, useFileViewer } from "@/hooks/useFileViewer"
 import { ReviewPanel } from "@/components/ReviewPanel"
+import { RevisionCheckPanel } from "@/components/RevisionCheckPanel"
+import { useRevisionChecklist } from "@/hooks/useRevisionChecklist"
 import { UploadVersionDialog } from "@/components/UploadVersionDialog"
 import { ConfirmationModal } from "@/components/ConfirmationModal"
 import { toast } from "sonner"
+
+const SMALL_SCREEN_QUERY = "(max-width: 768px)"
 
 function ProjectFileViewPageInner() {
 	const params = useParams()
@@ -75,7 +84,9 @@ function ProjectFileViewPageInner() {
 		null
 	)
 	const [isDeletingVersion, setIsDeletingVersion] = useState(false)
-	const [isSidebarOpen, setIsSidebarOpen] = useState(true)
+	const [isSidebarOpen, setIsSidebarOpen] = useState(
+		() => typeof window === "undefined" || !window.matchMedia(SMALL_SCREEN_QUERY).matches
+	)
 
 	const {
 		annotations,
@@ -127,6 +138,13 @@ function ProjectFileViewPageInner() {
 		(selectedVersion && isNativelyPlayableVideo(selectedVersion.url)
 			? selectedVersion.url
 			: null)
+	const videoTiming = useMemo(
+		() =>
+			isVideo && selectedVersion
+				? videoTimingFor(selectedVersion.frameRate, selectedVersion.startTimecode)
+				: null,
+		[isVideo, selectedVersion]
+	)
 	const awaitingRendition =
 		!!selectedVersion &&
 		selectedVersion.proxyStatus === "PENDING" &&
@@ -141,12 +159,26 @@ function ProjectFileViewPageInner() {
 		loadMore: loadMoreComments,
 		syncAfterChange: syncCommentsAfterChange,
 	} = useVersionComments(selectedVersion?.id ?? null)
+	const {
+		checklist: revisionChecklist,
+		setStatus: setRevisionStatus,
+		pendingId: pendingRevisionId,
+	} = useRevisionChecklist(
+		selectedVersion?.id ?? null,
+		(selectedVersion?.versionNumber ?? 1) <= 1
+	)
+	const [focusedCarriedId, setFocusedCarriedId] = useState<string | null>(null)
+	const focusedCarried = useMemo(
+		() =>
+			revisionChecklist?.items.find((item) => item.commentId === focusedCarriedId) ?? null,
+		[revisionChecklist, focusedCarriedId]
+	)
 	const peers = usePresence(
 		selectedVersion?.id ?? null,
 		isVideo ? currentVideoTime : 0
 	)
 
-	const isSmallScreen = useMediaQuery("(max-width: 768px)")
+	const isSmallScreen = useMediaQuery(SMALL_SCREEN_QUERY)
 	const [isMounted, setIsMounted] = useState(false)
 
 	useEffect(() => {
@@ -171,6 +203,7 @@ function ProjectFileViewPageInner() {
 		setCurrentPdfPage(1)
 		setPendingPin(null)
 		setModelFlyTo(null)
+		setFocusedCarriedId(null)
 	}, [clear, clearRange])
 
 	const handleVersionSelect = (version: ImageVersion) => {
@@ -196,6 +229,7 @@ function ProjectFileViewPageInner() {
 		(comment: Comment) => {
 			const deselecting = selectedCommentId === comment.id
 			setSelectedCommentId(deselecting ? null : comment.id)
+			setFocusedCarriedId(null)
 			if (!deselecting) {
 				if (isVideo && typeof comment.timestamp === "number") {
 					handleSeekToTimestamp(comment.timestamp)
@@ -215,6 +249,24 @@ function ProjectFileViewPageInner() {
 		[selectedCommentId, isVideo, isPdf, isModel, handleSeekToTimestamp]
 	)
 
+	const handleFocusCarried = useCallback(
+		(item: RevisionCheckItem) => {
+			const unfocusing = focusedCarriedId === item.commentId
+			setFocusedCarriedId(unfocusing ? null : item.commentId)
+			setSelectedCommentId(null)
+			if (unfocusing) return
+			if (isVideo && typeof item.timestamp === "number") {
+				handleSeekToTimestamp(item.timestamp)
+			}
+			if (isPdf && typeof item.page === "number") setCurrentPdfPage(item.page)
+			const savedCamera = item.modelAnchor?.camera
+			if (isModel && savedCamera) {
+				setModelFlyTo((prev) => ({ camera: savedCamera, nonce: (prev?.nonce ?? 0) + 1 }))
+			}
+		},
+		[focusedCarriedId, isVideo, isPdf, isModel, handleSeekToTimestamp]
+	)
+
 	const handleSelectCommentById = useCallback(
 		(commentId: string) => {
 			const comment = comments.find((c) => c.id === commentId)
@@ -225,7 +277,10 @@ function ProjectFileViewPageInner() {
 
 	useEffect(() => {
 		const onKeyDown = (e: KeyboardEvent) => {
-			if (e.key === "Escape") setSelectedCommentId(null)
+			if (e.key === "Escape") {
+				setSelectedCommentId(null)
+				setFocusedCarriedId(null)
+			}
 		}
 		window.addEventListener("keydown", onKeyDown)
 		return () => window.removeEventListener("keydown", onKeyDown)
@@ -255,8 +310,8 @@ function ProjectFileViewPageInner() {
 	)
 
 	const canvasAnnotations = useMemo(
-		() =>
-			canvasAnnotationsFor({
+		() => [
+			...canvasAnnotationsFor({
 				drafts: annotations,
 				comments,
 				selectedComment,
@@ -266,7 +321,10 @@ function ProjectFileViewPageInner() {
 				currentPdfPage,
 				showAllAnnotations,
 			}),
+			...carriedAnnotationsFor(focusedCarried, { isVideo, isPdf, currentPdfPage }),
+		],
 		[
+			focusedCarried,
 			annotations,
 			comments,
 			isVideo,
@@ -282,10 +340,12 @@ function ProjectFileViewPageInner() {
 
 	const viewingPeople = useMemo(() => viewingPeopleFor(peers), [peers])
 
-	const modelPins = useMemo(
-		() => (isModel ? modelPinsFor(comments, selectedCommentId) : []),
-		[comments, isModel, selectedCommentId]
-	)
+	const modelPins = useMemo(() => {
+		if (!isModel) return []
+		const carriedPin = carriedModelPinFor(focusedCarried)
+		const pins = modelPinsFor(comments, selectedCommentId)
+		return carriedPin ? [...pins, carriedPin] : pins
+	}, [comments, focusedCarried, isModel, selectedCommentId])
 
 	const handlePlacePin = useCallback((anchor: ModelAnchor) => {
 		setSelectedCommentId(null)
@@ -350,7 +410,7 @@ function ProjectFileViewPageInner() {
 
 	if (loadError) {
 		return (
-			<div className="flex h-screen w-full flex-col items-center justify-center gap-4 bg-background px-4 text-center">
+			<div className="flex h-dvh w-full flex-col items-center justify-center gap-4 bg-background px-4 text-center">
 				<p className="text-lg font-medium">This file couldn&apos;t be loaded</p>
 				<p className="max-w-sm text-sm text-muted-foreground">
 					It may have been deleted, or you may not have access to its project.
@@ -368,217 +428,243 @@ function ProjectFileViewPageInner() {
 	}
 
 	return (
-		<div className="flex h-screen w-full flex-col bg-background text-foreground">
-			<TopHeader
-				imageName={image?.name || "Image"}
-				projectId={projectId}
-				onToggleSidebar={() => setIsSidebarOpen(!isSidebarOpen)}
-				isSidebarOpen={isSidebarOpen}
-			>
-				<ViewerPresenceStrip viewers={viewingPeople} />
-				{selectedVersion?.proxyStatus === "PENDING" && (
-					<span className="flex items-center gap-1 text-xs text-muted-foreground">
-						<Loader2 className="h-3 w-3 animate-spin" aria-hidden="true" />
-						{isVideo ? "Optimizing video…" : "Preparing preview…"}
-					</span>
-				)}
-				{image && image.versions && image.versions.length >= 2 && (
-					<Button
-						variant={isCompareMode ? "default" : "outline"}
-						size="sm"
-						className="gap-1"
-						onClick={isCompareMode ? exitCompare : enterCompare}
-						aria-pressed={isCompareMode}
-					>
-						<Columns2 className="h-3.5 w-3.5" aria-hidden="true" />
-						{isCompareMode ? "Exit compare" : "Compare"}
-					</Button>
-				)}
-				{!isCompareMode && !isVideo && !isModel && selectedVersion && (
-					<Button
-						variant={showAllAnnotations ? "default" : "outline"}
-						size="icon"
-						className="h-8 w-8"
-						onClick={() => setShowAllAnnotations((v) => !v)}
-						aria-pressed={showAllAnnotations}
-						aria-label={
-							showAllAnnotations
-								? "Hide all comment drawings"
-								: "Show all comment drawings"
-						}
-					>
-						<Eye className="h-4 w-4" aria-hidden="true" />
-					</Button>
-				)}
-				{!isCompareMode &&
-					image &&
-					image.versions &&
-					image.versions.length > 0 && (
-						<VersionMenu
-							versions={image.versions}
+		<VideoTimingProvider timing={videoTiming}>
+			<div className="flex h-dvh w-full flex-col bg-background text-foreground">
+				<TopHeader
+					imageName={image?.name || "Image"}
+					projectId={projectId}
+					onToggleSidebar={() => setIsSidebarOpen(!isSidebarOpen)}
+					isSidebarOpen={isSidebarOpen}
+				>
+					<ViewerPresenceStrip viewers={viewingPeople} />
+					{selectedVersion?.proxyStatus === "PENDING" && (
+						<span className="flex items-center gap-1 text-xs text-muted-foreground">
+							<Loader2 className="h-3 w-3 animate-spin" aria-hidden="true" />
+							{isVideo ? "Optimizing video…" : "Preparing preview…"}
+						</span>
+					)}
+					{image && image.versions && image.versions.length >= 2 && (
+						<Button
+							variant={isCompareMode ? "default" : "outline"}
+							size="sm"
+							className="shrink-0 gap-1"
+							onClick={isCompareMode ? exitCompare : enterCompare}
+							aria-pressed={isCompareMode}
+							aria-label={isCompareMode ? "Exit compare" : "Compare versions"}
+						>
+							<Columns2 className="h-3.5 w-3.5" aria-hidden="true" />
+							<span className="hidden sm:inline">
+								{isCompareMode ? "Exit compare" : "Compare"}
+							</span>
+						</Button>
+					)}
+					{!isCompareMode && !isVideo && !isModel && selectedVersion && (
+						<Button
+							variant={showAllAnnotations ? "default" : "outline"}
+							size="icon"
+							className="h-8 w-8"
+							onClick={() => setShowAllAnnotations((v) => !v)}
+							aria-pressed={showAllAnnotations}
+							aria-label={
+								showAllAnnotations
+									? "Hide all comment drawings"
+									: "Show all comment drawings"
+							}
+						>
+							<Eye className="h-4 w-4" aria-hidden="true" />
+						</Button>
+					)}
+					{!isCompareMode &&
+						image &&
+						image.versions &&
+						image.versions.length > 0 && (
+							<VersionMenu
+								versions={image.versions}
+								selectedVersion={selectedVersion}
+								canEdit={canEditMedia}
+								onSelect={handleVersionSelect}
+								onRequestDelete={setVersionToDelete}
+								onRequestUpload={() => setIsUploadModalOpen(true)}
+							/>
+						)}
+					{!isCompareMode && !isPdf && !isModel && image && selectedVersion && (
+						<ExportMenu
+							image={image}
 							selectedVersion={selectedVersion}
-							canEdit={canEditMedia}
-							onSelect={handleVersionSelect}
-							onRequestDelete={setVersionToDelete}
-							onRequestUpload={() => setIsUploadModalOpen(true)}
+							annotations={annotations}
+							canDownloadOriginal={mayDownloadOriginals(contentPolicy, role)}
 						/>
 					)}
-				{!isCompareMode && !isPdf && !isModel && image && selectedVersion && (
-					<ExportMenu
-						image={image}
-						selectedVersion={selectedVersion}
-						annotations={annotations}
-						canDownloadOriginal={mayDownloadOriginals(contentPolicy, role)}
-					/>
-				)}
-			</TopHeader>
-			{isCompareMode && image && selectedVersion && compareVersion ? (
-				<div className="relative flex flex-1 overflow-hidden">
-					{showWatermark && <ViewerWatermark email={user?.email ?? ""} />}
-					<CompareView
-						versions={image.versions}
-						leftVersion={selectedVersion}
-						rightVersion={compareVersion}
-						onLeftChange={handleVersionSelect}
-						onRightChange={(version) =>
-							router.replace(buildUrl({ compare: version.id }), {
-								scroll: false,
-							})
-						}
-					/>
-				</div>
-			) : (
-				<div
-					className={`flex flex-1 overflow-hidden ${
-						isSmallScreen ? "flex-col" : "flex-row"
-					}`}
-				>
-					<main
-						className={`relative flex flex-1 flex-col ${
-							isSmallScreen && isSidebarOpen ? "h-[60%]" : "h-full"
+				</TopHeader>
+				{isCompareMode && image && selectedVersion && compareVersion ? (
+					<div className="relative flex flex-1 overflow-hidden">
+						{showWatermark && <ViewerWatermark email={user?.email ?? ""} />}
+						<CompareView
+							versions={image.versions}
+							leftVersion={selectedVersion}
+							rightVersion={compareVersion}
+							onLeftChange={handleVersionSelect}
+							onRightChange={(version) =>
+								router.replace(buildUrl({ compare: version.id }), {
+									scroll: false,
+								})
+							}
+						/>
+					</div>
+				) : (
+					<div
+						className={`flex flex-1 overflow-hidden ${
+							isSmallScreen ? "flex-col" : "flex-row"
 						}`}
 					>
-						<div className="relative flex-1 flex items-center justify-center bg-muted/20 overflow-auto">
-							{showWatermark && <ViewerWatermark email={user?.email ?? ""} />}
-							<ViewerSurface
-								isImageLoading={isImageLoading}
-								selectedVersion={selectedVersion}
-								playableVideoUrl={playableVideoUrl}
-								viewableModelUrl={viewableModelUrl}
-								awaitingRendition={awaitingRendition}
-								tool={tool}
-								color={color}
-								canComment={canComment}
-								canExportFrames={mayDownloadOriginals(contentPolicy, role)}
-								canvasAnnotations={canvasAnnotations}
-								onAddAnnotation={handleAddAnnotation}
-								onSelectCommentById={handleSelectCommentById}
-								timelineMarkers={timelineMarkers}
-								scrubberPeers={scrubberPeers}
-								composingRange={composingRange}
-								seekRequest={seekRequest}
-								onVideoTimeChange={setCurrentVideoTime}
-								onVideoPlayStateChange={(playing) => {
-									if (playing) setSelectedCommentId(null)
-								}}
-								currentPdfPage={currentPdfPage}
-								onPdfPageChange={handlePdfPageChange}
-								modelPins={modelPins}
-								pendingPin={pendingPin}
-								modelFlyTo={modelFlyTo}
-								onPlacePin={handlePlacePin}
-							/>
-						</div>
-						{canComment ? (
-							<div className="border-t border-border">
-								<AnnotationFooter
+						<main
+							className={`relative flex flex-1 flex-col ${
+								isSmallScreen && isSidebarOpen ? "h-1/2" : "h-full"
+							}`}
+						>
+							<div className="relative flex min-h-0 flex-1 items-center justify-center overflow-auto bg-muted/20">
+								{showWatermark && <ViewerWatermark email={user?.email ?? ""} />}
+								<ViewerSurface
+									isImageLoading={isImageLoading}
+									selectedVersion={selectedVersion}
+									playableVideoUrl={playableVideoUrl}
+									viewableModelUrl={viewableModelUrl}
+									awaitingRendition={awaitingRendition}
 									tool={tool}
-									setTool={setTool}
 									color={color}
-									setColor={setColor}
-									onUndo={undo}
-									onRedo={redo}
-									onClear={handleClear}
-									canUndo={canUndo}
-									canRedo={canRedo}
-									currentAnnotation={currentAnnotation}
-									annotations={annotations}
-									imageVersionId={selectedVersion?.id || ""}
-									onCommentAdded={handleCommentAdded}
-									timestamp={isVideo ? currentVideoTime : null}
-									composeRange={isVideo ? composeRange ?? undefined : undefined}
-									onMarkIn={handleMarkIn}
-									onMarkOut={handleMarkOut}
-									onClearRange={clearRange}
-									page={isPdf ? currentPdfPage : null}
-									modelAnchor={isModel ? pendingPin : undefined}
-									onClearModelAnchor={() => setPendingPin(null)}
-									canPostInternal={canEditMedia}
+									canComment={canComment}
+									canExportFrames={mayDownloadOriginals(contentPolicy, role)}
+									canvasAnnotations={canvasAnnotations}
+									onAddAnnotation={handleAddAnnotation}
+									onSelectCommentById={handleSelectCommentById}
+									timelineMarkers={timelineMarkers}
+									scrubberPeers={scrubberPeers}
+									composingRange={composingRange}
+									seekRequest={seekRequest}
+									onVideoTimeChange={setCurrentVideoTime}
+									onVideoPlayStateChange={(playing) => {
+										if (playing) setSelectedCommentId(null)
+									}}
+									currentPdfPage={currentPdfPage}
+									onPdfPageChange={handlePdfPageChange}
+									modelPins={modelPins}
+									pendingPin={pendingPin}
+									modelFlyTo={modelFlyTo}
+									onPlacePin={handlePlacePin}
 								/>
 							</div>
-						) : (
-							role && (
-								<div className="border-t border-border bg-card px-4 py-3 text-center text-xs text-muted-foreground">
-									You have view-only access to this project.
-								</div>
-							)
-						)}
-					</main>
-					{isSidebarOpen && selectedVersion && (
-						<CommentSidebar
-							isLoadingMore={commentsLoadingMore}
-							hasMore={hasMoreComments}
-							onLoadMore={loadMoreComments}
-							comments={comments}
-							isLoading={commentsLoading}
-							onRefresh={syncCommentsAfterChange}
-							selectedCommentId={selectedCommentId}
-							onSelectComment={handleSelectComment}
-							className={
-								isSmallScreen
-									? "h-[40%] w-full border-t border-l-0"
-									: "h-full w-80 border-l"
-							}
-							onSeek={isVideo ? handleSeekToTimestamp : undefined}
-							onGoToPage={isPdf ? handlePdfPageChange : undefined}
-							currentPage={isPdf ? currentPdfPage : null}
-							canReply={canComment}
-							reviewPanel={
-								selectedVersion ? (
-									<ReviewPanel
-										key={selectedVersion.id}
-										imageVersionId={selectedVersion.id}
-										canDecide={canComment}
-										currentUser={user}
+							{canComment ? (
+								<div className="border-t border-border">
+									<AnnotationFooter
+										tool={tool}
+										setTool={setTool}
+										color={color}
+										setColor={setColor}
+										onUndo={undo}
+										onRedo={redo}
+										onClear={handleClear}
+										canUndo={canUndo}
+										canRedo={canRedo}
+										currentAnnotation={currentAnnotation}
+										annotations={annotations}
+										imageVersionId={selectedVersion?.id || ""}
+										onCommentAdded={handleCommentAdded}
+										timestamp={isVideo ? currentVideoTime : null}
+										composeRange={isVideo ? composeRange ?? undefined : undefined}
+										onMarkIn={handleMarkIn}
+										onMarkOut={handleMarkOut}
+										onClearRange={clearRange}
+										page={isPdf ? currentPdfPage : null}
+										modelAnchor={isModel ? pendingPin : undefined}
+										onClearModelAnchor={() => setPendingPin(null)}
+										canPostInternal={canEditMedia}
 									/>
-								) : null
-							}
-						/>
-					)}
-				</div>
-			)}
+								</div>
+							) : (
+								role && (
+									<div className="border-t border-border bg-card px-4 py-3 text-center text-xs text-muted-foreground">
+										You have view-only access to this project.
+									</div>
+								)
+							)}
+						</main>
+						{isSidebarOpen && selectedVersion && (
+							<CommentSidebar
+								isLoadingMore={commentsLoadingMore}
+								hasMore={hasMoreComments}
+								onLoadMore={loadMoreComments}
+								comments={comments}
+								isLoading={commentsLoading}
+								onRefresh={syncCommentsAfterChange}
+								selectedCommentId={selectedCommentId}
+								onSelectComment={handleSelectComment}
+								className={
+									isSmallScreen
+										? "h-1/2 w-full border-t border-l-0"
+										: "h-full w-80 border-l"
+								}
+								onSeek={isVideo ? handleSeekToTimestamp : undefined}
+								onGoToPage={isPdf ? handlePdfPageChange : undefined}
+								currentPage={isPdf ? currentPdfPage : null}
+								canReply={canComment}
+								reviewPanel={
+									selectedVersion ? (
+										<>
+											<ReviewPanel
+												key={selectedVersion.id}
+												imageVersionId={selectedVersion.id}
+												canDecide={canComment}
+												currentUser={user}
+												openCarriedCount={
+													revisionChecklist
+														? revisionChecklist.summary.unchecked +
+															revisionChecklist.summary.notFixed
+														: 0
+												}
+											/>
+											{revisionChecklist && (
+												<RevisionCheckPanel
+													key={`revision-${selectedVersion.id}`}
+													checklist={revisionChecklist}
+													currentUserId={user?.id ?? null}
+													canCheck={canComment}
+													canModerate={canEditMedia}
+													focusedId={focusedCarriedId}
+													pendingId={pendingRevisionId}
+													onFocus={handleFocusCarried}
+													onSetStatus={setRevisionStatus}
+												/>
+											)}
+										</>
+									) : null
+								}
+							/>
+						)}
+					</div>
+				)}
 
-			<UploadVersionDialog
-				imageId={imageId}
-				open={isUploadModalOpen}
-				onOpenChange={setIsUploadModalOpen}
-				onUploaded={handleVersionUploaded}
-			/>
+				<UploadVersionDialog
+					imageId={imageId}
+					open={isUploadModalOpen}
+					onOpenChange={setIsUploadModalOpen}
+					onUploaded={handleVersionUploaded}
+				/>
 
-			<ConfirmationModal
-				isOpen={!!versionToDelete}
-				onClose={() => setVersionToDelete(null)}
-				onConfirm={() => {
-					if (versionToDelete) handleDeleteVersion(versionToDelete.id)
-				}}
-				title="Delete this version?"
-				description={`"${
-					versionToDelete?.versionName ?? "This version"
-				}" and its comments will be permanently deleted.`}
-				confirmText="Delete version"
-				isConfirming={isDeletingVersion}
-			/>
-		</div>
+				<ConfirmationModal
+					isOpen={!!versionToDelete}
+					onClose={() => setVersionToDelete(null)}
+					onConfirm={() => {
+						if (versionToDelete) handleDeleteVersion(versionToDelete.id)
+					}}
+					title="Delete this version?"
+					description={`"${
+						versionToDelete?.versionName ?? "This version"
+					}" and its comments will be permanently deleted.`}
+					confirmText="Delete version"
+					isConfirming={isDeletingVersion}
+				/>
+			</div>
+		</VideoTimingProvider>
 	)
 }
 

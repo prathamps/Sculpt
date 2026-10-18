@@ -153,6 +153,34 @@ rotated.
 
 - **Logs** — production logs are one JSON object per line (`level`, `message`,
   `time`, plus context). Pipe them into whatever you already run.
+- **Resumable uploads** — large uploads are assembled under
+  `uploads/.staging/resumable` before they become media, so leave headroom on
+  that volume: each person may hold 20 unfinished uploads, together no larger
+  than `RESUMABLE_QUOTA_MB` (four times `MAX_UPLOAD_MB` unless set). Sessions
+  idle for a day are deleted. With several API replicas, share the uploads
+  volume between them, or use sticky sessions for every API route per user —
+  the chunks *and* the final `POST /api/projects/:id/images` or
+  `POST /api/images/:id/versions` that names the upload must reach the same
+  disk.
 - **Scaling out** — set `REDIS_URL` and a distinct `SCULPT_INSTANCE_ID` per
   replica. Without Redis, realtime events stay local to the instance that
   emitted them and only half your users see new comments.
+
+## AI assistants (MCP)
+
+To let people connect Claude, ChatGPT, Cursor, VS Code and other MCP clients,
+deploy `apps/mcp` alongside the API (the `ai` profile in
+`docker-compose.selfhost.yml`) and set, on **both** services:
+
+- `MCP_RESOURCE_URL` — the MCP server's public `/mcp` URL, e.g. `https://sculpt.example.com/mcp`
+- `MCP_CLIENT_SECRET` — the same random string, at least 32 characters (`openssl rand -base64 48`)
+- `OAUTH_ISSUER` — the public origin AI clients use for OAuth; behind the bundled
+  Caddy profile this is `https://sculpt.example.com`, which routes `/oauth/*`,
+  `/.well-known/*` and `/mcp` to the right service
+
+The MCP service also needs `SCULPT_API_URL` (its route to the API, e.g.
+`http://api:3001`) and `FRONTEND_URL`. It refuses browser requests from web
+origins other than the web app and its own; add trusted browser-based MCP
+clients to `MCP_ALLOWED_ORIGINS`. OAuth maintenance (pruning and key rotation)
+runs on one API instance at a time, so scaling the API out needs no extra
+setup. Full design and every option: [ai-integration.md](ai-integration.md).

@@ -15,6 +15,7 @@ import {
 } from "./ui/dropdown-menu"
 import { ChevronDown, MessageSquare, Pencil } from "lucide-react"
 import { Annotation, Comment, ImageVersion } from "@/types"
+import type { CameraLink, PlaybackLink } from "@/lib/camera-link"
 import { cn, mediaUrl } from "@/lib/utils"
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001"
@@ -30,7 +31,24 @@ interface ComparePaneProps {
 	version: ImageVersion
 	versions: ImageVersion[]
 	onVersionChange: (version: ImageVersion) => void
+	cameraLink?: CameraLink | null
+	playbackLink?: PlaybackLink | null
 }
+
+const COMPARE_COMMENT_PAGE_SIZE = 100
+const MAX_COMPARE_COMMENT_PAGES = 20
+
+const totalPagesIn = (body: unknown): number => {
+	const total = (body as { totalPages?: unknown } | null)?.totalPages
+	return typeof total === "number" && total > 0 ? Math.min(total, MAX_COMPARE_COMMENT_PAGES) : 1
+}
+
+const commentsIn = (body: unknown): Comment[] =>
+	Array.isArray(body)
+		? body
+		: Array.isArray((body as { items?: unknown } | null)?.items)
+			? (body as { items: Comment[] }).items
+			: []
 
 const flattenAnnotations = (comments: Comment[]): Annotation[] =>
 	comments.flatMap((comment) => {
@@ -55,6 +73,8 @@ export function ComparePane({
 	version,
 	versions,
 	onVersionChange,
+	cameraLink = null,
+	playbackLink = null,
 }: ComparePaneProps) {
 	const [comments, setComments] = useState<Comment[]>([])
 	const [showMarkup, setShowMarkup] = useState(true)
@@ -66,11 +86,18 @@ export function ComparePane({
 		setPdfPage(1)
 		;(async () => {
 			try {
-				const res = await fetch(
-					`${API_URL}/api/images/versions/${version.id}/comments`,
-					{ credentials: "include" }
+				const pageOf = async (page: number): Promise<unknown> => {
+					const res = await fetch(
+						`${API_URL}/api/images/versions/${version.id}/comments?page=${page}&pageSize=${COMPARE_COMMENT_PAGE_SIZE}`,
+						{ credentials: "include" }
+					)
+					return res.ok ? res.json() : null
+				}
+				const first = await pageOf(1)
+				const rest = await Promise.all(
+					Array.from({ length: totalPagesIn(first) - 1 }, (_, index) => pageOf(index + 2))
 				)
-				if (res.ok && !cancelled) setComments(await res.json())
+				if (!cancelled) setComments([first, ...rest].flatMap(commentsIn))
 			} catch (error) {
 				console.error("Failed to fetch comments for compare pane:", error)
 			}
@@ -110,6 +137,8 @@ export function ComparePane({
 					modelUrl={mediaUrl(version.proxyUrl || version.url)}
 					canComment={false}
 					pins={modelPins}
+					cameraLink={cameraLink}
+					enableShortcuts={false}
 				/>
 			)
 		}
@@ -117,10 +146,14 @@ export function ComparePane({
 			return (
 				<VideoAnnotationCanvas
 					videoUrl={mediaUrl(version.proxyUrl || version.url)}
+					lowVideoUrl={version.proxyLowUrl ? mediaUrl(version.proxyLowUrl) : null}
+					frameRate={version.frameRate}
+					startTimecode={version.startTimecode}
 					tool="pencil"
 					color="#4783E8"
 					canDraw={false}
 					enableShortcuts={false}
+					playbackLink={playbackLink}
 					annotations={annotations}
 					onAddAnnotation={() => undefined}
 					initialDuration={version.duration}

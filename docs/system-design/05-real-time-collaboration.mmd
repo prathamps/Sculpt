@@ -1,0 +1,20 @@
+sequenceDiagram
+    participant UserA
+    participant UserB
+    participant WebApp
+    participant SocketServer
+
+    UserA->>WebApp: Connects to project
+    WebApp->>SocketServer: Joins project room
+    UserB->>WebApp: Connects to project
+    WebApp->>SocketServer: Joins project room
+
+    UserA->>WebApp: Adds an annotation
+    WebApp->>SocketServer: Emits 'new_annotation' event with data
+    SocketServer->>UserB: Broadcasts 'new_annotation' event to room
+    UserB->>WebApp: Receives event and displays new annotation
+
+    UserB->>WebApp: Adds a comment
+    WebApp->>SocketServer: Emits 'new_comment' event with data
+    SocketServer->>UserA: Broadcasts 'new_comment' event to room
+    UserA->>WebApp: Receives event and displays new comment

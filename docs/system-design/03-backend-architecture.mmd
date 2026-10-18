@@ -1,0 +1,23 @@
+graph TD
+    ExpressApp[Express.js App]
+    Routes{Routes}
+    Controllers{Controllers}
+    Services{Services}
+    Prisma{Prisma (ORM)}
+    Database[PostgreSQL Database]
+    RedisCache[Redis]
+    Middleware{Middleware}
+    AuthMiddleware[Auth Middleware]
+    UploadMiddleware[Upload Middleware]
+    SocketServer{Socket.io Server}
+
+    ExpressApp --> Routes
+    Routes --> Controllers
+    Controllers --> Services
+    Services --> Prisma
+    Prisma --> Database
+    Services --> RedisCache
+    ExpressApp --> Middleware
+    Middleware --> AuthMiddleware
+    Middleware --> UploadMiddleware
+    ExpressApp --> SocketServer

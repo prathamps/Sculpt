@@ -6,14 +6,15 @@ Guidance for AI assistants (and humans) working in this repository. Follow these
 
 An open-source (MIT), self-hostable real-time visual collaboration platform: projects → images/videos → versions → location-anchored threaded comments → drawn annotations, with Socket.IO realtime, JWT + OAuth auth, share links, an admin panel, audit logging, and pluggable storage. There is **no paid tier** — never reintroduce billing, plan limits, or feature gating by payment.
 
-Monorepo: `apps/api` (Express + Prisma + TypeScript) and `apps/web` (Next.js 15 App Router + React 19). See `docs/architecture.md` for the full map.
+Monorepo: `apps/api` (Express + Prisma + TypeScript), `apps/web` (Next.js 15 App Router + React 19) and `apps/mcp` (the MCP server AI assistants use; a client of the REST API). See `docs/architecture.md` and `docs/ai-integration.md`.
 
 ## Golden rules
 
 1. **No comments — the code itself must be readable.** This codebase carries zero comments by policy. Express intent through small, well-named functions, named constants, and precise variable names; encode invariants in tests whose names state the rule. If you feel a comment is needed, refactor until it isn't. This applies to `//`, `/* */`, JSDoc, JSX comments, and Prisma schema comments alike.
 2. **Every mutation is authorized.** No endpoint that reads or changes project data may rely on authentication alone. Check project membership and role (below). New endpoints without an access check are bugs.
 3. **Audit security-relevant actions.** Anything that changes who can see or do what — auth events, role/membership changes, sharing, destructive actions, exports — must call `recordAudit(...)` (`apps/api/src/modules/audit/audit.service.ts`). Audit writes are best-effort and must never fail the request.
-4. **Match the surrounding style.** Tabs for indentation, no semicolons in new TS where the file omits them, double quotes. Don't reformat untouched code.
+4. **Every route decides whether tokens may call it.** AI assistants and scripts call the same routes as the browser. `requireProjectRole` already demands the scope matching its role; any other route needs `requireScope(...)`, or `sessionOnly` for account security and token management. `route-scopes.test.ts` fails otherwise. When you add a capability, add the matching MCP tool in `apps/mcp/src/server/tools` so assistants can use it too.
+5. **Match the surrounding style.** Tabs for indentation, no semicolons in new TS where the file omits them, double quotes. Don't reformat untouched code.
 
 ## Backend conventions (`apps/api`)
 
@@ -56,13 +57,18 @@ npm run build        # next build (also typechecks)
 npx tsc --noEmit     # fast typecheck
 npm run lint
 
+# MCP server (apps/mcp)
+npm run build && npm test
+npm run smoke        # OAuth + MCP walkthrough against running API and MCP servers
+
 # Browser smoke suite (e2e/, needs both dev servers + system Chrome/Edge)
 cd e2e && npm install && npm run smoke
+npm run oauth        # OAuth security checks against a running API
 ```
 
 ## Before finishing a change
 
-- API: `npm run build && npm test`. Web: `npx tsc --noEmit && npm run build`.
+- API: `npm run build && npm test`. Web: `npx tsc --noEmit && npm run build`. MCP: `npm run build && npm test`.
 - For changes touching upload, playback, viewers, or auth flows, also run the browser smoke suite (`cd e2e && npm run smoke` with both dev servers up).
 - Add tests for logic that can regress — authorization rules, data transforms, anything security-relevant. Tests live beside the code as `*.test.ts` and mock Prisma / the socket at module boundaries.
 - If you changed the Prisma schema, include the migration.

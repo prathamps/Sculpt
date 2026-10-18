@@ -1,0 +1,23 @@
+graph TD
+    App[Next.js App]
+    Pages{Pages & Layouts}
+    Components[Components]
+    ShadCN[UI Components <br/> (ShadCN)]
+    Custom[Custom Components]
+    Context{Context Providers}
+    Auth[AuthContext]
+    AdminAuth[AdminAuthContext]
+    Socket[SocketContext]
+    Hooks{Hooks}
+    Lib{Lib/Utils}
+
+    App --> Pages
+    Pages --> Components
+    Components --> ShadCN
+    Components --> Custom
+    App --> Context
+    Context --> Auth
+    Context --> AdminAuth
+    Context --> Socket
+    App --> Hooks
+    App --> Lib

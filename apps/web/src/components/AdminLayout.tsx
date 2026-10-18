@@ -14,6 +14,7 @@ import {
 	Menu,
 	X,
 	LogOut,
+	Bot,
 } from "lucide-react"
 import { Button } from "./ui/button"
 
@@ -62,6 +63,12 @@ export function AdminLayout({ children }: AdminLayoutProps) {
 			href: "/admin/audit",
 			icon: ScrollText,
 			current: pathname === "/admin/audit",
+		},
+		{
+			name: "Connected apps",
+			href: "/admin/oauth-clients",
+			icon: Bot,
+			current: pathname === "/admin/oauth-clients",
 		},
 		{
 			name: "Settings",

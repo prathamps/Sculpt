@@ -6,6 +6,7 @@ const ADMIN_SESSION_COOKIE = "admin_token"
 const PROTECTED_PREFIXES = ["/dashboard", "/project", "/account"]
 const ADMIN_PREFIXES = ["/admin"]
 const SIGNED_OUT_ONLY = ["/login", "/register"]
+const CONSENT_PATH = "/consent"
 
 const startsWithAny = (pathname: string, prefixes: string[]): boolean =>
 	prefixes.some(
@@ -32,7 +33,10 @@ export const middleware = (request: NextRequest): NextResponse => {
 		return redirectTo(request, "/admin-login")
 	}
 
-	if (startsWithAny(pathname, PROTECTED_PREFIXES) && !hasSession) {
+	const isPendingConsent =
+		pathname === CONSENT_PATH && request.nextUrl.searchParams.has("request")
+
+	if ((isPendingConsent || startsWithAny(pathname, PROTECTED_PREFIXES)) && !hasSession) {
 		return redirectTo(request, "/login", `${pathname}${search}`)
 	}
 
@@ -51,5 +55,6 @@ export const config = {
 		"/admin/:path*",
 		"/login",
 		"/register",
+		"/consent",
 	],
 }

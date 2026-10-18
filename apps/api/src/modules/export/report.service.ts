@@ -1,5 +1,6 @@
 import { prisma } from "../../lib/prisma"
 import { csvEscape } from "../../lib/csv"
+import { secondsToTimecode, timecodeBase } from "../../lib/timecode"
 
 export interface ReportComment {
 	id: string
@@ -8,6 +9,8 @@ export interface ReportComment {
 	content: string
 	resolved: boolean
 	timestamp: number | null
+	timestampEnd: number | null
+	timecode: string | null
 	annotationCount: number
 	createdAt: Date
 	replies: { author: string; content: string; createdAt: Date }[]
@@ -80,6 +83,11 @@ export const buildImageReport = async (
 
 	const versions: ReportVersion[] = image.versions.map((version) => {
 		let versionAnnotations = 0
+		const base = timecodeBase(version.frameRate)
+		const timecodeOf = (seconds: number | null) =>
+			version.mediaType === "VIDEO" && seconds !== null
+				? secondsToTimecode(seconds, base, version.startTimecode)
+				: null
 		const comments: ReportComment[] = version.comments.map((c) => {
 			totalComments += 1
 			if (c.resolved) resolvedComments += 1
@@ -91,6 +99,8 @@ export const buildImageReport = async (
 				content: c.content,
 				resolved: c.resolved,
 				timestamp: c.timestamp ?? null,
+				timestampEnd: c.timestampEnd ?? null,
+				timecode: timecodeOf(c.timestamp ?? null),
 				annotationCount: countAnnotations(c.annotation),
 				createdAt: c.createdAt,
 				replies: (c.replies || []).map((r) => ({
@@ -138,6 +148,7 @@ export const buildImageReportCsv = (report: ImageReport): string => {
 		"content",
 		"resolved",
 		"timestamp",
+		"timecode",
 		"annotations",
 		"replies",
 		"createdAt",
@@ -154,6 +165,7 @@ export const buildImageReportCsv = (report: ImageReport): string => {
 					c.content,
 					c.resolved ? "resolved" : "open",
 					c.timestamp != null ? c.timestamp.toFixed(2) : "",
+						c.timecode ?? "",
 					c.annotationCount,
 					c.replies.length,
 					c.createdAt.toISOString(),

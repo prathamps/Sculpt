@@ -1,5 +1,6 @@
 import { Request, RequestHandler } from "express"
 import { isAllowedOrigin } from "../lib/cors"
+import { hasAuthorizationHeader } from "../modules/oauth/bearer"
 
 const SAFE_METHODS = new Set(["GET", "HEAD", "OPTIONS"])
 
@@ -18,7 +19,7 @@ const requestOrigin = (req: Request): string | undefined => {
 }
 
 export const rejectCrossSiteMutations: RequestHandler = (req, res, next) => {
-	if (SAFE_METHODS.has(req.method)) {
+	if (SAFE_METHODS.has(req.method) || hasAuthorizationHeader(req)) {
 		next()
 		return
 	}

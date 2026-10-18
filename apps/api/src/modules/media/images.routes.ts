@@ -24,6 +24,7 @@ import {
 	renameVersionSchema,
 } from "./media.schema"
 import commentsRouter from "../comments/comments.routes"
+import { attachResumableUploads } from "./resumable-upload.middleware"
 import { versionReviewRouter } from "../reviews/reviews.routes"
 
 const router = Router()
@@ -61,6 +62,7 @@ router.post(
 		{ name: "thumbnail", maxCount: 1 },
 		{ name: "modelProxy", maxCount: 1 },
 	]),
+	attachResumableUploads("image", 1),
 	rejectMismatchedUploads,
 	imageController.uploadImageVersion
 )
@@ -92,6 +94,7 @@ projectImagesRouter.post(
 		{ name: "thumbnails", maxCount: 10 },
 		{ name: "modelProxies", maxCount: 10 },
 	]),
+	attachResumableUploads("images", 10),
 	rejectMismatchedUploads,
 	imageController.uploadImage
 )

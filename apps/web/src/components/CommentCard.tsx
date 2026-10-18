@@ -17,7 +17,8 @@ import {
 	MapPin,
 	Lock,
 } from "lucide-react"
-import { cn, formatVideoTime } from "@/lib/utils"
+import { cn } from "@/lib/utils"
+import { useVideoTimeFormatter } from "@/context/VideoTimingContext"
 import {
 	DropdownMenu,
 	DropdownMenuContent,
@@ -92,6 +93,7 @@ export function CommentCard({
 	const [replyContent, setReplyContent] = useState("")
 	const [isSubmittingReply, setIsSubmittingReply] = useState(false)
 	const { addMention, mentionIdsIn, resetMentions } = useMentionDraft()
+	const formatTime = useVideoTimeFormatter()
 
 	const likeCount = pendingLike?.count ?? comment.likeCount ?? 0
 	const isLiked = pendingLike?.liked ?? comment.isLikedByCurrentUser ?? false
@@ -318,22 +320,22 @@ export function CommentCard({
 									className="inline-flex items-center gap-1 rounded-full bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary hover:bg-primary/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
 									aria-label={
 										hasRange
-											? `Jump to the range from ${formatVideoTime(
+											? `Jump to the range from ${formatTime(
 													comment.timestamp as number
-											  )} to ${formatVideoTime(
+											  )} to ${formatTime(
 													comment.timestampEnd as number
 											  )} in the video`
-											: `Jump to ${formatVideoTime(
+											: `Jump to ${formatTime(
 													comment.timestamp as number
 											  )} in the video`
 									}
 								>
 									<Clock className="h-3 w-3" aria-hidden="true" />
 									{hasRange
-										? `${formatVideoTime(
+										? `${formatTime(
 												comment.timestamp as number
-										  )} → ${formatVideoTime(comment.timestampEnd as number)}`
-										: formatVideoTime(comment.timestamp as number)}
+										  )} → ${formatTime(comment.timestampEnd as number)}`
+										: formatTime(comment.timestamp as number)}
 								</button>
 							)}
 							{hasPage && (

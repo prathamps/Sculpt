@@ -58,6 +58,16 @@ describe("safeDestination", () => {
 		expect(safeDestination("https://evil.example.com")).toBe("/dashboard")
 	})
 
+	it("refuses paths that browsers would resolve to another host", () => {
+		for (const sneaky of ["/\\evil.example.com", "/\t/evil.example.com", "/\n/evil.example.com", "/\\/evil.example.com"]) {
+			expect(safeDestination(sneaky), JSON.stringify(sneaky)).toBe("/dashboard")
+		}
+	})
+
+	it("keeps the query and fragment of an in-app path", () => {
+		expect(safeDestination("/consent?request=abc#top")).toBe("/consent?request=abc#top")
+	})
+
 	it("falls back to the dashboard when nothing is requested", () => {
 		expect(safeDestination(undefined)).toBe("/dashboard")
 		expect(safeDestination(null)).toBe("/dashboard")

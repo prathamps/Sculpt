@@ -19,7 +19,8 @@ import { MentionTextarea } from "@/components/MentionTextarea"
 import { useMentionDraft } from "@/hooks/useMentionDraft"
 import { AnnotationToolbar } from "./AnnotationToolbar"
 import { AnnotationTool } from "@/types"
-import { cn, formatVideoTime } from "@/lib/utils"
+import { cn } from "@/lib/utils"
+import { useVideoTimeFormatter } from "@/context/VideoTimingContext"
 import { useAuth } from "@/context/AuthContext"
 import { Annotation, ModelAnchor } from "@/types"
 import { Clock } from "lucide-react"
@@ -88,6 +89,7 @@ export function AnnotationFooter({
 	const [pendingFiles, setPendingFiles] = useState<File[]>([])
 	const fileInputRef = useRef<HTMLInputElement>(null)
 	const { user } = useAuth()
+	const formatTime = useVideoTimeFormatter()
 	const { addMention, mentionIdsIn, resetMentions } = useMentionDraft()
 
 	const isVideoContext = typeof livePlayheadSeconds === "number"
@@ -154,10 +156,10 @@ export function AnnotationFooter({
 	}
 
 	return (
-		<div className="space-y-3 border-t border-border/40 bg-card p-4">
+		<div className="space-y-2 border-t border-border/40 bg-card p-2 sm:space-y-3 sm:p-4">
 			<div className="flex items-start gap-2">
 				<UserAvatar
-					className="h-8 w-8 flex-shrink-0"
+					className="hidden h-8 w-8 flex-shrink-0 sm:flex"
 					name={user?.name}
 					email={user?.email}
 					avatarUrl={user?.avatarUrl}
@@ -191,7 +193,7 @@ export function AnnotationFooter({
 			</div>
 
 			{pendingFiles.length > 0 && (
-				<ul className="flex flex-wrap gap-1.5 pl-10">
+				<ul className="flex flex-wrap gap-1.5 sm:pl-10">
 					{pendingFiles.map((file, index) => (
 						<li
 							key={`${file.name}-${index}`}
@@ -215,13 +217,15 @@ export function AnnotationFooter({
 				</ul>
 			)}
 
-			<div className="flex items-center justify-between">
-				<div className="flex items-center gap-2">
+			<div className="flex flex-wrap items-center justify-between gap-2">
+				<div className="flex flex-wrap items-center gap-2">
 					<input
 						ref={fileInputRef}
 						type="file"
 						multiple
 						accept="image/*,application/pdf"
+						aria-label="Reference files to attach"
+						tabIndex={-1}
 						className="sr-only"
 						onChange={(e) => {
 							const chosen = Array.from(e.target.files ?? [])
@@ -264,10 +268,10 @@ export function AnnotationFooter({
 							<div className="flex items-center gap-1 text-xs text-primary">
 								<Clock className="h-3 w-3" aria-hidden="true" />
 								{hasRange
-									? `${formatVideoTime(anchorStart as number)} → ${formatVideoTime(
+									? `${formatTime(anchorStart as number)} → ${formatTime(
 											anchorEnd as number
 									  )}`
-									: `at ${formatVideoTime(anchorStart ?? 0, true)}`}
+									: `at ${formatTime(anchorStart ?? 0, true)}`}
 							</div>
 							<Button
 								variant="outline"
@@ -323,12 +327,12 @@ export function AnnotationFooter({
 							</div>
 						) : (
 							<div className="text-xs text-muted-foreground">
-								Click the model to pin this comment to a spot
+								Choose a spot on the model to pin this comment
 							</div>
 						))}
 				</div>
 				{!isModelContext && (
-				<div className="flex items-center gap-2">
+				<div className="flex flex-wrap items-center gap-2">
 					<AnnotationToolbar
 						tool={tool}
 						setTool={setTool}
